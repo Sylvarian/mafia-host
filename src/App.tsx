@@ -4,13 +4,13 @@ function App() {
   return (
     <main className="foundation">
       <p className="foundation__eyebrow">Mafia Host</p>
-      <h1>Repository foundation ready</h1>
+      <h1>Core domain foundation ready</h1>
       <p className="foundation__summary">
-        The React, TypeScript, testing, formatting, architecture, and continuous integration
-        foundations are in place.
+        The game model, phase machine, validation, and deterministic domain foundations are in
+        place.
       </p>
       <p className="foundation__scope">
-        Phase 1 has not started. No game behavior is available yet.
+        Host workflows and playable game behavior are not available yet.
       </p>
     </main>
   )

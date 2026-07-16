@@ -6,10 +6,10 @@ physical role and result cards.
 
 ## Current status
 
-Phase 0 — Repository and authority foundation — is implemented. The repository has a strict React
-and TypeScript toolchain, automated tests, architecture checks, formatting, and continuous
-integration. Phase 1 has not started, so there are no game-state, phase-machine, roster, role, or
-resolution features yet.
+Phase 1 — Core domain model and phase machine — is implemented. The repository now has a
+framework-independent game model, explicit phase transitions, immutable command/event reduction,
+domain invariant validation, and injected randomness with deterministic test support. Host-facing
+roster, setup, assignment, role ability, voting, and resolution features have not started.
 
 ## Requirements
 
@@ -83,8 +83,8 @@ its deliberately invalid fixtures are excluded from normal production analysis.
 ESLint separately rejects browser globals in domain modules because those dependencies do not
 appear in an import graph.
 
-The layer-specific README files point back to the architecture authority while the implementation
-layers intentionally contain no Phase 1 code.
+The layer-specific README files point back to the architecture authority. Phase 1 implementation is
+confined to the domain layer; application and feature layers remain intentionally empty.
 
 ## Project authorities
 
