@@ -1,0 +1,8 @@
+AGENTS.md
+coverage
+dist
+docs/GAME_RULES_AND_PRODUCT_SPEC.md
+docs/IMPLEMENTATION_PLAN.md
+node_modules
+package-lock.json
+public
