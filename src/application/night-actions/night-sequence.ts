@@ -1,7 +1,10 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
-import type { SubmittedNightAction } from '@/domain/night-actions/night-action.ts'
+import {
+  isNightActionRequiredForPlayer,
+  type SubmittedNightAction,
+} from '@/domain/night-actions/night-action.ts'
 import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
 export type NightSequenceStep =
@@ -43,6 +46,10 @@ export function buildNightActionSequence(
     }
 
     if (!role.nightAction.hasNightAction) {
+      continue
+    }
+
+    if (!isNightActionRequiredForPlayer(game, player.playerId)) {
       continue
     }
 

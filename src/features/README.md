@@ -18,3 +18,5 @@ Mafia-closing, review, and completion states; translates structured errors; prov
 target and navigation controls; and moves focus to each new step. The coordinating feature guards
 rapid repeated operations. React does not construct actions, validate target rules, maintain a
 second action list, dispatch `ADVANCE_PHASE`, resolve effects, or transition to `night-resolution`.
+First-night killing-role omissions and Consort target availability are rendered from application
+selectors backed by domain collection rules; the feature does not duplicate either rule.

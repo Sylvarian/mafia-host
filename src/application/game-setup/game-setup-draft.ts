@@ -1,5 +1,5 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
-import type { GameSettings } from '@/domain/game/game-settings.ts'
+import type { GameSettingKey, GameSettings } from '@/domain/game/game-settings.ts'
 import { playerId, type PlayerId, type RoleId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_REGISTRY } from '@/domain/roles/role-registry.ts'
@@ -9,7 +9,7 @@ export type RoleCount = Readonly<{
   count: number
 }>
 
-export type GameSettingKey = keyof GameSettings
+export type { GameSettingKey } from '@/domain/game/game-settings.ts'
 
 export type GameSetupDraft = Readonly<{
   roster: readonly Player[]
@@ -49,10 +49,9 @@ export type RosterEditError = EmptyPlayerNameError | PlayerNotFoundError
 export type RoleCountEditError = RoleNotFoundError | InvalidRoleCountError
 export type GameSetupEditError = RosterEditError | RoleCountEditError
 
-// The specification does not yet designate defaults. Phase 2 uses explicit false values only as
-// provisional form defaults; they are not authoritative Mafia rules.
-const PROVISIONAL_DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
+const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
   godfatherAndSerialCanKillEachOther: false,
+  godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: false,
   revealRoleOnDeath: false,
@@ -63,7 +62,7 @@ export function createInitialGameSetupDraft(): GameSetupDraft {
   return {
     roster: [],
     roleCounts: ROLE_REGISTRY.map((role) => ({ roleId: role.id, count: 0 })),
-    settings: { ...PROVISIONAL_DEFAULT_GAME_SETTINGS },
+    settings: { ...DEFAULT_GAME_SETTINGS },
     nextPlayerNumber: 1,
   }
 }
@@ -208,11 +207,15 @@ export function getRoleCount(draft: GameSetupDraft, id: RoleId): number | undefi
   return draft.roleCounts.find((roleCount) => roleCount.roleId === id)?.count
 }
 
-export function getParticipatingPlayerCount(draft: GameSetupDraft): number {
+export function getParticipatingPlayerCount(
+  draft: Readonly<{ roster: readonly Player[] }>,
+): number {
   return draft.roster.filter((player) => player.playing).length
 }
 
-export function getSelectedRoleCount(draft: GameSetupDraft): number {
+export function getSelectedRoleCount(
+  draft: Readonly<{ roleCounts: readonly RoleCount[] }>,
+): number {
   return draft.roleCounts.reduce(
     (total, roleCount) => (isNonNegativeInteger(roleCount.count) ? total + roleCount.count : total),
     0,

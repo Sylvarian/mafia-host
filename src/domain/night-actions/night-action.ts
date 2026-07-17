@@ -61,6 +61,11 @@ export type NightActionValidationError =
 export type NightActionBatchError =
   | NightActionValidationError
   | Readonly<{
+      type: 'UNEXPECTED_ACTION'
+      actorPlayerId: PlayerId
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
       type: 'DUPLICATE_ACTOR_ACTION'
       actorPlayerId: PlayerId
       actorRoleInstanceId: RoleInstanceId
@@ -197,6 +202,27 @@ export function createSubmittedNightAction(
   )
 }
 
+export function isNightActionRequiredForPlayer(game: GameState, actorPlayerId: PlayerId): boolean {
+  const actor = game.players.find((player) => player.playerId === actorPlayerId)
+
+  if (actor === undefined || !actor.alive) {
+    return false
+  }
+
+  const role = findRoleDefinition(actor.role.roleId)
+
+  if (role?.nightAction.hasNightAction !== true) {
+    return false
+  }
+
+  const isSkippedFirstNightKillingRole =
+    game.nightNumber === 1 &&
+    !game.settings.allowFirstNightKills &&
+    (actor.role.roleId === ROLE_IDS.godfather || actor.role.roleId === ROLE_IDS.serialKiller)
+
+  return !isSkippedFirstNightKillingRole
+}
+
 export function createCollectedNightActions(
   game: GameState,
   actions: readonly SubmittedNightAction[],
@@ -242,17 +268,22 @@ export function createCollectedNightActions(
       return actionResult
     }
 
+    if (!isNightActionRequiredForPlayer(game, actionResult.value.actorPlayerId)) {
+      return fail({
+        type: 'UNEXPECTED_ACTION',
+        actorPlayerId: actionResult.value.actorPlayerId,
+        actorRoleInstanceId: actionResult.value.actorRoleInstanceId,
+      })
+    }
+
     actorPlayerIds.add(action.actorPlayerId)
     actorRoleInstanceIds.add(action.actorRoleInstanceId)
     copiedActions.push(actionResult.value)
   }
 
   for (const player of game.players) {
-    const role = findRoleDefinition(player.role.roleId)
-
     if (
-      player.alive &&
-      role?.nightAction.hasNightAction === true &&
+      isNightActionRequiredForPlayer(game, player.playerId) &&
       !actorRoleInstanceIds.has(player.role.instanceId)
     ) {
       return fail({

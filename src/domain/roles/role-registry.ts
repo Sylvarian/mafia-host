@@ -46,14 +46,14 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     ROLE_IDS.consort,
     'Consort',
     'mafia',
-    'Selects a player whose night ability will be role-blocked.',
+    'Selects a player they intend to role-block during later night resolution.',
     nightAction('role-block', 'mafia', 30, 'Choose the player the Consort wants to role-block.'),
   ),
   roleEntry(
     ROLE_IDS.consigliere,
     'Consigliere',
     'mafia',
-    'Investigates a player using the permanent three-role investigation groups.',
+    'Investigates a player using the permanent investigation groups.',
     nightAction(
       'investigate',
       'mafia',
@@ -84,7 +84,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     ROLE_IDS.investigator,
     'Investigator',
     'town',
-    'Investigates a player using a permanent three-role result group.',
+    'Investigates a player using a permanent three-or-four-role result group.',
     nightAction(
       'investigate',
       'individual',

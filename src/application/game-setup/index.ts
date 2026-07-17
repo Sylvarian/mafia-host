@@ -15,6 +15,7 @@ export type {
 } from './game-setup-draft.ts'
 export { inspectGameSetupDraft } from './game-setup-validation.ts'
 export type {
+  GameSetupDraftCandidate,
   GameSetupValidation,
   GameSetupValidationError,
   ValidatedGameSetup,

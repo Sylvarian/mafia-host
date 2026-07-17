@@ -27,7 +27,12 @@ describe('game setup workflow', () => {
       type: 'INCREMENT_ROLE_COUNT',
       roleId: ROLE_IDS.godfather,
     })
-    const ready = reduceGameSetupWorkflow(withRole, { type: 'PREPARE_GAME' })
+    const configured = reduceGameSetupWorkflow(withRole, {
+      type: 'SET_GAME_SETTING',
+      setting: 'godfatherAppearsSuspiciousToSheriff',
+      value: false,
+    })
+    const ready = reduceGameSetupWorkflow(configured, { type: 'PREPARE_GAME' })
 
     expect(ready.status).toBe('ready')
     if (ready.status !== 'ready') {
@@ -35,6 +40,7 @@ describe('game setup workflow', () => {
     }
 
     expect(ready.validatedSetup.participatingPlayers).toHaveLength(1)
+    expect(ready.validatedSetup.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
     expect(ready.validatedSetup).not.toHaveProperty('phase')
     const validationResult = validateGameSetupDraft(ready.draft)
     expect(validationResult).toEqual({ ok: true, value: ready.validatedSetup })
@@ -43,6 +49,7 @@ describe('game setup workflow', () => {
 
     expect(editing.status).toBe('editing')
     expect(editing.draft).toBe(ready.draft)
+    expect(editing.draft.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
   })
 
   it('ignores editing commands while the validated summary is open', () => {

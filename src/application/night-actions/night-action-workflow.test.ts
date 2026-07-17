@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { playerId, roleInstanceId } from '@/domain/identifiers.ts'
+import type { SubmittedNightAction } from '@/domain/night-actions/night-action.ts'
 import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import {
@@ -59,10 +60,10 @@ describe('begin first night', () => {
   })
 
   it('increments night exactly once, preserves day and assignments, and rejects a repeat begin', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather },
-      { roleId: ROLE_IDS.citizen },
-    ])
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      { settings: { godfatherAppearsSuspiciousToSheriff: false } },
+    )
     const assignmentSnapshot = JSON.stringify(fixture.game.players)
     const workflow = beginFixture(fixture)
 
@@ -71,6 +72,7 @@ describe('begin first night', () => {
       nightNumber: 1,
       dayNumber: 0,
     })
+    expect(workflow.game.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
     expect(JSON.stringify(workflow.game.players)).toBe(assignmentSnapshot)
     expect(fixture.game).toMatchObject({ phase: 'role-distribution', nightNumber: 0, dayNumber: 0 })
     expect(beginFirstNight(workflow)).toMatchObject({
@@ -181,7 +183,9 @@ describe('begin first night', () => {
     const valid = createNightFixture([{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }])
     expect(beginFirstNight(createNightActionCollectionWorkflow(valid.distribution)).ok).toBe(true)
 
-    const impossible = createNightFixture([{ roleId: ROLE_IDS.godfather }])
+    const impossible = createNightFixture([{ roleId: ROLE_IDS.godfather }], {
+      settings: { allowFirstNightKills: true },
+    })
     expect(
       beginFirstNight(createNightActionCollectionWorkflow(impossible.distribution)),
     ).toMatchObject({
@@ -193,11 +197,14 @@ describe('begin first night', () => {
 
 describe('night-action collection workflow', () => {
   it('starts at the opening, requires targets, revisits actions, and replaces corrections', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather, name: 'Alex' },
-      { roleId: ROLE_IDS.doctor, name: 'Alex' },
-      { roleId: ROLE_IDS.citizen, name: 'Casey' },
-    ])
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.godfather, name: 'Alex' },
+        { roleId: ROLE_IDS.doctor, name: 'Alex' },
+        { roleId: ROLE_IDS.citizen, name: 'Casey' },
+      ],
+      { settings: { allowFirstNightKills: true } },
+    )
     let workflow: NightActionCollectionWorkflow = beginFixture(fixture)
 
     expect(workflow).toMatchObject({
@@ -234,11 +241,14 @@ describe('night-action collection workflow', () => {
   })
 
   it('reviews every action in order, edits one actor, and finalises an immutable intent-only batch', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather, name: 'Alice' },
-      { roleId: ROLE_IDS.doctor, name: 'Charlie' },
-      { roleId: ROLE_IDS.citizen, name: 'Ben' },
-    ])
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.godfather, name: 'Alice' },
+        { roleId: ROLE_IDS.doctor, name: 'Charlie' },
+        { roleId: ROLE_IDS.citizen, name: 'Ben' },
+      ],
+      { settings: { allowFirstNightKills: true } },
+    )
     const originalSnapshot = JSON.stringify(fixture.game)
     let workflow: NightActionCollectionWorkflow = beginFixture(fixture)
     workflow = continueSuccessfully(continueSuccessfully(workflow))
@@ -333,11 +343,10 @@ describe('night-action collection workflow', () => {
   })
 
   it('reorders a manually reversed review before final batch creation', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather },
-      { roleId: ROLE_IDS.doctor },
-      { roleId: ROLE_IDS.citizen },
-    ])
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
+      { settings: { allowFirstNightKills: true } },
+    )
     let workflow: NightActionCollectionWorkflow = beginFixture(fixture)
     workflow = continueSuccessfully(continueSuccessfully(workflow))
     const godfatherSelection = selectNightActionTarget(workflow, playerId('player-3'))
@@ -363,10 +372,10 @@ describe('night-action collection workflow', () => {
   })
 
   it('revalidates a target that dies after selection and before finalisation', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather },
-      { roleId: ROLE_IDS.citizen },
-    ])
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      { settings: { allowFirstNightKills: true } },
+    )
     let workflow: NightActionCollectionWorkflow = beginFixture(fixture)
     workflow = continueSuccessfully(continueSuccessfully(workflow))
     const selection = selectNightActionTarget(workflow, playerId('player-2'))
@@ -405,11 +414,10 @@ describe('night-action collection workflow', () => {
   })
 
   it('rejects finalisation when a required action is missing', () => {
-    const fixture = createNightFixture([
-      { roleId: ROLE_IDS.godfather },
-      { roleId: ROLE_IDS.doctor },
-      { roleId: ROLE_IDS.citizen },
-    ])
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
+      { settings: { allowFirstNightKills: true } },
+    )
     let workflow: NightActionCollectionWorkflow = beginFixture(fixture)
     workflow = continueSuccessfully(continueSuccessfully(workflow))
     const selection = selectNightActionTarget(workflow, playerId('player-3'))
@@ -429,4 +437,156 @@ describe('night-action collection workflow', () => {
       error: { type: 'INCOMPLETE_ACTION_BATCH', missingRoleInstanceIds: ['role-instance-2'] },
     })
   })
+
+  it('omits disabled first-night killers from review and batch requirements', () => {
+    const fixture = createNightFixture([
+      { roleId: ROLE_IDS.godfather },
+      { roleId: ROLE_IDS.serialKiller },
+      { roleId: ROLE_IDS.framer },
+      { roleId: ROLE_IDS.doctor },
+      { roleId: ROLE_IDS.citizen },
+    ])
+    const collecting = beginFixture(fixture)
+    const mafiaOverview = collecting.steps.find((step) => step.type === 'mafia-opening')
+
+    expect(mafiaOverview).toEqual({
+      type: 'mafia-opening',
+      mafiaPlayerIds: ['player-1', 'player-3'],
+    })
+    expect(
+      collecting.steps
+        .filter((step) => step.type === 'actor-action')
+        .map((step) => step.actorRoleInstanceId),
+    ).toEqual(['role-instance-3', 'role-instance-4'])
+
+    const reviewing = collectEveryRequiredAction(collecting)
+    expect(selectNightActionReview(reviewing).map((row) => row.roleDisplayName)).toEqual([
+      'Framer',
+      'Doctor',
+    ])
+
+    const godfatherAction: SubmittedNightAction = {
+      actorPlayerId: playerId('player-1'),
+      actorRoleInstanceId: roleInstanceId('role-instance-1'),
+      actorRoleId: ROLE_IDS.godfather,
+      actionKind: 'attack',
+      targetPlayerId: playerId('player-2'),
+    }
+    const serialKillerAction: SubmittedNightAction = {
+      actorPlayerId: playerId('player-2'),
+      actorRoleInstanceId: roleInstanceId('role-instance-2'),
+      actorRoleId: ROLE_IDS.serialKiller,
+      actionKind: 'attack',
+      targetPlayerId: playerId('player-1'),
+    }
+
+    for (const fabricatedAction of [godfatherAction, serialKillerAction]) {
+      expect(
+        finaliseNightActionCollection({
+          ...reviewing,
+          submittedActions: [...reviewing.submittedActions, fabricatedAction],
+        }),
+      ).toMatchObject({
+        ok: false,
+        error: {
+          type: 'UNEXPECTED_ACTION',
+          actorRoleInstanceId: fabricatedAction.actorRoleInstanceId,
+        },
+      })
+    }
+
+    const result = finaliseNightActionCollection(reviewing)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected the corrected batch to finalise.')
+    expect(result.value.collectedActions.actions.map((action) => action.actorRoleId)).toEqual([
+      ROLE_IDS.framer,
+      ROLE_IDS.doctor,
+    ])
+    expect(result.value.game.phase).toBe('night-action-collection')
+    expect(result.value.game.players.every((player) => player.alive)).toBe(true)
+    expect(result.value.collectedActions).not.toHaveProperty('results')
+    expect(result.value.collectedActions).not.toHaveProperty('deaths')
+    expect(result.value.collectedActions).not.toHaveProperty('visits')
+    expect(result.value.game.players.every((player) => player.executionerTargetId === null)).toBe(
+      true,
+    )
+  })
+
+  it('carries mutual Consort targets through review and finalisation as intent only', () => {
+    const fixture = createNightFixture([
+      { roleId: ROLE_IDS.consort },
+      { roleId: ROLE_IDS.consort },
+      { roleId: ROLE_IDS.doctor },
+      { roleId: ROLE_IDS.citizen },
+    ])
+    const reviewing = collectEveryRequiredAction(beginFixture(fixture))
+    const consortActions = reviewing.submittedActions.filter(
+      (action) => action.actorRoleId === ROLE_IDS.consort,
+    )
+
+    expect(consortActions).toEqual([
+      expect.objectContaining({
+        actorRoleInstanceId: 'role-instance-1',
+        targetPlayerId: 'player-2',
+      }),
+      expect.objectContaining({
+        actorRoleInstanceId: 'role-instance-2',
+        targetPlayerId: 'player-1',
+      }),
+    ])
+    expect(selectNightActionReview(reviewing).map((row) => row.roleDisplayName)).toEqual([
+      'Consort 1',
+      'Consort 2',
+      'Doctor',
+    ])
+
+    const result = finaliseNightActionCollection(reviewing)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected Consort actions to finalise.')
+    expect(result.value.collectedActions.actions).toEqual(reviewing.submittedActions)
+    expect(result.value.collectedActions.actions.every((action) => !('effect' in action))).toBe(
+      true,
+    )
+    expect(result.value.game.phase).toBe('night-action-collection')
+  })
 })
+
+function collectEveryRequiredAction(
+  startingWorkflow: CollectingNightActionsWorkflow,
+): ReviewingNightActionsWorkflow {
+  let workflow: NightActionCollectionWorkflow = startingWorkflow
+
+  while (workflow.status === 'collecting') {
+    const step = workflow.steps[workflow.currentStepIndex]
+
+    if (step === undefined) {
+      throw new Error('Expected a current sequence step.')
+    }
+
+    if (step.type === 'actor-action') {
+      let selected = false
+
+      for (const target of workflow.game.players) {
+        const selection = selectNightActionTarget(workflow, target.playerId)
+
+        if (selection.ok) {
+          workflow = selection.value
+          selected = true
+          break
+        }
+      }
+
+      if (!selected) {
+        throw new Error(`Expected a valid target for ${step.actorRoleInstanceId}.`)
+      }
+    }
+
+    workflow = continueSuccessfully(workflow)
+  }
+
+  if (workflow.status !== 'reviewing') {
+    throw new Error('Expected collection to reach review.')
+  }
+
+  return workflow
+}

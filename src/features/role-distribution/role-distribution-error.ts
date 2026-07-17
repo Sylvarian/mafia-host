@@ -90,6 +90,8 @@ function getInvalidGameStateMessage(
   error: Extract<ActiveGameRejection, Readonly<{ type: 'INVALID_GAME_STATE' }>>['reason'],
 ): string {
   switch (error.type) {
+    case 'INVALID_GAME_SETTING':
+      return `The active game rejected the ${error.setting} setting because it is not an explicit boolean.`
     case 'INVALID_PHASE':
       return `The active game cannot begin in the unknown phase ${error.phase}.`
     case 'INVALID_COUNTER':

@@ -177,11 +177,12 @@ describe('night-action structural validation', () => {
     ).toBe(true)
   })
 
-  it('collects attack intent regardless of unresolved kill-effect settings', () => {
+  it('collects mutual attack intent without resolving the configured lethal effect', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.serialKiller }],
       {
         phase: 'night-action-collection',
+        nightNumber: 2,
         settings: { allowFirstNightKills: false, godfatherAndSerialCanKillEachOther: false },
       },
     )
@@ -192,6 +193,65 @@ describe('night-action structural validation', () => {
     expect(
       createSubmittedNightAction(fixture.game, actionFor(fixture, 1, 0, 'attack'), null).ok,
     ).toBe(true)
+  })
+
+  it('accepts every eligible Consort target, including another Consort', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.consort },
+        { roleId: ROLE_IDS.consort },
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.serialKiller },
+        { roleId: ROLE_IDS.doctor },
+        { roleId: ROLE_IDS.citizen, alive: false },
+      ],
+      { phase: 'night-action-collection', nightNumber: 2 },
+    )
+
+    for (const targetIndex of [1, 2, 3, 4]) {
+      expect(
+        createSubmittedNightAction(
+          fixture.game,
+          actionFor(fixture, 0, targetIndex, 'role-block'),
+          null,
+        ).ok,
+      ).toBe(true)
+    }
+
+    expect(
+      createSubmittedNightAction(fixture.game, actionFor(fixture, 0, 0, 'role-block'), null),
+    ).toMatchObject({ ok: false, error: { type: 'INVALID_SELF_TARGET' } })
+    expect(
+      createSubmittedNightAction(fixture.game, actionFor(fixture, 0, 5, 'role-block'), null),
+    ).toMatchObject({ ok: false, error: { type: 'DEAD_TARGET' } })
+    expect(
+      createSubmittedNightAction(
+        fixture.game,
+        { ...actionFor(fixture, 0, 1, 'role-block'), targetPlayerId: playerId('unknown') },
+        null,
+      ),
+    ).toMatchObject({ ok: false, error: { type: 'UNKNOWN_TARGET' } })
+  })
+
+  it('collects mutual and shared Consort targets as intent without calculating a block effect', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.consort }, { roleId: ROLE_IDS.consort }, { roleId: ROLE_IDS.citizen }],
+      { phase: 'night-action-collection', nightNumber: 1 },
+    )
+    const mutual = createCollectedNightActions(fixture.game, [
+      actionFor(fixture, 0, 1, 'role-block'),
+      actionFor(fixture, 1, 0, 'role-block'),
+    ])
+    const sharedTarget = createCollectedNightActions(fixture.game, [
+      actionFor(fixture, 0, 2, 'role-block'),
+      actionFor(fixture, 1, 2, 'role-block'),
+    ])
+
+    expect(mutual.ok).toBe(true)
+    expect(sharedTarget.ok).toBe(true)
+    if (!mutual.ok) throw new Error('Expected mutual Consort actions to be collected.')
+    expect(mutual.value.actions.every((action) => !('effect' in action))).toBe(true)
+    expect(mutual.value.actions.every((action) => !('blocked' in action))).toBe(true)
   })
 
   it('canonicalises manually constructed submissions to intent fields only', () => {
@@ -226,7 +286,11 @@ describe('night-action structural validation', () => {
   it('validates a complete batch, rejects duplicates and omissions, and freezes the result', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
-      { phase: 'night-action-collection', nightNumber: 1 },
+      {
+        phase: 'night-action-collection',
+        nightNumber: 1,
+        settings: { allowFirstNightKills: true },
+      },
     )
     const actions = [actionFor(fixture, 0, 1, 'attack'), actionFor(fixture, 1, 0, 'protect')]
     const result = createCollectedNightActions(fixture.game, actions)
@@ -284,6 +348,64 @@ describe('night-action structural validation', () => {
         actionFor(fixture, 2, 0, 'protect'),
       ]),
     ).toMatchObject({ ok: false, error: { type: 'ROLE_HAS_NO_NIGHT_ACTION' } })
+  })
+
+  it('excludes first-night killing roles from batch requirements and rejects fabricated actions', () => {
+    const roles = [
+      { roleId: ROLE_IDS.godfather },
+      { roleId: ROLE_IDS.serialKiller },
+      { roleId: ROLE_IDS.citizen },
+    ]
+    const disabledFirstNight = createNightFixture(roles, {
+      phase: 'night-action-collection',
+      nightNumber: 1,
+    })
+
+    expect(createCollectedNightActions(disabledFirstNight.game, [])).toEqual({
+      ok: true,
+      value: {
+        gameId: disabledFirstNight.game.id,
+        nightNumber: 1,
+        actions: [],
+      },
+    })
+    expect(
+      createCollectedNightActions(disabledFirstNight.game, [
+        actionFor(disabledFirstNight, 0, 1, 'attack'),
+      ]),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'UNEXPECTED_ACTION', actorRoleInstanceId: 'role-instance-1' },
+    })
+    expect(
+      createCollectedNightActions(disabledFirstNight.game, [
+        actionFor(disabledFirstNight, 1, 0, 'attack'),
+      ]),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'UNEXPECTED_ACTION', actorRoleInstanceId: 'role-instance-2' },
+    })
+
+    for (const fixture of [
+      createNightFixture(roles, {
+        phase: 'night-action-collection',
+        nightNumber: 1,
+        settings: { allowFirstNightKills: true },
+      }),
+      createNightFixture(roles, {
+        phase: 'night-action-collection',
+        nightNumber: 2,
+        settings: { allowFirstNightKills: false },
+      }),
+    ]) {
+      const actions = [actionFor(fixture, 0, 1, 'attack'), actionFor(fixture, 1, 0, 'attack')]
+
+      expect(createCollectedNightActions(fixture.game, actions).ok).toBe(true)
+      expect(createCollectedNightActions(fixture.game, actions.slice(0, 1))).toMatchObject({
+        ok: false,
+        error: { type: 'MISSING_REQUIRED_ACTION', actorRoleInstanceId: 'role-instance-2' },
+      })
+    }
   })
 
   it('validates Doctor history identities without rejecting a known target that is now dead', () => {

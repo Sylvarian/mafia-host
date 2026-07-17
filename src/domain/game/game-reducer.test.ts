@@ -31,6 +31,7 @@ function createTestGame(): GameState {
     roleDefinitions: [{ id: participatingRoleId, name: 'Citizen', faction: 'town' }],
     settings: {
       godfatherAndSerialCanKillEachOther: false,
+      godfatherAppearsSuspiciousToSheriff: true,
       doctorCanSelfProtect: false,
       doctorCannotRepeatPreviousTarget: false,
       revealRoleOnDeath: false,
@@ -169,6 +170,8 @@ describe('game reducer', () => {
       nightNumber: 1,
       dayNumber: 0,
     })
+    expect(result.value.state.settings).toEqual(originalState.settings)
+    expect(result.value.state.settings.godfatherAppearsSuspiciousToSheriff).toBe(true)
     expect(result.value.state).not.toBe(originalState)
     expect(JSON.stringify(originalState)).toBe(originalSnapshot)
   })

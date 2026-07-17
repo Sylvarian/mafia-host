@@ -14,6 +14,12 @@ export const GAME_SETTING_OPTIONS: readonly GameSettingOption[] = [
       'Store whether attacks between these two roles can be lethal. Resolution is not implemented yet.',
   },
   {
+    key: 'godfatherAppearsSuspiciousToSheriff',
+    label: 'Godfather appears suspicious to Sheriff',
+    description:
+      'When enabled, the Sheriff sees the Godfather as suspicious. A framed Godfather appears suspicious regardless of this setting.',
+  },
+  {
     key: 'doctorCanSelfProtect',
     label: 'Doctor can self-protect',
     description: 'Allow each Doctor to choose themselves as a protection target.',

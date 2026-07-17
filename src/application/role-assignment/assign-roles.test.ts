@@ -14,6 +14,7 @@ import type { RoleAssignmentIdentitySource } from './identity-source.ts'
 
 const settings: GameSettings = {
   godfatherAndSerialCanKillEachOther: true,
+  godfatherAppearsSuspiciousToSheriff: false,
   doctorCanSelfProtect: true,
   doctorCannotRepeatPreviousTarget: false,
   revealRoleOnDeath: true,
@@ -139,6 +140,7 @@ describe('role assignment and active game creation', () => {
     })
     expect(result.value.settings).toEqual(setup.settings)
     expect(result.value.settings).not.toBe(setup.settings)
+    expect(result.value.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
     expect(validateGameState(result.value)).toEqual({ ok: true, value: result.value })
 
     for (const player of result.value.players) {

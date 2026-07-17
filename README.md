@@ -9,14 +9,19 @@ physical role and result cards.
 Phase 4 — Night action collection — is implemented. After the Phase 3 physical distribution is
 confirmed, the host deliberately begins the first night, gives close-eyes instructions, privately
 reviews the living Mafia, and collects one target from every living acting role instance in an
-explicit physical wake order. Duplicate copies act separately. The host can move backward, replace
-a target, review every action, edit from review, and finalise one immutable collected-action batch.
+explicit physical wake order. When first-night killing is disabled, living Godfathers and Serial
+Killers are omitted from action collection while the Godfather remains in the Mafia overview.
+Duplicate copies act separately. The host can move backward, replace a target, review every action,
+edit from review, and finalise one immutable collected-action batch.
 
 Phase 4 records intent only. Finalisation leaves the authoritative `GameState` in
 `night-action-collection`; it does not enter `night-resolution`, apply role blocks, frames,
 protections, attacks, deaths, visits, investigation results, conversions, or victory checks. The
-`allowFirstNightKills` and `godfatherAndSerialCanKillEachOther` settings therefore do not reject
-attack target collection; their configured effects remain Phase 5 work tied to R-001 and R-002.
+`godfatherAndSerialCanKillEachOther` never rejects mutual target collection on nights when the
+roles act; its lethal effect remains Phase 5 work. The
+`godfatherAppearsSuspiciousToSheriff` setting is stored through setup and active-game creation but
+does not produce a Sheriff result before Phase 5. Consort-on-Consort targets remain valid intent;
+Consort immunity is also deferred to Phase 5.
 
 Executioner role instances may still be distributed, but their target remains unset because target
 eligibility is unresolved under R-008. Any living Executioner with a null target blocks first-night

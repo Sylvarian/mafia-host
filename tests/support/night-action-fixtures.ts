@@ -21,6 +21,7 @@ export type NightFixtureRole = Readonly<{
 
 const defaultSettings: GameSettings = {
   godfatherAndSerialCanKillEachOther: false,
+  godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: false,
   revealRoleOnDeath: false,

@@ -103,7 +103,7 @@ describe('night runner host UI', () => {
         { roleId: ROLE_IDS.investigator, name: 'Indigo' },
         { roleId: ROLE_IDS.detective, name: 'Jules' },
       ],
-      { settings: { doctorCanSelfProtect: true } },
+      { settings: { doctorCanSelfProtect: true, allowFirstNightKills: true } },
     )
     render(<NightHarness fixture={fixture} />)
 
@@ -199,7 +199,9 @@ describe('night runner host UI', () => {
     ]
     const disabledView = render(
       <NightHarness
-        fixture={createNightFixture(roles, { settings: { doctorCanSelfProtect: false } })}
+        fixture={createNightFixture(roles, {
+          settings: { doctorCanSelfProtect: false, allowFirstNightKills: true },
+        })}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
@@ -212,7 +214,9 @@ describe('night runner host UI', () => {
 
     render(
       <NightHarness
-        fixture={createNightFixture(roles, { settings: { doctorCanSelfProtect: true } })}
+        fixture={createNightFixture(roles, {
+          settings: { doctorCanSelfProtect: true, allowFirstNightKills: true },
+        })}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
@@ -253,5 +257,61 @@ describe('night runner host UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish Collecting Night Actions' }))
     expect(screen.getByRole('heading', { name: 'Night actions collected' })).toHaveFocus()
     expect(screen.getByText(/0 actions recorded as intent/i)).toBeVisible()
+  })
+
+  it('skips first-night killing controls while retaining the private Godfather overview', () => {
+    render(
+      <NightHarness
+        fixture={createNightFixture([
+          { roleId: ROLE_IDS.godfather, name: 'Gina' },
+          { roleId: ROLE_IDS.serialKiller, name: 'Sam' },
+          { roleId: ROLE_IDS.sheriff, name: 'Shae' },
+        ])}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    const mafiaOverview = screen.getByRole('list', { name: 'Living Mafia overview' })
+    expect(within(mafiaOverview).getByText('Gina')).toBeVisible()
+    expect(within(mafiaOverview).getByText('Godfather')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(screen.getByText('Ask the Mafia to close their eyes.')).toBeVisible()
+    expect(screen.queryByRole('group', { name: 'Targets for Godfather' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(screen.getByRole('heading', { name: 'Collect Sheriff action for Shae' })).toBeVisible()
+    expect(screen.queryByRole('group', { name: 'Targets for Serial Killer' })).toBeNull()
+  })
+
+  it('keeps another Consort enabled as a target without claiming a block was resolved', () => {
+    render(
+      <NightHarness
+        fixture={createNightFixture([
+          { roleId: ROLE_IDS.godfather },
+          { roleId: ROLE_IDS.consort, name: 'Connie' },
+          { roleId: ROLE_IDS.consort, name: 'Cora' },
+          { roleId: ROLE_IDS.doctor },
+        ])}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(
+      screen.getByRole('heading', { name: 'Collect Consort 1 action for Connie' }),
+    ).toBeVisible()
+
+    const consortOneTargets = screen.getByRole('group', { name: 'Targets for Consort 1' })
+    const consortTwoTarget = within(consortOneTargets).getByRole('button', {
+      name: 'Cora, alive',
+    })
+    expect(consortTwoTarget).toBeEnabled()
+    fireEvent.click(consortTwoTarget)
+    confirmTarget()
+
+    const consortTwoTargets = screen.getByRole('group', { name: 'Targets for Consort 2' })
+    expect(within(consortTwoTargets).getByRole('button', { name: 'Connie, alive' })).toBeEnabled()
+    expect(screen.queryByText(/has been blocked|was blocked/i)).toBeNull()
   })
 })

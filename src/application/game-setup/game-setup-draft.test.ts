@@ -28,6 +28,7 @@ describe('game setup draft', () => {
     expect(draft.roleCounts.every((roleCount) => roleCount.count === 0)).toBe(true)
     expect(draft.settings).toEqual({
       godfatherAndSerialCanKillEachOther: false,
+      godfatherAppearsSuspiciousToSheriff: true,
       doctorCanSelfProtect: false,
       doctorCannotRepeatPreviousTarget: false,
       revealRoleOnDeath: false,

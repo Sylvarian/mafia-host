@@ -15,6 +15,8 @@ roster order.
 Phase 4 adds immutable night-action kinds, submitted action identity, per-role-instance structural
 target validation, complete-batch validation, and frozen collected batches. The role registry now
 contains immutable collection metadata and explicit physical order, but no executable callbacks or
-effect logic. Doctor self/repeat rules are validated centrally. Attack intent is accepted without
-interpreting first-night-kill or Godfather/Serial mutual-kill settings. Resolution, visits, results,
-deaths, conversion, voting, and win evaluation remain later-phase work.
+effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Godfather and
+Serial Killer actors are excluded from collection requirements. Mutual Godfather/Serial targets and
+Consort-on-Consort targets remain structurally valid on nights when those actors act. Resolution,
+visits, blocks, immunity, results, deaths, conversion, voting, and win evaluation remain later-phase
+work.

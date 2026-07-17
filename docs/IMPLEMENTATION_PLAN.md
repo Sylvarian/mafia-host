@@ -287,7 +287,7 @@ Implement target validation:
 
 ### Required rule decisions
 
-- R-002
+- R-002 is decided: omit Godfather and Serial Killer action steps entirely on a disabled first night.
 - Initial physical role order
 
 ### Acceptance criteria
@@ -343,25 +343,22 @@ type NightResolution = {
 
 ### Required rule decisions
 
-- R-001
-- R-003
-- R-004
-- R-005
-- Final permanent investigation groups
+- Implement decided R-001, R-003, R-004, and R-005 exactly as recorded in the rules specification.
+- Use the decided permanent Groups A through D; Group D contains four roles.
 
 ### Tests
 
 At minimum:
 
 - Framed Town appears suspicious.
-- Framed target receives Framer group.
+- Framed target receives Group A.
 - Blocked role produces no ability effect.
 - Blocked player visits nobody.
 - Doctor stops applicable attack.
 - Doctor repeat restriction is per Doctor.
 - Investigator and Consigliere share group logic.
 - Detective sees final successful target.
-- First-night suppression retains visits when enabled by R-002.
+- Disabled first-night Godfather and Serial Killer roles produce no action, visit, or attack attempt.
 - Multiple simultaneous actions resolve independently of collection order.
 
 ### Acceptance criteria
@@ -396,7 +393,7 @@ Build `features/dawn`:
 
 For Investigator/Consigliere:
 
-- Display the exact reusable three-role card to hold up.
+- Display the exact reusable three-or-four-role card to hold up.
 - Do not generate setup-specific groups.
 - Keep result groups stable.
 
@@ -558,7 +555,7 @@ Evaluation must account for:
 
 ### Required rule decisions
 
-- R-001
+- Implement the already-decided R-001 interaction.
 - R-009
 - R-011
 - R-012
@@ -778,8 +775,8 @@ For each phase, instruct Codex to:
 
 Before Phase 5 or later begins, decide:
 
-- R-001 through R-012 in the rules document.
-- The complete permanent Investigator/Consigliere three-role groups.
+- R-006 through R-012 in the rules document; R-001 through R-005 are already decided.
+- No permanent-group decision remains: Groups A through D are authoritative and setup-independent.
 - Whether Serial Killer is definitely included in the first release.
 - Whether vote entry is per player as specified or host-decided manually.
 

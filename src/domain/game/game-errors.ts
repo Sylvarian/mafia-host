@@ -1,5 +1,6 @@
 import type { PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
+import type { InvalidGameSettingError } from './game-settings.ts'
 
 export type InvalidPhaseTransitionError = Readonly<{
   type: 'INVALID_PHASE_TRANSITION'
@@ -75,6 +76,7 @@ export type UnknownRoleReferenceError = Readonly<{
 export type InvalidGameStateError = Readonly<{
   type: 'INVALID_GAME_STATE'
   reason:
+    | InvalidGameSettingError
     | Readonly<{ type: 'INVALID_PHASE'; phase: string }>
     | Readonly<{ type: 'INVALID_COUNTER'; counter: 'day' | 'night'; value: number }>
     | Readonly<{

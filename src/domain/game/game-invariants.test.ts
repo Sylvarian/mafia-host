@@ -61,6 +61,7 @@ const roster: readonly Player[] = [
 ]
 const settings: GameSettings = {
   godfatherAndSerialCanKillEachOther: false,
+  godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: true,
   revealRoleOnDeath: true,
@@ -409,6 +410,37 @@ describe('game invariants', () => {
       error: {
         type: 'INVALID_GAME_STATE',
         reason: { type: 'INVALID_COUNTER', counter: 'day', value: 1.5 },
+      },
+    })
+  })
+
+  it('rejects a missing Godfather Sheriff setting at the active-game boundary', () => {
+    const created = createGame(validInput())
+
+    if (!created.ok) {
+      throw new Error('Expected the test game to be valid.')
+    }
+
+    expect(
+      validateGameState({
+        ...created.value,
+        settings: {
+          godfatherAndSerialCanKillEachOther: false,
+          doctorCanSelfProtect: false,
+          doctorCannotRepeatPreviousTarget: true,
+          revealRoleOnDeath: true,
+          allowFirstNightKills: false,
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'INVALID_GAME_SETTING',
+          setting: 'godfatherAppearsSuspiciousToSheriff',
+          value: undefined,
+        },
       },
     })
   })

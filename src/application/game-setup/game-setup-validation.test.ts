@@ -12,7 +12,11 @@ import {
   togglePlayerParticipation,
   type GameSetupDraft,
 } from './game-setup-draft.ts'
-import { inspectGameSetupDraft, validateGameSetupDraft } from './game-setup-validation.ts'
+import {
+  inspectGameSetupDraft,
+  validateGameSetupDraft,
+  type GameSetupDraftCandidate,
+} from './game-setup-validation.ts'
 
 describe('game setup validation', () => {
   it('reports no participants and no Mafia for the initial draft', () => {
@@ -121,6 +125,34 @@ describe('game setup validation', () => {
     const validation = inspectGameSetupDraft(invalidDraft)
 
     expect(validation.errors).toEqual([{ type: 'INVALID_PLAYER_ID', playerId: '   ' }])
+  })
+
+  it('rejects a manually malformed setting instead of treating a missing value as false', () => {
+    const initial = createInitialGameSetupDraft()
+    const malformedDraft: GameSetupDraftCandidate = {
+      ...initial,
+      settings: {
+        godfatherAndSerialCanKillEachOther: false,
+        doctorCanSelfProtect: false,
+        doctorCannotRepeatPreviousTarget: false,
+        revealRoleOnDeath: false,
+        allowFirstNightKills: false,
+      },
+    }
+
+    expect(inspectGameSetupDraft(malformedDraft).errors).toContainEqual({
+      type: 'INVALID_GAME_SETTING',
+      setting: 'godfatherAppearsSuspiciousToSheriff',
+      value: undefined,
+    })
+    const result = validateGameSetupDraft(malformedDraft)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('Expected malformed settings to fail validation.')
+    expect(result.error).toContainEqual({
+      type: 'INVALID_GAME_SETTING',
+      setting: 'godfatherAppearsSuspiciousToSheriff',
+      value: undefined,
+    })
   })
 
   it('creates an immutable validated setup with participating players only', () => {

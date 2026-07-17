@@ -13,8 +13,9 @@ invariants, and owns the unassigned/distributing/confirmed card workflow. Reassi
 fresh identities and clears delivery marks without mutating the previous game. Expected failures
 remain structured until the feature boundary.
 
-All five settings begin as `false` only as provisional form defaults. The specification does not
-yet designate authoritative defaults, and these initial values do not resolve any open rule.
+The setup owns all six settings. `godfatherAppearsSuspiciousToSheriff` has the authoritative default
+`true`; the other five current form defaults are `false`. Validation copies every selected boolean
+without treating missing values as disabled.
 
 Executioner targets remain `null` because R-008 is unresolved. Confirming physical distribution
 does not invoke a phase transition or enter night-action collection.
@@ -25,4 +26,6 @@ bounded navigation, correction, review, and finalisation. It uses the generic Ph
 inside the begin-night use case; features never dispatch `ADVANCE_PHASE`. Participant names are an
 immutable presentation snapshot from confirmed setup, while `GameState` remains authoritative for
 phase, assignments, alive state, settings, and counters. Finalisation produces a domain-validated
-batch and deliberately leaves the game in `night-action-collection`.
+batch and deliberately leaves the game in `night-action-collection`. The sequence and batch share
+the domain collection-eligibility rule that omits Godfather and Serial Killer actors from a disabled
+first night while retaining all living Mafia in the private overview.

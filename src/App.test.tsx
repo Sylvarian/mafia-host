@@ -44,29 +44,37 @@ describe('Phase 2 through Phase 4 host workflow', () => {
   it('configures every documented game setting with an explicit value', () => {
     render(<App />)
 
-    const settingNames = [
-      'Godfather and Serial Killer can kill each other',
-      'Doctor can self-protect',
-      'Doctor cannot repeat the previous target',
-      'Reveal role on death',
-      'Allow first-night kills',
-    ]
+    const settingDefaults = [
+      ['Godfather and Serial Killer can kill each other', false],
+      ['Godfather appears suspicious to Sheriff', true],
+      ['Doctor can self-protect', false],
+      ['Doctor cannot repeat the previous target', false],
+      ['Reveal role on death', false],
+      ['Allow first-night kills', false],
+    ] as const
 
-    for (const [index, settingName] of settingNames.entries()) {
+    for (const [settingName, enabledByDefault] of settingDefaults) {
       const checkbox = screen.getByRole('checkbox', { name: new RegExp(settingName, 'i') })
-      expect(checkbox).not.toBeChecked()
+      expect(checkbox).toHaveProperty('checked', enabledByDefault)
+    }
+
+    const sheriffSetting = screen.getByRole('checkbox', {
+      name: /Godfather appears suspicious to Sheriff/i,
+    })
+    fireEvent.click(sheriffSetting)
+    expect(sheriffSetting).not.toBeChecked()
+
+    for (const [settingName, enabledByDefault] of settingDefaults) {
+      if (enabledByDefault) continue
+
+      const checkbox = screen.getByRole('checkbox', { name: new RegExp(settingName, 'i') })
       fireEvent.click(checkbox)
       expect(checkbox).toBeChecked()
-      expect(screen.getAllByText('Enabled')).toHaveLength(index + 1)
-
-      for (const untouchedSettingName of settingNames.slice(index + 1)) {
-        expect(
-          screen.getByRole('checkbox', { name: new RegExp(untouchedSettingName, 'i') }),
-        ).not.toBeChecked()
-      }
+      expect(sheriffSetting).not.toBeChecked()
     }
 
     expect(screen.getAllByText('Enabled')).toHaveLength(5)
+    expect(screen.getAllByText('Disabled')).toHaveLength(1)
   })
 
   it('reviews the exact validated setup and preserves the draft when returning before assignment', () => {
@@ -80,6 +88,9 @@ describe('Phase 2 through Phase 4 host workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
     fireEvent.click(screen.getByRole('checkbox', { name: /Reveal role on death/i }))
     fireEvent.click(screen.getByRole('checkbox', { name: /Doctor can self-protect/i }))
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /Godfather appears suspicious to Sheriff/i }),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
 
     expect(screen.getByRole('heading', { name: 'Setup prepared' })).toBeVisible()
@@ -92,6 +103,11 @@ describe('Phase 2 through Phase 4 host workflow', () => {
       screen.getByText(/No active game exists until you deliberately assign roles/),
     ).toBeVisible()
     expect(screen.getByRole('button', { name: 'Assign Roles' })).toBeEnabled()
+    const preparedSheriffSetting = screen
+      .getByText('Godfather appears suspicious to Sheriff')
+      .closest('div')
+    if (preparedSheriffSetting === null) throw new Error('Expected the prepared setting row.')
+    expect(within(preparedSheriffSetting).getByText('Disabled')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to setup' }))
 
@@ -102,6 +118,9 @@ describe('Phase 2 through Phase 4 host workflow', () => {
     expect(screen.getByRole('spinbutton', { name: 'Citizen count' })).toHaveValue(1)
     expect(screen.getByRole('checkbox', { name: /Reveal role on death/i })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: /Doctor can self-protect/i })).toBeChecked()
+    expect(
+      screen.getByRole('checkbox', { name: /Godfather appears suspicious to Sheriff/i }),
+    ).not.toBeChecked()
     expect(
       screen.getByRole('checkbox', { name: 'Casey (player-3) participation' }),
     ).not.toBeChecked()
@@ -293,6 +312,18 @@ describe('Phase 2 through Phase 4 host workflow', () => {
       gameIdRequestCount: 0,
       roleInstanceIdRequestCount: 0,
     })
+
+    const sheriffSetting = screen.getByRole('checkbox', {
+      name: /Godfather appears suspicious to Sheriff/i,
+    })
+    expect(sheriffSetting).toBeChecked()
+    fireEvent.click(sheriffSetting)
+    view.rerender(
+      <StrictMode>
+        <GameSetup roleAssignmentDependencies={dependencies} />
+      </StrictMode>,
+    )
+    expect(sheriffSetting).not.toBeChecked()
 
     addPlayer('Alice')
     fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))

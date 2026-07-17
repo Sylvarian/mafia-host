@@ -88,6 +88,8 @@ function formatDifference(difference: number): string {
 
 function formatValidationError(error: GameSetupValidationError): string {
   switch (error.type) {
+    case 'INVALID_GAME_SETTING':
+      return `The ${error.setting} setting must have an explicit Enabled or Disabled value.`
     case 'INVALID_PLAYER_ID':
       return 'Every roster entry must have a non-empty stable player ID.'
     case 'INVALID_PLAYER_NAME':
@@ -118,6 +120,8 @@ function formatValidationError(error: GameSetupValidationError): string {
 
 function getValidationErrorKey(error: GameSetupValidationError): string {
   switch (error.type) {
+    case 'INVALID_GAME_SETTING':
+      return `${error.type}-${error.setting}`
     case 'INVALID_PLAYER_ID':
     case 'INVALID_PLAYER_NAME':
     case 'DUPLICATE_PLAYER_ID':

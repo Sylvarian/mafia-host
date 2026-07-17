@@ -393,11 +393,26 @@ export function finaliseNightActionCollection(
     return invalidWorkflowState('finalise', workflow.status)
   }
 
-  const missingRoleInstanceIds = workflow.steps
-    .filter(
-      (step): step is Extract<NightSequenceStep, Readonly<{ type: 'actor-action' }>> =>
-        step.type === 'actor-action',
-    )
+  const requiredActorSteps = workflow.steps.filter(
+    (step): step is Extract<NightSequenceStep, Readonly<{ type: 'actor-action' }>> =>
+      step.type === 'actor-action',
+  )
+  const requiredRoleInstanceIds = new Set(
+    requiredActorSteps.map((step) => step.actorRoleInstanceId),
+  )
+  const unexpectedAction = workflow.submittedActions.find(
+    (action) => !requiredRoleInstanceIds.has(action.actorRoleInstanceId),
+  )
+
+  if (unexpectedAction !== undefined) {
+    return fail({
+      type: 'UNEXPECTED_ACTION',
+      actorPlayerId: unexpectedAction.actorPlayerId,
+      actorRoleInstanceId: unexpectedAction.actorRoleInstanceId,
+    })
+  }
+
+  const missingRoleInstanceIds = requiredActorSteps
     .filter(
       (step) =>
         !workflow.submittedActions.some(

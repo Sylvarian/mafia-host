@@ -20,9 +20,10 @@ export type GameState = Readonly<{
 export type GamePlayerCandidate = Readonly<Omit<GamePlayer, 'role'> & { role: RoleInstance | null }>
 
 export type GameStateCandidate = Readonly<
-  Omit<GameState, 'phase' | 'players' | 'nightNumber' | 'dayNumber'> & {
+  Omit<GameState, 'phase' | 'players' | 'settings' | 'nightNumber' | 'dayNumber'> & {
     phase: string
     players: readonly GamePlayerCandidate[]
+    settings: unknown
     nightNumber: number
     dayNumber: number
   }

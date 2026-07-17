@@ -152,9 +152,24 @@ The next-game setup includes these settings.
 
 Controls whether the Godfather's attack may kill the Serial Killer and whether the Serial Killer's attack may kill the Godfather.
 
-The exact disabled behaviour must be selected in rule decision **R-001**.
+When disabled:
 
-### 6.2 Doctor self-protection
+- Godfather and Serial Killer remain valid targets for one another.
+- Their actions are collected normally on nights when they are allowed to act.
+- The attacker still visits the selected target during future night resolution.
+- The attack has no lethal effect on the targeted Godfather or Serial Killer.
+
+When enabled, their attacks resolve normally during future night resolution.
+
+### 6.2 Godfather Sheriff detection
+
+`godfatherAppearsSuspiciousToSheriff: boolean`
+
+Default: `true`.
+
+When enabled, an unframed Godfather appears suspicious to the Sheriff. When disabled, an unframed Godfather appears not suspicious. A framed Godfather appears suspicious regardless of this setting.
+
+### 6.3 Doctor self-protection
 
 `doctorCanSelfProtect: boolean`
 
@@ -162,7 +177,7 @@ When disabled, a Doctor cannot select themselves.
 
 This restriction applies separately to each Doctor copy.
 
-### 6.3 Doctor repeat-target restriction
+### 6.4 Doctor repeat-target restriction
 
 `doctorCannotRepeatPreviousTarget: boolean`
 
@@ -174,7 +189,7 @@ Example:
 - Doctor 2 protected Ben last night and cannot protect Ben tonight.
 - Doctor 1 may protect Ben even if Doctor 2 protected Ben previously.
 
-### 6.4 Reveal roles on death
+### 6.5 Reveal roles on death
 
 `revealRoleOnDeath: boolean`
 
@@ -182,18 +197,19 @@ When enabled, the morning or execution announcement publicly includes the dead p
 
 When disabled, the host still sees the actual role, but the public announcement contains only the player's name and death information.
 
-### 6.5 First-night killing
+### 6.6 First-night killing
 
 `allowFirstNightKills: boolean`
 
-Recommended default behaviour when disabled:
+When disabled on night one:
 
-- Killing roles still select targets.
-- Visits are still recorded for Detective results.
-- Kill effects are suppressed for that first night.
-- Non-killing abilities still resolve normally.
+- Every living Godfather and Serial Killer is skipped.
+- They are not woken, receive no actor-action step, select no target, submit no action, appear in no action review, and are not required by final batch validation.
+- They make no visit and produce no attack attempt.
+- Living Godfathers remain visible in the private Mafia overview.
+- Framer, Consort, Consigliere, and all applicable Town roles continue acting normally.
 
-This recommendation requires confirmation in **R-002**.
+On night two and later, Godfather and Serial Killer act normally regardless of this setting. When enabled, they also act normally on night one. No fake skipped action or null-target action is created.
 
 ---
 
@@ -208,31 +224,35 @@ This recommendation requires confirmation in **R-002**.
 - Normally acts once per night.
 - Attack can be prevented by applicable Doctor protection.
 - Interaction with Serial Killer depends on game settings.
-- Sheriff treatment and Investigator group must be explicitly configured.
+- Sheriff treatment follows `godfatherAppearsSuspiciousToSheriff`; framing always makes the Godfather appear suspicious.
+- Canonical investigation group: Group A.
 
 ### Framer
 
 - Faction: Mafia
 - Night ability: Select one living player to frame for the current night.
-- A framed non-Mafia target appears Mafia/suspicious to the Sheriff.
-- The framed target receives the Framer's fixed three-role investigation group when checked by Investigator or Consigliere, unless a different rule is later selected.
+- A player framed during the current night appears suspicious to the Sheriff.
+- A framed target returns permanent investigation Group A when checked by Investigator or Consigliere.
+- Framing does not change the target's actual role or faction.
 - Framing expires after the night's investigation results are resolved.
 
 ### Consort
 
 - Faction: Mafia
 - Night ability: Select one living player to role-block.
-- A role-blocked player cannot successfully use their night ability.
-- Whether a blocked player counts as visiting nobody is defined in Section 11.
-- Role-block immunity, blocking killing roles, and mutual blocking require confirmation in **R-003**.
+- May target any living player other than themselves, including Godfather, Serial Killer, Doctor, or another Consort.
+- Multiple Consorts may target the same eligible player.
+- Consort actions are collected and reviewed normally; collection does not calculate a blocking effect.
+- During future Phase 5 resolution, Consorts are immune to role-block effects. A Consort targeting another Consort still visits, but the target is not blocked and may perform their submitted action.
+- If two Consorts target one another, both visits occur and neither is blocked.
+- No other currently implemented role has role-block immunity.
 
 ### Consigliere (`consig`)
 
 - Faction: Mafia
 - Night ability: Investigate one living player.
-- Receives the target's fixed three-role investigation group.
+- Receives the target's permanent investigation group.
 - Uses the same permanent role groups as the Town Investigator.
-- The group contains the target's actual apparent role plus two fixed alternatives.
 - Each role belongs to exactly one permanent group.
 - Groups do not change based on which roles are present in a particular game.
 
@@ -248,9 +268,9 @@ This recommendation requires confirmation in **R-002**.
   - Appears suspicious
   - Appears not suspicious
   - No result
-- Mafia and Serial Killer normally appear suspicious.
-- A framed non-Mafia player appears suspicious.
-- Godfather detection requires confirmation in **R-004**.
+- Serial Killer and non-Godfather Mafia appear suspicious.
+- An unframed Godfather's result follows `godfatherAppearsSuspiciousToSheriff`.
+- A player framed during the current night appears suspicious regardless of actual role or the Godfather setting.
 
 ### Detective
 
@@ -265,9 +285,9 @@ This recommendation requires confirmation in **R-002**.
 
 - Faction: Town
 - Night ability: Investigate one living player.
-- Receives one permanent three-role group.
+- Receives one permanent three-or-four-role group.
 - The host communicates the result using a reusable physical paper/card.
-- The same three roles always appear together across all games.
+- The same group roles always appear together across all games.
 - Players may learn these groups over repeated games.
 - It is acceptable for one or two listed alternatives to be absent from the current setup.
 
@@ -286,7 +306,10 @@ If any of those three roles is investigated, the same result card is shown.
 - Protection can prevent Mafia and/or Serial Killer attacks according to the adopted rules.
 - Self-protection and repeat-target restrictions are configurable.
 - Multiple Doctors act independently.
-- Whether multiple attacks consume protection or are all prevented requires confirmation in **R-005**.
+- One successful, unblocked protection protects the selected player from every ordinary Godfather and Serial Killer attack during that night.
+- Multiple Doctors may protect the same player, but additional protections are not required to stop multiple ordinary attacks.
+
+Example: if the Godfather and Serial Killer both attack Alice and one unblocked Doctor protects Alice, neither ordinary attack kills Alice.
 
 ### Mayor
 
@@ -352,34 +375,68 @@ Investigator and Consigliere use the same permanent groups.
 Requirements:
 
 - Every investigable role belongs to exactly one canonical group.
-- Each group contains exactly three distinct role names.
 - Groups never change between games.
-- The app stores groups as data, not conditional code.
+- Missing roles do not alter or regenerate the cards.
+- Groups A, B, and C contain three roles; Group D contains four roles.
+- Future investigation-card types must support either three or four roles.
+- The app stores groups in one authoritative data registry, not conditional or setup-dependent code.
 - The app shows the host the exact result card to hold up.
-- Missing roles do not cause groups to be regenerated.
-- A framed target returns the Framer group's result unless later changed by an explicit rule.
+- A player framed during the current night temporarily returns Group A while retaining their actual role and faction.
 
-Example data:
+### Group A
+
+- Godfather
+- Doctor
+- Sheriff
+
+### Group B
+
+- Framer
+- Detective
+- Mayor
+
+### Group C
+
+- Consort
+- Investigator
+- Executioner
+
+### Group D
+
+- Consigliere
+- Serial Killer
+- Jester
+- Citizen
+
+Canonical mapping:
+
+| Actual role | Canonical group |
+|---|---|
+| Godfather | Group A |
+| Doctor | Group A |
+| Sheriff | Group A |
+| Framer | Group B |
+| Detective | Group B |
+| Mayor | Group B |
+| Consort | Group C |
+| Investigator | Group C |
+| Executioner | Group C |
+| Consigliere | Group D |
+| Serial Killer | Group D |
+| Jester | Group D |
+| Citizen | Group D |
+
+The eventual immutable data type must permit both card sizes, for example:
 
 ```ts
-type InvestigationGroup = {
+type InvestigationGroup = Readonly<{
   id: string;
   label: string;
-  roleIds: [RoleId, RoleId, RoleId];
-};
+  roleIds: readonly [RoleId, RoleId, RoleId] | readonly [RoleId, RoleId, RoleId, RoleId];
+}>;
 ```
 
-Example:
-
-```ts
-{
-  id: "group-a",
-  label: "Godfather / Doctor / Sheriff",
-  roleIds: ["godfather", "doctor", "sheriff"]
-}
-```
-
-The final group list must be supplied before Investigator or Consigliere is considered complete.
+Cards are never dynamically generated from the selected game setup.
 
 ---
 
@@ -472,6 +529,8 @@ Duplicate copies are called by ordinal:
 
 The host selects each target in the app.
 
+On night one, when `allowFirstNightKills` is disabled, every living Godfather is omitted from the actor-action sequence. The private Mafia overview still lists those living Godfathers, and the remaining living Mafia roles act in their normal order.
+
 After all living Mafia actions have been collected, the host tells Mafia to close their eyes.
 
 The exact physical procedure for multiple Mafia members is a host concern. The app must never reveal Mafia identities publicly.
@@ -489,6 +548,8 @@ Recommended collection order:
 5. Detective copies
 
 However, the rules engine must not assume that physical collection order equals resolution priority.
+
+On night one, when `allowFirstNightKills` is disabled, every living Serial Killer is omitted from this sequence. On later nights, or when the setting is enabled, living Serial Killers act normally.
 
 For each actor:
 
@@ -580,7 +641,7 @@ It was a quiet night. Nobody died.
 
 The source text contained “quiet now”; this specification assumes “quiet night.”
 
-If first-night kills are disabled, the dawn announcement must not report suppressed attack deaths.
+If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
 
 ---
 
@@ -771,6 +832,7 @@ type GamePlayer = {
 
 type GameSettings = {
   godfatherAndSerialCanKillEachOther: boolean;
+  godfatherAppearsSuspiciousToSheriff: boolean;
   doctorCanSelfProtect: boolean;
   doctorCannotRepeatPreviousTarget: boolean;
   revealRoleOnDeath: boolean;
@@ -806,13 +868,13 @@ Minimum scenarios:
 - Doctor cannot self-protect when disabled.
 - Doctor cannot repeat their own previous target when enabled.
 - Doctor 1 and Doctor 2 track previous targets independently.
-- Consort blocks a role.
+- Consort targeting another Consort is collected normally; future resolution leaves the targeted Consort unblocked.
 - Blocked target visits nobody.
 - Framed Town appears suspicious to Sheriff.
-- Framed target returns Framer investigation group.
+- Framed target returns Group A for Investigator and Consigliere.
 - Consigliere and Investigator return the same group.
 - Detective sees final visit.
-- First-night attack is suppressed when configured.
+- First-night Godfather and Serial Killer actors are omitted when configured.
 - Godfather and Serial mutual attack setting behaves correctly.
 - Mayor reveal permanently changes vote weight to 3.
 - Jester wins when executed but not when killed overnight.
@@ -843,40 +905,33 @@ Minimum scenarios:
 
 ---
 
-## 22. Unresolved rule decisions
+## 22. Rule decisions
 
-These must be answered and then incorporated into this file.
+R-001 through R-005 are decided and authoritative. R-006 and later decisions remain unresolved until explicitly updated here.
 
 ### R-001 — Mutual killing disabled
 
-When Godfather/Serial mutual killing is disabled:
-
-- Are they invalid targets for each other?
-- Or may they target each other, with the attack failing?
+**Status: Decided.** Godfather and Serial Killer may target one another regardless of `godfatherAndSerialCanKillEachOther`. When the setting is disabled, the attacker still visits during future resolution but the attack has no lethal effect on the targeted Godfather or Serial Killer. When enabled, the attack resolves normally.
 
 ### R-002 — First-night killing disabled
 
-Confirm whether killing roles still select targets and create visits while deaths are suppressed.
+**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Godfather and Serial Killer actors are skipped entirely. They have no actor-action step, action, review row, visit, or attack attempt and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Other applicable roles continue acting. Killing roles act normally when the setting is enabled and on night two or later.
 
 ### R-003 — Consort blocking
 
-Confirm:
-
-- Can Consort block Godfather?
-- Can Consort block Serial Killer?
-- Can Consort block another Consort?
-- What happens when two blockers target each other?
-- Do any roles have role-block immunity?
+**Status: Decided.** A Consort may target any living player other than themselves, including another Consort. Actions are collected normally. During future resolution, Consorts are immune to the role-block effect but are still visited. A targeted Consort may perform their submitted action. Two Consorts targeting one another both visit and neither is blocked. Multiple Consorts targeting the same non-Consort cause one blocked state. No other currently implemented role has role-block immunity. No retaliation, automatic death, mutual cancellation, or target rejection is added.
 
 ### R-004 — Godfather Sheriff result
 
-Does Godfather appear suspicious or not suspicious to Sheriff?
+**Status: Decided.** `godfatherAppearsSuspiciousToSheriff` configures the unframed Godfather's result and defaults to `true`. A framed Godfather appears suspicious regardless of the setting.
 
 ### R-005 — Doctor against multiple attacks
 
-If Godfather and Serial Killer attack the same protected player, does one Doctor protection stop both attacks or only one?
+**Status: Decided.** One successful, unblocked Doctor protection protects the selected player from every ordinary Godfather and Serial Killer attack during that night. Additional Doctors are not required to stop multiple ordinary attacks.
 
 ### R-006 — Jester suicide
+
+**Status: Unresolved.**
 
 Confirm:
 
@@ -888,9 +943,13 @@ Confirm:
 
 ### R-007 — Executioner target other death
 
+**Status: Unresolved.**
+
 What happens if the target dies from Jester suicide, another future killing role, or a manual host correction?
 
 ### R-008 — Executioner target eligibility
+
+**Status: Unresolved.**
 
 Can the target be:
 
@@ -902,17 +961,25 @@ Can the target be:
 
 ### R-009 — Serial Killer victory
 
+**Status: Unresolved.**
+
 Define the Serial Killer's exact win condition.
 
 ### R-010 — Trials per day
+
+**Status: Unresolved.**
 
 Can the Town hold multiple trials after acquittals, or only one trial per day?
 
 ### R-011 — Town victory
 
+**Status: Unresolved.**
+
 Confirm whether Town must eliminate both Mafia and Serial Killer.
 
 ### R-012 — Mafia victory count
+
+**Status: Unresolved.**
 
 Define:
 

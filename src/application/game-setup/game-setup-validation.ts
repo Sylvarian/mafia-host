@@ -1,5 +1,9 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
-import type { GameSettings } from '@/domain/game/game-settings.ts'
+import {
+  validateGameSettings,
+  type GameSettings,
+  type InvalidGameSettingError,
+} from '@/domain/game/game-settings.ts'
 import type { PlayerId, RoleId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_REGISTRY } from '@/domain/roles/role-registry.ts'
@@ -8,6 +12,7 @@ import type { GameSetupDraft, RoleCount } from './game-setup-draft.ts'
 import { getParticipatingPlayerCount, getSelectedRoleCount } from './game-setup-draft.ts'
 
 export type GameSetupValidationError =
+  | InvalidGameSettingError
   | Readonly<{ type: 'INVALID_PLAYER_ID'; playerId: PlayerId }>
   | Readonly<{ type: 'INVALID_PLAYER_NAME'; playerId: PlayerId }>
   | Readonly<{ type: 'DUPLICATE_PLAYER_ID'; playerId: PlayerId }>
@@ -37,10 +42,19 @@ export type ValidatedGameSetup = Readonly<{
   settings: GameSettings
 }>
 
-export function inspectGameSetupDraft(draft: GameSetupDraft): GameSetupValidation {
+export type GameSetupDraftCandidate = Readonly<
+  Omit<GameSetupDraft, 'settings'> & { settings: unknown }
+>
+
+export function inspectGameSetupDraft(draft: GameSetupDraftCandidate): GameSetupValidation {
   const participatingPlayerCount = getParticipatingPlayerCount(draft)
   const selectedRoleCount = getSelectedRoleCount(draft)
   const errors: GameSetupValidationError[] = []
+  const settingsResult = validateGameSettings(draft.settings)
+
+  if (!settingsResult.ok) {
+    errors.push(settingsResult.error)
+  }
   const playerIds = new Set<PlayerId>()
   const invalidPlayerIds = new Set<PlayerId>()
   const invalidPlayerNameIds = new Set<PlayerId>()
@@ -135,12 +149,18 @@ export function inspectGameSetupDraft(draft: GameSetupDraft): GameSetupValidatio
 }
 
 export function validateGameSetupDraft(
-  draft: GameSetupDraft,
+  draft: GameSetupDraftCandidate,
 ): DomainResult<ValidatedGameSetup, readonly GameSetupValidationError[]> {
   const validation = inspectGameSetupDraft(draft)
 
   if (!validation.isValid) {
     return fail(validation.errors)
+  }
+
+  const settingsResult = validateGameSettings(draft.settings)
+
+  if (!settingsResult.ok) {
+    return fail([settingsResult.error])
   }
 
   const participatingPlayers = Object.freeze(
@@ -149,7 +169,7 @@ export function validateGameSetupDraft(
   const roleCounts = Object.freeze(
     draft.roleCounts.map((roleCount) => Object.freeze({ ...roleCount })),
   )
-  const settings = Object.freeze({ ...draft.settings })
+  const settings = settingsResult.value
 
   return succeed(
     Object.freeze({

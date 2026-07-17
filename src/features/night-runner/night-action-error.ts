@@ -34,6 +34,8 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return 'This Doctor cannot select the same target they personally selected on the previous night.'
     case 'DUPLICATE_ACTOR_ACTION':
       return 'This role instance has more than one submitted action for the night.'
+    case 'UNEXPECTED_ACTION':
+      return 'This role instance is not expected to act in the current night sequence.'
     case 'MISSING_REQUIRED_ACTION':
       return 'A living acting role is missing its required night action.'
     case 'DUPLICATE_PREVIOUS_TARGET_CONTEXT':

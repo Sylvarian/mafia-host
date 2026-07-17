@@ -5,6 +5,7 @@ import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
 import { fail, succeed, type DomainResult } from './domain-result.ts'
 import type { CreateGameError, GameInvariantError } from './game-errors.ts'
+import { validateGameSettings } from './game-settings.ts'
 import type {
   CreateGameInput,
   GamePlayerCandidate,
@@ -62,6 +63,12 @@ export function validateGameState(
     })
   }
 
+  const settingsResult = validateGameSettings(candidate.settings)
+
+  if (!settingsResult.ok) {
+    return fail({ type: 'INVALID_GAME_STATE', reason: settingsResult.error })
+  }
+
   if (candidate.players.length === 0) {
     return fail({ type: 'NO_PARTICIPATING_PLAYERS' })
   }
@@ -100,7 +107,7 @@ export function validateGameState(
     phase: candidate.phase,
     players: playerResult.value,
     roleDefinitions: roleDefinitionResult.value.definitions,
-    settings: { ...candidate.settings },
+    settings: settingsResult.value,
     nightNumber: candidate.nightNumber,
     dayNumber: candidate.dayNumber,
   })
