@@ -4,10 +4,17 @@ import { GAME_SETTING_OPTIONS } from './game-setting-options.ts'
 
 type PreparedSetupSummaryProps = Readonly<{
   setup: ValidatedGameSetup
+  assignmentErrorMessage: string | null
+  onAssignRoles: () => void
   onReturnToSetup: () => void
 }>
 
-export function PreparedSetupSummary({ setup, onReturnToSetup }: PreparedSetupSummaryProps) {
+export function PreparedSetupSummary({
+  setup,
+  assignmentErrorMessage,
+  onAssignRoles,
+  onReturnToSetup,
+}: PreparedSetupSummaryProps) {
   const selectedRoles = setup.roleCounts.filter((roleCount) => roleCount.count > 0)
 
   return (
@@ -20,9 +27,15 @@ export function PreparedSetupSummary({ setup, onReturnToSetup }: PreparedSetupSu
       </p>
 
       <div className="prepared-setup__notice">
-        <strong>Phase 2 stops here.</strong>
-        <span>No players are linked to roles, and no gameplay state has been created.</span>
+        <strong>Ready for private assignment.</strong>
+        <span>No active game exists until you deliberately assign roles.</span>
       </div>
+
+      {assignmentErrorMessage === null ? null : (
+        <p className="inline-error" role="alert">
+          {assignmentErrorMessage}
+        </p>
+      )}
 
       <div className="prepared-setup__grid">
         <section aria-labelledby="prepared-players-heading">
@@ -67,9 +80,14 @@ export function PreparedSetupSummary({ setup, onReturnToSetup }: PreparedSetupSu
         </dl>
       </section>
 
-      <button type="button" className="button button--secondary" onClick={onReturnToSetup}>
-        Return to setup
-      </button>
+      <div className="prepared-setup__actions">
+        <button type="button" className="button button--secondary" onClick={onReturnToSetup}>
+          Return to setup
+        </button>
+        <button type="button" className="button button--prepare" onClick={onAssignRoles}>
+          Assign Roles
+        </button>
+      </div>
     </section>
   )
 }

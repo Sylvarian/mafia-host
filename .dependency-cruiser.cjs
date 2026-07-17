@@ -48,6 +48,31 @@ module.exports = {
       },
     },
     {
+      name: 'infrastructure-does-not-depend-upward',
+      comment: 'Infrastructure adapters cannot depend on features, shared UI, or other UI code.',
+      severity: 'error',
+      from: { path: '(^|/)src/infrastructure/' },
+      to: { path: '(^|/)src/(?!application/|domain/|infrastructure/)' },
+    },
+    {
+      name: 'infrastructure-only-imports-application-contracts',
+      comment:
+        'Infrastructure may import the narrow application identity contract, not implementations.',
+      severity: 'error',
+      from: { path: '(^|/)src/infrastructure/' },
+      to: {
+        path: '(^|/)src/application/',
+        pathNot: '(^|/)src/application/(role-assignment/)?identity-source[.]ts$',
+      },
+    },
+    {
+      name: 'features-do-not-compose-infrastructure',
+      comment: 'Browser adapters are composed at the application root, not inside feature slices.',
+      severity: 'error',
+      from: { path: '(^|/)src/(features|shared)/' },
+      to: { path: '(^|/)src/infrastructure/' },
+    },
+    {
       name: 'ui-uses-application-api',
       comment: 'UI code must not bypass application APIs to import the domain directly.',
       severity: 'error',

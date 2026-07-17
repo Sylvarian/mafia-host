@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { describe, expect, it } from 'vitest'
+
+import type { RoleAssignmentDependencies } from '@/application/role-assignment/index.ts'
+import { GameSetup } from '@/features/game-setup/index.ts'
+import { SequentialRoleAssignmentIdentitySource } from '../tests/support/sequential-role-assignment-identity-source.ts'
 
 import App from './App.tsx'
 
-describe('Phase 2 host setup workflow', () => {
+describe('Phase 2 and Phase 3 host workflow', () => {
   it('adds players, toggles participation, changes role counts, and shows mismatch feedback', () => {
     render(<App />)
 
@@ -64,7 +69,7 @@ describe('Phase 2 host setup workflow', () => {
     expect(screen.getAllByText('Enabled')).toHaveLength(5)
   })
 
-  it('prepares only a validated setup and preserves the draft when returning', () => {
+  it('reviews the exact validated setup and preserves the draft when returning before assignment', () => {
     render(<App />)
 
     addPlayer('Alice')
@@ -83,11 +88,10 @@ describe('Phase 2 host setup workflow', () => {
     expect(screen.queryByText('Casey')).toBeNull()
     expect(screen.getByText('Godfather')).toBeVisible()
     expect(screen.getByText('Citizen')).toBeVisible()
-    expect(screen.getByText(/No players are linked to roles/)).toBeVisible()
-    expect(screen.queryByRole('button', { name: /assign roles|start game|card given/i })).toBeNull()
     expect(
-      screen.queryByText(/role assignment|active game|assign roles|start game|card given/i),
-    ).toBeNull()
+      screen.getByText(/No active game exists until you deliberately assign roles/),
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Assign Roles' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to setup' }))
 
@@ -102,6 +106,215 @@ describe('Phase 2 host setup workflow', () => {
       screen.getByRole('checkbox', { name: 'Casey (player-3) participation' }),
     ).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Prepare Game' })).toBeEnabled()
+  })
+
+  it('assigns roles privately, numbers duplicates, tracks every card, and stops before Phase 4', () => {
+    render(<App />)
+
+    addPlayer('Alex')
+    addPlayer('Alex')
+    addPlayer('Casey')
+    addPlayer('Dana')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Doctor count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Doctor count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+
+    expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
+    expect(screen.getByText('Godfather')).toBeVisible()
+    expect(screen.getByText('Doctor 1')).toBeVisible()
+    expect(screen.getByText('Doctor 2')).toBeVisible()
+    expect(screen.getByText('Executioner')).toBeVisible()
+    expect(screen.getByText('ID player-1')).toBeVisible()
+    expect(screen.getByText('ID player-2')).toBeVisible()
+    expect(screen.queryByText(/Executioner target:/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /submit night action|resolve night/i })).toBeNull()
+
+    const confirmDistribution = screen.getByRole('button', {
+      name: 'Confirm Role Distribution',
+    })
+    expect(screen.getByText('0 of 4')).toBeVisible()
+    expect(confirmDistribution).toBeDisabled()
+
+    const firstAlexDelivery = screen.getByRole('checkbox', {
+      name: 'Card delivered to Alex (player-1)',
+    })
+    fireEvent.click(firstAlexDelivery)
+    expect(screen.getByText('1 of 4')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Roles' }))
+    const reassignDialog = screen.getByRole('alertdialog', {
+      name: 'Generate a new assignment?',
+    })
+    expect(within(reassignDialog).getByText(/1 card delivery will be cleared/)).toBeVisible()
+    const confirmReassignment = within(reassignDialog).getByRole('button', {
+      name: 'Yes, reassign roles',
+    })
+    expect(confirmReassignment).toHaveFocus()
+    const assignmentList = screen.getByRole('list', { name: 'Private role assignments' })
+    const assignmentBeforeCancellation = assignmentList.textContent
+    fireEvent.click(within(reassignDialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('button', { name: 'Reassign Roles' })).toHaveFocus()
+    expect(assignmentList.textContent).toBe(assignmentBeforeCancellation)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Roles' }))
+    const reopenedReassignDialog = screen.getByRole('alertdialog', {
+      name: 'Generate a new assignment?',
+    })
+    const reopenedConfirmReassignment = within(reopenedReassignDialog).getByRole('button', {
+      name: 'Yes, reassign roles',
+    })
+    fireEvent.click(reopenedConfirmReassignment)
+
+    expect(screen.getByText('0 of 4')).toBeVisible()
+    expect(firstAlexDelivery).not.toBeChecked()
+
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+
+    expect(screen.getByText('4 of 4')).toBeVisible()
+    expect(confirmDistribution).toBeEnabled()
+    fireEvent.click(confirmDistribution)
+
+    expect(screen.getByRole('heading', { name: 'Role distribution complete' })).toBeVisible()
+    expect(screen.getByText('Ready to begin the first night')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Begin First Night — available in Phase 4' }),
+    ).toBeDisabled()
+    expect(screen.getByText(/active game remains in role-distribution/i)).toBeVisible()
+    expect(screen.queryByRole('button', { name: /collect|target|resolve night/i })).toBeNull()
+  })
+
+  it('requires deliberate abandonment before returning an active assignment to setup', () => {
+    render(<App />)
+
+    addPlayer('Alice')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    const abandonButton = screen.getByRole('button', {
+      name: 'Abandon assignment and return to setup',
+    })
+    fireEvent.click(abandonButton)
+
+    const dialog = screen.getByRole('alertdialog', { name: 'Abandon this assignment?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
+    expect(abandonButton).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abandon assignment and return to setup' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon assignment' }))
+
+    expect(screen.getByDisplayValue('Alice')).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Distribute physical role cards' })).toBeNull()
+  })
+
+  it('reassigns directly before delivery and only confirms once delivery has started', () => {
+    render(<App />)
+
+    addPlayer('Alice')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Roles' }))
+    expect(screen.queryByRole('alertdialog', { name: 'Generate a new assignment?' })).toBeNull()
+    expect(screen.getByText('0 of 1')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Card delivered to Alice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Roles' }))
+    expect(screen.getByRole('alertdialog', { name: 'Generate a new assignment?' })).toBeVisible()
+  })
+
+  it('abandons, edits, prepares, and creates a new game only after another explicit assignment', () => {
+    render(<App />)
+
+    addPlayer('Alice')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abandon assignment and return to setup' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon assignment' }))
+
+    addPlayer('Bob')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+
+    expect(screen.getByRole('heading', { name: 'Setup prepared' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Distribute physical role cards' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    expect(screen.getAllByRole('checkbox', { name: /Card delivered to/ })).toHaveLength(2)
+  })
+
+  it('keeps injected adapters idle in Strict Mode and guards repeated assignment actions', () => {
+    let randomRequestCount = 0
+    let gameIdRequestCount = 0
+    let roleInstanceIdRequestCount = 0
+    const sequentialIdentities = new SequentialRoleAssignmentIdentitySource()
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: {
+        next: () => {
+          randomRequestCount += 1
+          return 0
+        },
+      },
+      identitySource: {
+        nextGameId: () => {
+          gameIdRequestCount += 1
+          return sequentialIdentities.nextGameId()
+        },
+        nextRoleInstanceId: () => {
+          roleInstanceIdRequestCount += 1
+          return sequentialIdentities.nextRoleInstanceId()
+        },
+      },
+    }
+    const view = render(
+      <StrictMode>
+        <GameSetup roleAssignmentDependencies={dependencies} />
+      </StrictMode>,
+    )
+
+    view.rerender(
+      <StrictMode>
+        <GameSetup roleAssignmentDependencies={dependencies} />
+      </StrictMode>,
+    )
+    expect({ randomRequestCount, gameIdRequestCount, roleInstanceIdRequestCount }).toEqual({
+      randomRequestCount: 0,
+      gameIdRequestCount: 0,
+      roleInstanceIdRequestCount: 0,
+    })
+
+    addPlayer('Alice')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    const assignButton = screen.getByRole('button', { name: 'Assign Roles' })
+
+    act(() => {
+      assignButton.click()
+      assignButton.click()
+    })
+    expect({ randomRequestCount, gameIdRequestCount, roleInstanceIdRequestCount }).toEqual({
+      randomRequestCount: 0,
+      gameIdRequestCount: 1,
+      roleInstanceIdRequestCount: 1,
+    })
+
+    const reassignButton = screen.getByRole('button', { name: 'Reassign Roles' })
+    act(() => {
+      reassignButton.click()
+      reassignButton.click()
+    })
+    expect({ randomRequestCount, gameIdRequestCount, roleInstanceIdRequestCount }).toEqual({
+      randomRequestCount: 0,
+      gameIdRequestCount: 2,
+      roleInstanceIdRequestCount: 2,
+    })
   })
 
   it('rejects blank names and confirms roster removal', () => {

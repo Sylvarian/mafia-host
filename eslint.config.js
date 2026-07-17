@@ -31,26 +31,28 @@ export default defineConfig([
     },
   },
   {
-    files: ['src/domain/**/*.{ts,tsx}'],
+    files: ['src/{application,domain}/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-globals': ['error', 'globalThis', ...Object.keys(globals.browser)],
       'no-restricted-syntax': [
         'error',
         {
           selector: "MemberExpression[object.name='Math'][property.name='random']",
-          message: 'Domain code must access randomness through RandomSource.',
+          message: 'Domain and application code must access randomness through RandomSource.',
         },
         {
           selector: "MemberExpression[object.name='Math'][computed=true][property.value='random']",
-          message: 'Domain code must access randomness through RandomSource.',
+          message: 'Domain and application code must access randomness through RandomSource.',
         },
         {
           selector: "VariableDeclarator[init.name='Math']",
-          message: 'Do not alias Math in domain code; aliases can bypass the randomness boundary.',
+          message:
+            'Do not alias Math in domain or application code; aliases can bypass the randomness boundary.',
         },
         {
           selector: "AssignmentExpression[right.name='Math']",
-          message: 'Do not alias Math in domain code; aliases can bypass the randomness boundary.',
+          message:
+            'Do not alias Math in domain or application code; aliases can bypass the randomness boundary.',
         },
       ],
     },

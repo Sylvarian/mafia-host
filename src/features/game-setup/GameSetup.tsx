@@ -1,4 +1,17 @@
-import { useReducer } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
+
+import {
+  assignRoleDistribution,
+  confirmRoleDistribution,
+  createRoleDistributionWorkflow,
+  reassignRoleDistribution,
+  setCardDelivered,
+  type ConfirmedRoleDistributionWorkflow,
+  type DistributingRolesWorkflow,
+  type PlayerId,
+  type RoleAssignmentDependencies,
+  type RoleDistributionError,
+} from '@/application/role-assignment/index.ts'
 
 import {
   createGameSetupWorkflow,
@@ -9,6 +22,10 @@ import {
   type RoleId,
 } from '@/application/game-setup/index.ts'
 import { PlayerRoster } from '@/features/roster/index.ts'
+import {
+  getRoleDistributionErrorMessage,
+  RoleDistribution,
+} from '@/features/role-distribution/index.ts'
 
 import { GameSettingsForm } from './GameSettingsForm.tsx'
 import { PreparedSetupSummary } from './PreparedSetupSummary.tsx'
@@ -23,18 +40,94 @@ import {
 
 import './GameSetup.css'
 
-export function GameSetup() {
+type ActiveDistributionWorkflow = DistributingRolesWorkflow | ConfirmedRoleDistributionWorkflow
+
+type DistributionFeatureState =
+  | Readonly<{
+      status: 'not-started'
+      error: RoleDistributionError | null
+    }>
+  | Readonly<{
+      status: 'active'
+      workflow: ActiveDistributionWorkflow
+      error: RoleDistributionError | null
+    }>
+
+type DistributionFeatureAction =
+  | Readonly<{ type: 'WORKFLOW_UPDATED'; workflow: ActiveDistributionWorkflow }>
+  | Readonly<{ type: 'OPERATION_FAILED'; error: RoleDistributionError }>
+  | Readonly<{ type: 'RESET' }>
+
+type GameSetupProps = Readonly<{
+  roleAssignmentDependencies: RoleAssignmentDependencies
+}>
+
+const initialDistributionState: DistributionFeatureState = {
+  status: 'not-started',
+  error: null,
+}
+
+export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
   const [workflow, dispatch] = useReducer(
     reduceGameSetupWorkflow,
     undefined,
     createGameSetupWorkflow,
   )
+  const [distributionState, dispatchDistribution] = useReducer(
+    reduceDistributionFeatureState,
+    initialDistributionState,
+  )
+  const identityOperationPendingRef = useRef(false)
+
+  useEffect(() => {
+    identityOperationPendingRef.current = false
+  }, [distributionState])
 
   if (workflow.status === 'ready') {
+    if (distributionState.status === 'active') {
+      const activeWorkflow = distributionState.workflow
+
+      return (
+        <RoleDistribution
+          workflow={activeWorkflow}
+          error={distributionState.error}
+          onCardDeliveryChange={(playerId: PlayerId, delivered: boolean) => {
+            applyDistributionResult(setCardDelivered(activeWorkflow, playerId, delivered))
+          }}
+          onConfirmDistribution={() => {
+            applyDistributionResult(confirmRoleDistribution(activeWorkflow))
+          }}
+          onReassignRoles={() => {
+            applyIdentityOperation(() =>
+              reassignRoleDistribution(activeWorkflow, roleAssignmentDependencies, true),
+            )
+          }}
+          onAbandonGame={() => {
+            dispatchDistribution({ type: 'RESET' })
+            dispatch({ type: 'RETURN_TO_SETUP' })
+          }}
+        />
+      )
+    }
+
     return (
       <PreparedSetupSummary
         setup={workflow.validatedSetup}
+        assignmentErrorMessage={
+          distributionState.error === null
+            ? null
+            : getRoleDistributionErrorMessage(distributionState.error)
+        }
+        onAssignRoles={() => {
+          applyIdentityOperation(() =>
+            assignRoleDistribution(
+              createRoleDistributionWorkflow(workflow.validatedSetup),
+              roleAssignmentDependencies,
+            ),
+          )
+        }}
         onReturnToSetup={() => {
+          dispatchDistribution({ type: 'RESET' })
           dispatch({ type: 'RETURN_TO_SETUP' })
         }}
       />
@@ -51,6 +144,37 @@ export function GameSetup() {
 
   function setGameSetting(setting: GameSettingKey, value: boolean): void {
     dispatch({ type: 'SET_GAME_SETTING', setting, value })
+  }
+
+  function applyDistributionResult(
+    result:
+      | Readonly<{ ok: true; value: ActiveDistributionWorkflow }>
+      | Readonly<{ ok: false; error: RoleDistributionError }>,
+  ): void {
+    dispatchDistribution(
+      result.ok
+        ? { type: 'WORKFLOW_UPDATED', workflow: result.value }
+        : { type: 'OPERATION_FAILED', error: result.error },
+    )
+  }
+
+  function applyIdentityOperation(
+    operation: () =>
+      | Readonly<{ ok: true; value: ActiveDistributionWorkflow }>
+      | Readonly<{ ok: false; error: RoleDistributionError }>,
+  ): void {
+    if (identityOperationPendingRef.current) {
+      return
+    }
+
+    identityOperationPendingRef.current = true
+
+    try {
+      applyDistributionResult(operation())
+    } catch (error: unknown) {
+      identityOperationPendingRef.current = false
+      throw error
+    }
   }
 
   return (
@@ -97,4 +221,18 @@ export function GameSetup() {
       />
     </div>
   )
+}
+
+function reduceDistributionFeatureState(
+  state: DistributionFeatureState,
+  action: DistributionFeatureAction,
+): DistributionFeatureState {
+  switch (action.type) {
+    case 'WORKFLOW_UPDATED':
+      return { status: 'active', workflow: action.workflow, error: null }
+    case 'OPERATION_FAILED':
+      return { ...state, error: action.error }
+    case 'RESET':
+      return initialDistributionState
+  }
 }

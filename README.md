@@ -6,12 +6,15 @@ physical role and result cards.
 
 ## Current status
 
-Phase 2 — Player roster and game setup UI — is implemented. The host can maintain an in-memory
-roster, choose participants, configure counts for every named role, set all documented game
-settings, and prepare an immutable validated setup for the next phase. The application layer owns
-the single pre-game draft and its validation; the domain owns the authoritative setup-only role
-registry. Role assignment, role instances, active-game creation, abilities, voting, and resolution
-have not started.
+Phase 3 — Role assignment and physical card distribution — is implemented. After preparing an
+immutable Phase 2 setup, the host can create a random private assignment, see stable numbered
+duplicate roles, record every physical card delivery, deliberately reassign before confirmation,
+and finalise distribution only after all cards are handed out. The resulting active `GameState`
+remains in `role-distribution`; Phase 4 night-action collection has not started.
+
+Executioner role instances may be distributed, but their target is explicitly left unset because
+target eligibility remains unresolved under R-008. No night actions, deaths, trials, or victory
+logic are part of the current implementation.
 
 ## Requirements
 
@@ -63,12 +66,18 @@ features/UI
 application
     ↓
 domain
+
+infrastructure adapters
+    ↓
+application/domain contracts
 ```
 
 - `src/domain` owns framework-independent game rules and may depend only on domain code.
 - `src/application` coordinates domain behavior and may depend on domain code.
 - `src/features` owns host workflows and calls application APIs. Slice internals stay private;
   cross-slice access must use an explicit public `index` module.
+- `src/infrastructure` owns browser-specific randomness and identity adapters. They are composed
+  at `App.tsx` and cannot be imported by application or feature internals.
 - `src/shared/ui` is reserved for presentational components reused by at least two independent
   features.
 
@@ -82,12 +91,12 @@ application code, imports from production code into tests, unresolved imports, a
 dependencies. The boundary check runs as part of `npm run lint`. Its architecture test proves
 relative and alias-based forbidden imports fail, permits explicit feature public APIs, and confirms
 its deliberately invalid fixtures are excluded from normal production analysis.
-ESLint separately rejects browser globals in domain modules because those dependencies do not
-appear in an import graph.
+ESLint separately rejects browser globals and global randomness in domain/application modules
+because those dependencies do not appear in an import graph.
 
-The layer-specific README files point back to the architecture authority. Phase 2 adds a focused
-application setup model and reducer-driven roster/setup features while leaving the Phase 1 active
-`GameState` boundary unchanged: active state still begins at `role-distribution` after assignment.
+The layer-specific README files point back to the architecture authority. Phase 3 consumes the
+exact validated Phase 2 snapshot, creates one authoritative active game through domain invariants,
+and keeps physical delivery state in a focused immutable application workflow.
 
 ## Project authorities
 

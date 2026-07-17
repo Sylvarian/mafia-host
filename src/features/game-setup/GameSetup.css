@@ -533,6 +533,13 @@
   font-weight: 850;
 }
 
+.prepared-setup__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 @media (max-width: 48rem) {
   .section-heading,
   .prepare-action,
@@ -554,6 +561,11 @@
 
   .button--prepare {
     width: 100%;
+  }
+
+  .prepared-setup__actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 }
 

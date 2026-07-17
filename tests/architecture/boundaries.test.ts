@@ -43,6 +43,9 @@ describe('architecture boundaries', () => {
       expect(result.status).not.toBe(0)
       expect(output).toContain('domain-only-depends-on-domain')
       expect(output).toContain('feature-slices-are-isolated')
+      expect(output).toContain('infrastructure-does-not-depend-upward')
+      expect(output).toContain('infrastructure-only-imports-application-contracts')
+      expect(output).toContain('features-do-not-compose-infrastructure')
       expect(output).toContain('alias-forbidden.ts')
       expect(output).toContain('src/App.tsx')
     },
@@ -50,7 +53,7 @@ describe('architecture boundaries', () => {
   )
 
   it(
-    'allows another feature to use an explicit public index',
+    'allows public feature APIs and infrastructure adapters that use application contracts',
     () => {
       const result = runDependencyCruiser('err', allowedFixture)
 

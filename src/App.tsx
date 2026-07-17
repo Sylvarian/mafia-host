@@ -1,6 +1,14 @@
 import './App.css'
 
+import type { RoleAssignmentDependencies } from '@/application/role-assignment/index.ts'
 import { GameSetup } from '@/features/game-setup/index.ts'
+import { BrowserRoleAssignmentIdentitySource } from '@/infrastructure/identifiers/browser-role-assignment-identity-source.ts'
+import { BrowserRandomSource } from '@/infrastructure/randomness/browser-random-source.ts'
+
+const roleAssignmentDependencies: RoleAssignmentDependencies = Object.freeze({
+  randomSource: new BrowserRandomSource(),
+  identitySource: new BrowserRoleAssignmentIdentitySource(),
+})
 
 function App() {
   return (
@@ -10,24 +18,24 @@ function App() {
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 2 · Pre-game setup</p>
+        <p>Phase 3 · Setup and role distribution</p>
       </header>
 
       <main className="app-main">
         <section className="app-intro" aria-labelledby="page-heading">
-          <p className="app-intro__eyebrow">Build tonight’s table</p>
-          <h1 id="page-heading">Prepare your Mafia game</h1>
+          <p className="app-intro__eyebrow">Prepare tonight’s table</p>
+          <h1 id="page-heading">Set up and deal the game</h1>
           <p>
-            Maintain the roster, match every participating player to a role slot, and record the
-            settings for this pre-game draft.
+            Validate the roster and role composition, privately assign roles, and track every
+            physical card handed to players.
           </p>
           <div className="app-intro__boundary">
-            <strong>Setup only</strong>
-            <span>Phase 2 ends after validation; gameplay is outside this screen.</span>
+            <strong>Host-only workflow</strong>
+            <span>Assignments stay private. Night play remains unavailable until Phase 4.</span>
           </div>
         </section>
 
-        <GameSetup />
+        <GameSetup roleAssignmentDependencies={roleAssignmentDependencies} />
       </main>
 
       <footer className="app-footer">

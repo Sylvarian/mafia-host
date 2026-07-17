@@ -6,7 +6,10 @@ import { join, relative, resolve } from 'node:path'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
 
-const domainRoot = join(process.cwd(), 'src/domain')
+const randomnessRestrictedRoots = [
+  join(process.cwd(), 'src/domain'),
+  join(process.cwd(), 'src/application'),
+] as const
 const forbiddenRandomnessAccess = /\bMath\s*(?:\.\s*random\b|\[\s*(['"])random\1\s*\])/u
 const architectureCheckTimeout = 20_000
 
@@ -27,8 +30,10 @@ function listProductionTypeScriptFiles(directory: string): string[] {
 }
 
 describe('domain randomness boundary', () => {
-  it('prevents production domain modules from calling global randomness', () => {
-    for (const file of listProductionTypeScriptFiles(domainRoot)) {
+  it('prevents production domain and application modules from calling global randomness', () => {
+    const files = randomnessRestrictedRoots.flatMap((root) => listProductionTypeScriptFiles(root))
+
+    for (const file of files) {
       const source = readFileSync(file, 'utf8')
 
       expect(source, relative(process.cwd(), file)).not.toMatch(forbiddenRandomnessAccess)
@@ -39,7 +44,7 @@ describe('domain randomness boundary', () => {
     'rejects direct, extracted, computed, aliased, and indirect global randomness access',
     async () => {
       const eslint = new ESLint({ cwd: process.cwd() })
-      const fixturePath = resolve(domainRoot, 'randomness/random-source.ts')
+      const fixturePath = resolve(randomnessRestrictedRoots[0], 'randomness/random-source.ts')
       const source = `
         export const direct = Math.random()
         const extractedRandom = Math.random
@@ -60,13 +65,27 @@ describe('domain randomness boundary', () => {
     'allows deterministic numeric operations on injected values',
     async () => {
       const eslint = new ESLint({ cwd: process.cwd() })
-      const fixturePath = resolve(domainRoot, 'randomness/random-source.ts')
+      const fixturePath = resolve(randomnessRestrictedRoots[0], 'randomness/random-source.ts')
       const [result] = await eslint.lintText(
         'export const index = (value: number): number => Math.floor(value * 10)',
         { filePath: fixturePath },
       )
 
       expect(result?.errorCount).toBe(0)
+    },
+    architectureCheckTimeout,
+  )
+
+  it(
+    'rejects global randomness from application assignment code',
+    async () => {
+      const eslint = new ESLint({ cwd: process.cwd() })
+      const fixturePath = resolve(randomnessRestrictedRoots[1], 'role-assignment/assign-roles.ts')
+      const [result] = await eslint.lintText('export const value = Math.random()', {
+        filePath: fixturePath,
+      })
+
+      expect(result?.errorCount).toBeGreaterThan(0)
     },
     architectureCheckTimeout,
   )

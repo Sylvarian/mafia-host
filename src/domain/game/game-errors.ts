@@ -42,6 +42,13 @@ export type MissingParticipatingPlayerError = Readonly<{
   playerId: PlayerId
 }>
 
+export type ParticipatingPlayerOrderMismatchError = Readonly<{
+  type: 'PARTICIPATING_PLAYER_ORDER_MISMATCH'
+  index: number
+  expectedPlayerId: PlayerId
+  actualPlayerId: PlayerId
+}>
+
 export type MissingRoleAssignmentError = Readonly<{
   type: 'MISSING_ROLE_ASSIGNMENT'
   playerId: PlayerId
@@ -75,6 +82,13 @@ export type InvalidGameStateError = Readonly<{
         roleInstanceId: RoleInstanceId
         ordinal: number
       }>
+    | Readonly<{
+        type: 'ROLE_ORDINAL_MISMATCH'
+        roleInstanceId: RoleInstanceId
+        roleId: RoleId
+        ordinal: number | null
+        expectedOrdinal: number | null
+      }>
 }>
 
 export type GameInvariantError =
@@ -92,6 +106,7 @@ export type CreateGameError =
   | DuplicateRosterPlayerError
   | MissingParticipatingPlayerError
   | NonParticipatingPlayerError
+  | ParticipatingPlayerOrderMismatchError
 
 export type GameCommandError = GameInvariantError | InvalidPhaseTransitionError
 

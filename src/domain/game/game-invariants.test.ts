@@ -293,6 +293,85 @@ describe('game invariants', () => {
     })
   })
 
+  it('requires null for a single-copy role ordinal', () => {
+    const result = createGame({
+      ...validInput(),
+      players: [aliceGamePlayer, { ...bobGamePlayer, role: { ...bobRole, ordinal: 1 } }],
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'ROLE_ORDINAL_MISMATCH',
+          roleInstanceId: bobRole.instanceId,
+          roleId: doctorId,
+          ordinal: 1,
+          expectedOrdinal: null,
+        },
+      },
+    })
+  })
+
+  it('requires duplicate ordinals to be sequential in game-player roster order', () => {
+    const firstDoctorRole: RoleInstance = {
+      ...aliceRole,
+      roleId: doctorId,
+      ordinal: 2,
+    }
+    const secondDoctorRole: RoleInstance = {
+      ...bobRole,
+      ordinal: 1,
+    }
+    const result = createGame({
+      ...validInput(),
+      players: [
+        { ...aliceGamePlayer, role: firstDoctorRole },
+        { ...bobGamePlayer, role: secondDoctorRole },
+      ],
+      roleDefinitions: [doctorDefinition],
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'ROLE_ORDINAL_MISMATCH',
+          roleInstanceId: firstDoctorRole.instanceId,
+          roleId: doctorId,
+          ordinal: 2,
+          expectedOrdinal: 1,
+        },
+      },
+    })
+  })
+
+  it('rejects duplicate ordinals numbered against a reordered player array', () => {
+    const result = createGame({
+      ...validInput(),
+      players: [
+        { ...bobGamePlayer, role: { ...bobRole, ordinal: 1 } },
+        {
+          ...aliceGamePlayer,
+          role: { ...aliceRole, roleId: doctorId, ordinal: 2 },
+        },
+      ],
+      roleDefinitions: [doctorDefinition],
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        type: 'PARTICIPATING_PLAYER_ORDER_MISMATCH',
+        index: 0,
+        expectedPlayerId: aliceId,
+        actualPlayerId: bobId,
+      },
+    })
+  })
+
   it('rejects an invalid current phase in an untrusted state candidate', () => {
     const created = createGame(validInput())
 

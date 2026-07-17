@@ -19,7 +19,7 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     return rosterResult
   }
 
-  return validateGameState({
+  const gameResult = validateGameState({
     id: input.id,
     phase: 'role-distribution',
     players: input.players,
@@ -28,6 +28,14 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     nightNumber: 0,
     dayNumber: 0,
   })
+
+  if (!gameResult.ok) {
+    return gameResult
+  }
+
+  const orderResult = validateParticipatingRosterOrder(input.roster, gameResult.value.players)
+
+  return orderResult.ok ? gameResult : orderResult
 }
 
 export function validateGameState(
@@ -141,6 +149,28 @@ function validateRosterAssignments(
   return succeed(true)
 }
 
+function validateParticipatingRosterOrder(
+  roster: readonly Player[],
+  gamePlayers: readonly GamePlayer[],
+): DomainResult<true, CreateGameError> {
+  const participatingRoster = roster.filter((player) => player.playing)
+
+  for (const [index, expectedPlayer] of participatingRoster.entries()) {
+    const actualPlayer = gamePlayers[index]
+
+    if (actualPlayer !== undefined && actualPlayer.playerId !== expectedPlayer.id) {
+      return fail({
+        type: 'PARTICIPATING_PLAYER_ORDER_MISMATCH',
+        index,
+        expectedPlayerId: expectedPlayer.id,
+        actualPlayerId: actualPlayer.playerId,
+      })
+    }
+  }
+
+  return succeed(true)
+}
+
 function copyRoleDefinitions(
   definitions: readonly RoleDefinition[],
 ): DomainResult<
@@ -236,7 +266,48 @@ function copyGamePlayers(
     })
   }
 
-  return succeed(gamePlayers)
+  const ordinalResult = validateRoleOrdinals(gamePlayers)
+
+  return ordinalResult.ok ? succeed(gamePlayers) : ordinalResult
+}
+
+function validateRoleOrdinals(
+  gamePlayers: readonly GamePlayer[],
+): DomainResult<true, GameInvariantError> {
+  // `GamePlayer.role` is the immutable role assigned at game creation. Later conversions belong in
+  // separate state, so deaths or conversions must not renumber these assignment ordinals.
+  const roleCounts = new Map<RoleId, number>()
+
+  for (const gamePlayer of gamePlayers) {
+    roleCounts.set(gamePlayer.role.roleId, (roleCounts.get(gamePlayer.role.roleId) ?? 0) + 1)
+  }
+
+  const nextOrdinalByRole = new Map<RoleId, number>()
+
+  for (const gamePlayer of gamePlayers) {
+    const roleCount = roleCounts.get(gamePlayer.role.roleId) ?? 0
+    const expectedOrdinal =
+      roleCount === 1 ? null : (nextOrdinalByRole.get(gamePlayer.role.roleId) ?? 0) + 1
+
+    if (gamePlayer.role.ordinal !== expectedOrdinal) {
+      return fail({
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'ROLE_ORDINAL_MISMATCH',
+          roleInstanceId: gamePlayer.role.instanceId,
+          roleId: gamePlayer.role.roleId,
+          ordinal: gamePlayer.role.ordinal,
+          expectedOrdinal,
+        },
+      })
+    }
+
+    if (expectedOrdinal !== null) {
+      nextOrdinalByRole.set(gamePlayer.role.roleId, expectedOrdinal)
+    }
+  }
+
+  return succeed(true)
 }
 
 function isNonNegativeInteger(value: number): boolean {

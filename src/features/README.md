@@ -5,6 +5,10 @@ slice here. A slice's internals stay private; any later cross-slice API must be 
 through that slice's `index` module.
 
 Phase 2 adds `roster` and `game-setup`. `game-setup` owns the application reducer instance and
-passes the authoritative roster down to the public `roster` component. Feature-local state is
-limited to unsubmitted text and removal confirmation. Components render application validation;
-they do not create an active game or calculate game mechanics.
+passes the authoritative roster down to the public `roster` component.
+
+Phase 3 adds `role-distribution`, a private host screen for assignment details, faction and role
+descriptions, physical delivery controls, progress, reassignment, abandonment, and final
+readiness. Feature-local state is limited to unsubmitted text and confirmation dialogs. Components
+render application results; they do not shuffle roles, create identities, calculate ordinals,
+construct `GameState`, assign Executioner targets, or enter a night phase.
