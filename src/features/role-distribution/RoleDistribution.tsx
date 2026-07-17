@@ -18,10 +18,12 @@ type ActiveRoleDistributionWorkflow = DistributingRolesWorkflow | ConfirmedRoleD
 type RoleDistributionProps = Readonly<{
   workflow: ActiveRoleDistributionWorkflow
   error: RoleDistributionError | null
+  beginNightErrorMessage: string | null
   onCardDeliveryChange: (playerId: PlayerId, delivered: boolean) => void
   onConfirmDistribution: () => void
   onReassignRoles: () => void
   onAbandonGame: () => void
+  onBeginFirstNight: () => void
 }>
 
 type Confirmation = 'none' | 'reassign' | 'abandon'
@@ -29,10 +31,12 @@ type Confirmation = 'none' | 'reassign' | 'abandon'
 export function RoleDistribution({
   workflow,
   error,
+  beginNightErrorMessage,
   onCardDeliveryChange,
   onConfirmDistribution,
   onReassignRoles,
   onAbandonGame,
+  onBeginFirstNight,
 }: RoleDistributionProps) {
   const [confirmation, setConfirmation] = useState<Confirmation>('none')
   const confirmationButtonRef = useRef<HTMLButtonElement>(null)
@@ -46,15 +50,20 @@ export function RoleDistribution({
         <h2 id="distribution-complete-heading">Role distribution complete</h2>
         <p className="distribution-complete__lead">Ready to begin the first night</p>
         <p>
-          The active game remains in role-distribution. No Executioner target, night action, or
-          night phase has been created.
+          The active game remains in role-distribution until you deliberately begin. No Executioner
+          target or night action has been created.
         </p>
 
         {error === null ? null : <DistributionError error={error} />}
+        {beginNightErrorMessage === null ? null : (
+          <p className="distribution-error" role="alert">
+            {beginNightErrorMessage}
+          </p>
+        )}
 
         <div className="distribution-complete__actions">
-          <button type="button" className="button button--prepare" disabled>
-            Begin First Night — available in Phase 4
+          <button type="button" className="button button--prepare" onClick={onBeginFirstNight}>
+            Begin First Night
           </button>
           <button
             ref={abandonButtonRef}

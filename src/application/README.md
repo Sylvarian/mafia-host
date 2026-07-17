@@ -18,3 +18,11 @@ yet designate authoritative defaults, and these initial values do not resolve an
 
 Executioner targets remain `null` because R-008 is unresolved. Confirming physical distribution
 does not invoke a phase transition or enter night-action collection.
+
+`night-actions` owns the explicit `beginFirstNight` use case, deterministic living-role wake
+sequence, per-role-instance previous-target context, one authoritative submitted-action list,
+bounded navigation, correction, review, and finalisation. It uses the generic Phase 1 reducer only
+inside the begin-night use case; features never dispatch `ADVANCE_PHASE`. Participant names are an
+immutable presentation snapshot from confirmed setup, while `GameState` remains authoritative for
+phase, assignments, alive state, settings, and counters. Finalisation produces a domain-validated
+batch and deliberately leaves the game in `night-action-collection`.

@@ -1,5 +1,5 @@
 import { roleId, type RoleId } from '../identifiers.ts'
-import type { RoleDefinition } from './role-definition.ts'
+import type { NightActionMetadata, RoleDefinition } from './role-definition.ts'
 
 export type GameplayImplementationStatus = 'setup-only'
 
@@ -7,6 +7,7 @@ export type RoleRegistryEntry = Readonly<
   RoleDefinition & {
     description: string
     gameplayImplementationStatus: GameplayImplementationStatus
+    nightAction: NightActionMetadata
   }
 >
 
@@ -32,73 +33,106 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     'Godfather',
     'mafia',
     'Leads the Mafia and selects a player to attack at night.',
+    nightAction('attack', 'mafia', 10, 'Choose the player the Godfather wants to attack.'),
   ),
   roleEntry(
     ROLE_IDS.framer,
     'Framer',
     'mafia',
     'Frames a player for the current night so investigations see misleading information.',
+    nightAction('frame', 'mafia', 20, 'Choose the player the Framer wants to frame.'),
   ),
   roleEntry(
     ROLE_IDS.consort,
     'Consort',
     'mafia',
     'Selects a player whose night ability will be role-blocked.',
+    nightAction('role-block', 'mafia', 30, 'Choose the player the Consort wants to role-block.'),
   ),
   roleEntry(
     ROLE_IDS.consigliere,
     'Consigliere',
     'mafia',
     'Investigates a player using the permanent three-role investigation groups.',
+    nightAction(
+      'investigate',
+      'mafia',
+      40,
+      'Choose the player the Consigliere wants to investigate.',
+    ),
   ),
   roleEntry(
     ROLE_IDS.sheriff,
     'Sheriff',
     'town',
     'Checks whether a player appears suspicious during the night.',
+    nightAction(
+      'investigate',
+      'individual',
+      70,
+      'Choose the player the Sheriff wants to investigate.',
+    ),
   ),
   roleEntry(
     ROLE_IDS.detective,
     'Detective',
     'town',
     'Tracks whom a selected player successfully visited that night.',
+    nightAction('track', 'individual', 90, 'Choose the player the Detective wants to track.'),
   ),
   roleEntry(
     ROLE_IDS.investigator,
     'Investigator',
     'town',
     'Investigates a player using a permanent three-role result group.',
+    nightAction(
+      'investigate',
+      'individual',
+      80,
+      'Choose the player the Investigator wants to investigate.',
+    ),
   ),
   roleEntry(
     ROLE_IDS.doctor,
     'Doctor',
     'town',
     'Protects one player from applicable night attacks.',
+    nightAction('protect', 'individual', 60, 'Choose the player the Doctor wants to protect.'),
   ),
   roleEntry(
     ROLE_IDS.mayor,
     'Mayor',
     'town',
     'May reveal during the day so their living vote counts as three.',
+    noNightAction(),
   ),
-  roleEntry(ROLE_IDS.citizen, 'Citizen', 'town', 'Has no night ability and votes with the Town.'),
+  roleEntry(
+    ROLE_IDS.citizen,
+    'Citizen',
+    'town',
+    'Has no night ability and votes with the Town.',
+    noNightAction(),
+  ),
   roleEntry(
     ROLE_IDS.jester,
     'Jester',
     'neutral',
     'Wins personally by being executed; the main game then continues.',
+    noNightAction(),
   ),
   roleEntry(
     ROLE_IDS.executioner,
     'Executioner',
     'neutral',
     'Receives a target in a later phase and wins personally if that target is executed.',
+    noNightAction(),
   ),
   roleEntry(
     ROLE_IDS.serialKiller,
     'Serial Killer',
     'neutral',
     'A provisional killing role whose exact victory condition remains unresolved.',
+    nightAction('attack', 'individual', 50, 'Choose the player the Serial Killer wants to attack.'),
   ),
 ])
 
@@ -111,6 +145,7 @@ function roleEntry(
   name: string,
   faction: RoleDefinition['faction'],
   description: string,
+  nightActionMetadata: NightActionMetadata,
 ): RoleRegistryEntry {
   return Object.freeze({
     id,
@@ -118,5 +153,28 @@ function roleEntry(
     faction,
     description,
     gameplayImplementationStatus: 'setup-only',
+    nightAction: nightActionMetadata,
+  })
+}
+
+function noNightAction(): NightActionMetadata {
+  return Object.freeze({ hasNightAction: false })
+}
+
+function nightAction(
+  actionKind: Extract<NightActionMetadata, Readonly<{ hasNightAction: true }>>['actionKind'],
+  collectionGroup: Extract<
+    NightActionMetadata,
+    Readonly<{ hasNightAction: true }>
+  >['collectionGroup'],
+  collectionOrder: number,
+  hostPrompt: string,
+): NightActionMetadata {
+  return Object.freeze({
+    hasNightAction: true,
+    actionKind,
+    collectionGroup,
+    collectionOrder,
+    hostPrompt,
   })
 }

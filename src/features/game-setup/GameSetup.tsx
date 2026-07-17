@@ -1,6 +1,20 @@
 import { useEffect, useReducer, useRef } from 'react'
 
 import {
+  beginFirstNight,
+  continueNightActionCollection,
+  createNightActionCollectionWorkflow,
+  editNightAction,
+  finaliseNightActionCollection,
+  previousNightActionCollection,
+  selectNightActionTarget,
+  type ActiveNightActionCollectionWorkflow,
+  type NightActionCollectionError,
+  type PlayerId as NightPlayerId,
+  type RoleInstanceId,
+} from '@/application/night-actions/index.ts'
+
+import {
   assignRoleDistribution,
   confirmRoleDistribution,
   createRoleDistributionWorkflow,
@@ -22,6 +36,7 @@ import {
   type RoleId,
 } from '@/application/game-setup/index.ts'
 import { PlayerRoster } from '@/features/roster/index.ts'
+import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import {
   getRoleDistributionErrorMessage,
   RoleDistribution,
@@ -62,10 +77,25 @@ type GameSetupProps = Readonly<{
   roleAssignmentDependencies: RoleAssignmentDependencies
 }>
 
+type NightFeatureState = Readonly<{
+  workflow: ActiveNightActionCollectionWorkflow | null
+  error: NightActionCollectionError | null
+}>
+
+type NightFeatureAction =
+  | Readonly<{
+      type: 'WORKFLOW_UPDATED'
+      workflow: ActiveNightActionCollectionWorkflow
+    }>
+  | Readonly<{ type: 'OPERATION_FAILED'; error: NightActionCollectionError }>
+  | Readonly<{ type: 'RESET' }>
+
 const initialDistributionState: DistributionFeatureState = {
   status: 'not-started',
   error: null,
 }
+
+const initialNightState: NightFeatureState = { workflow: null, error: null }
 
 export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
   const [workflow, dispatch] = useReducer(
@@ -77,13 +107,45 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
     reduceDistributionFeatureState,
     initialDistributionState,
   )
+  const [nightState, dispatchNight] = useReducer(reduceNightFeatureState, initialNightState)
   const identityOperationPendingRef = useRef(false)
+  const nightOperationPendingRef = useRef(false)
 
   useEffect(() => {
     identityOperationPendingRef.current = false
   }, [distributionState])
 
+  useEffect(() => {
+    nightOperationPendingRef.current = false
+  }, [nightState])
+
   if (workflow.status === 'ready') {
+    if (nightState.workflow !== null) {
+      const activeNightWorkflow = nightState.workflow
+
+      return (
+        <NightRunner
+          workflow={activeNightWorkflow}
+          error={nightState.error}
+          onSelectTarget={(targetPlayerId: NightPlayerId) => {
+            applyNightOperation(() => selectNightActionTarget(activeNightWorkflow, targetPlayerId))
+          }}
+          onContinue={() => {
+            applyNightOperation(() => continueNightActionCollection(activeNightWorkflow))
+          }}
+          onPrevious={() => {
+            applyNightOperation(() => previousNightActionCollection(activeNightWorkflow))
+          }}
+          onEditAction={(actorRoleInstanceId: RoleInstanceId) => {
+            applyNightOperation(() => editNightAction(activeNightWorkflow, actorRoleInstanceId))
+          }}
+          onFinalise={() => {
+            applyNightOperation(() => finaliseNightActionCollection(activeNightWorkflow))
+          }}
+        />
+      )
+    }
+
     if (distributionState.status === 'active') {
       const activeWorkflow = distributionState.workflow
 
@@ -91,6 +153,11 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
         <RoleDistribution
           workflow={activeWorkflow}
           error={distributionState.error}
+          beginNightErrorMessage={
+            nightState.error === null
+              ? null
+              : getNightActionCollectionErrorMessage(nightState.error)
+          }
           onCardDeliveryChange={(playerId: PlayerId, delivered: boolean) => {
             applyDistributionResult(setCardDelivered(activeWorkflow, playerId, delivered))
           }}
@@ -103,8 +170,15 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
             )
           }}
           onAbandonGame={() => {
+            dispatchNight({ type: 'RESET' })
             dispatchDistribution({ type: 'RESET' })
             dispatch({ type: 'RETURN_TO_SETUP' })
+          }}
+          onBeginFirstNight={() => {
+            applyNightOperation(
+              () => beginFirstNight(createNightActionCollectionWorkflow(activeWorkflow)),
+              true,
+            )
           }}
         />
       )
@@ -177,6 +251,38 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
     }
   }
 
+  function applyNightOperation(
+    operation: () =>
+      | Readonly<{
+          ok: true
+          value: ActiveNightActionCollectionWorkflow
+        }>
+      | Readonly<{ ok: false; error: NightActionCollectionError }>,
+    clearDistributionOnSuccess = false,
+  ): void {
+    if (nightOperationPendingRef.current) {
+      return
+    }
+
+    nightOperationPendingRef.current = true
+
+    try {
+      const result = operation()
+      dispatchNight(
+        result.ok
+          ? { type: 'WORKFLOW_UPDATED', workflow: result.value }
+          : { type: 'OPERATION_FAILED', error: result.error },
+      )
+
+      if (result.ok && clearDistributionOnSuccess) {
+        dispatchDistribution({ type: 'RESET' })
+      }
+    } catch (error: unknown) {
+      nightOperationPendingRef.current = false
+      throw error
+    }
+  }
+
   return (
     <div className="game-setup">
       <PlayerRoster
@@ -234,5 +340,19 @@ function reduceDistributionFeatureState(
       return { ...state, error: action.error }
     case 'RESET':
       return initialDistributionState
+  }
+}
+
+function reduceNightFeatureState(
+  state: NightFeatureState,
+  action: NightFeatureAction,
+): NightFeatureState {
+  switch (action.type) {
+    case 'WORKFLOW_UPDATED':
+      return { workflow: action.workflow, error: null }
+    case 'OPERATION_FAILED':
+      return { ...state, error: action.error }
+    case 'RESET':
+      return initialNightState
   }
 }

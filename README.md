@@ -6,15 +6,22 @@ physical role and result cards.
 
 ## Current status
 
-Phase 3 — Role assignment and physical card distribution — is implemented. After preparing an
-immutable Phase 2 setup, the host can create a random private assignment, see stable numbered
-duplicate roles, record every physical card delivery, deliberately reassign before confirmation,
-and finalise distribution only after all cards are handed out. The resulting active `GameState`
-remains in `role-distribution`; Phase 4 night-action collection has not started.
+Phase 4 — Night action collection — is implemented. After the Phase 3 physical distribution is
+confirmed, the host deliberately begins the first night, gives close-eyes instructions, privately
+reviews the living Mafia, and collects one target from every living acting role instance in an
+explicit physical wake order. Duplicate copies act separately. The host can move backward, replace
+a target, review every action, edit from review, and finalise one immutable collected-action batch.
 
-Executioner role instances may be distributed, but their target is explicitly left unset because
-target eligibility remains unresolved under R-008. No night actions, deaths, trials, or victory
-logic are part of the current implementation.
+Phase 4 records intent only. Finalisation leaves the authoritative `GameState` in
+`night-action-collection`; it does not enter `night-resolution`, apply role blocks, frames,
+protections, attacks, deaths, visits, investigation results, conversions, or victory checks. The
+`allowFirstNightKills` and `godfatherAndSerialCanKillEachOther` settings therefore do not reject
+attack target collection; their configured effects remain Phase 5 work tied to R-001 and R-002.
+
+Executioner role instances may still be distributed, but their target remains unset because target
+eligibility is unresolved under R-008. Any living Executioner with a null target blocks first-night
+entry with an explicit host message. Phase 4 does not assign a target, enter or skip the private
+briefing, or claim Executioner support is complete.
 
 ## Requirements
 
@@ -94,9 +101,10 @@ its deliberately invalid fixtures are excluded from normal production analysis.
 ESLint separately rejects browser globals and global randomness in domain/application modules
 because those dependencies do not appear in an import graph.
 
-The layer-specific README files point back to the architecture authority. Phase 3 consumes the
-exact validated Phase 2 snapshot, creates one authoritative active game through domain invariants,
-and keeps physical delivery state in a focused immutable application workflow.
+The layer-specific README files point back to the architecture authority. Phase 4 adds immutable
+domain action values and structural validation, while application code owns the physical sequence,
+begin-night use case, draft collection, correction, review, and final batch coordination. React
+renders application selectors and keeps only interaction guards and focus state locally.
 
 ## Project authorities
 

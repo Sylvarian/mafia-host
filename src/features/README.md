@@ -12,3 +12,9 @@ descriptions, physical delivery controls, progress, reassignment, abandonment, a
 readiness. Feature-local state is limited to unsubmitted text and confirmation dialogs. Components
 render application results; they do not shuffle roles, create identities, calculate ordinals,
 construct `GameState`, assign Executioner targets, or enter a night phase.
+
+Phase 4 adds `night-runner`. It renders the application-owned opening, Mafia overview, actor,
+Mafia-closing, review, and completion states; translates structured errors; provides semantic
+target and navigation controls; and moves focus to each new step. The coordinating feature guards
+rapid repeated operations. React does not construct actions, validate target rules, maintain a
+second action list, dispatch `ADVANCE_PHASE`, resolve effects, or transition to `night-resolution`.

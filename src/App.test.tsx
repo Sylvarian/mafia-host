@@ -8,7 +8,7 @@ import { SequentialRoleAssignmentIdentitySource } from '../tests/support/sequent
 
 import App from './App.tsx'
 
-describe('Phase 2 and Phase 3 host workflow', () => {
+describe('Phase 2 through Phase 4 host workflow', () => {
   it('adds players, toggles participation, changes role counts, and shows mismatch feedback', () => {
     render(<App />)
 
@@ -108,7 +108,7 @@ describe('Phase 2 and Phase 3 host workflow', () => {
     expect(screen.getByRole('button', { name: 'Prepare Game' })).toBeEnabled()
   })
 
-  it('assigns roles privately, numbers duplicates, tracks every card, and stops before Phase 4', () => {
+  it('assigns roles privately, numbers duplicates, tracks every card, and blocks unresolved Executioner entry', () => {
     render(<App />)
 
     addPlayer('Alex')
@@ -181,11 +181,15 @@ describe('Phase 2 and Phase 3 host workflow', () => {
 
     expect(screen.getByRole('heading', { name: 'Role distribution complete' })).toBeVisible()
     expect(screen.getByText('Ready to begin the first night')).toBeVisible()
-    expect(
-      screen.getByRole('button', { name: 'Begin First Night — available in Phase 4' }),
-    ).toBeDisabled()
+    const beginFirstNight = screen.getByRole('button', { name: 'Begin First Night' })
+    expect(beginFirstNight).toBeEnabled()
     expect(screen.getByText(/active game remains in role-distribution/i)).toBeVisible()
-    expect(screen.queryByRole('button', { name: /collect|target|resolve night/i })).toBeNull()
+    fireEvent.click(beginFirstNight)
+    expect(
+      screen.getByText(/Executioner target eligibility has not been configured yet/),
+    ).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Role distribution complete' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /resolve night/i })).toBeNull()
   })
 
   it('requires deliberate abandonment before returning an active assignment to setup', () => {
@@ -315,6 +319,48 @@ describe('Phase 2 and Phase 3 host workflow', () => {
       gameIdRequestCount: 2,
       roleInstanceIdRequestCount: 2,
     })
+  })
+
+  it('begins night only on explicit host action in Strict Mode and prevents double-step navigation', () => {
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: { next: () => 0 },
+      identitySource: new SequentialRoleAssignmentIdentitySource(),
+    }
+    render(
+      <StrictMode>
+        <GameSetup roleAssignmentDependencies={dependencies} />
+      </StrictMode>,
+    )
+
+    addPlayer('Alice')
+    addPlayer('Ben')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Role Distribution' }))
+
+    expect(screen.queryByText('Everyone, close your eyes.')).toBeNull()
+    const beginButton = screen.getByRole('button', { name: 'Begin First Night' })
+    act(() => {
+      beginButton.click()
+      beginButton.click()
+    })
+    expect(screen.getByText('Everyone, close your eyes.')).toBeVisible()
+    expect(screen.getByText('Private host view · Night 1')).toBeVisible()
+
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
+    act(() => {
+      continueButton.click()
+      continueButton.click()
+    })
+    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+    expect(
+      screen.queryByText('Godfather', { selector: '.actor-action__identity > strong' }),
+    ).toBeNull()
   })
 
   it('rejects blank names and confirms roster removal', () => {
