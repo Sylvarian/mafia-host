@@ -4,7 +4,7 @@
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
-**Persistence:** No saved games or database in the initial release  
+**Persistence:** One versioned local active-session save; no database or saved-game library<br>
 **Deployment:** Static Vite build, suitable for GitHub Pages
 
 ---
@@ -69,7 +69,16 @@ Not required initially:
 - Authentication
 - Cloud synchronisation
 
-The active game may live in React/application memory. Optional browser crash recovery may be added later using `sessionStorage` or `localStorage`, but it is not part of the authoritative game model.
+The authoritative cross-phase session lives in the application layer and is saved after successful
+authoritative transitions to browser `localStorage` under
+`mafia-host:active-session:v1`. Browser persistence remains outside the domain game model. Restored
+data is untrusted and must be schema-version checked, validated, canonicalised, and acknowledged by
+the host before private information is displayed.
+
+The save is local to one browser profile and device and is not encrypted. It may contain role
+assignments, actions, investigative results, alive/dead state, and public reveals. It is crash and
+refresh recovery, not a backup or cloud sync. Clearing site data removes it, private browsing may
+not retain it, and one host tab is recommended because tabs are not synchronised.
 
 ---
 

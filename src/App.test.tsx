@@ -2,15 +2,22 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import type { RoleAssignmentDependencies } from '@/application/role-assignment/index.ts'
-import { GameSetup } from '@/features/game-setup/index.ts'
+import type {
+  RoleAssignmentDependencies,
+  RoleInstanceId,
+} from '@/application/role-assignment/index.ts'
+import type {
+  GameSessionStore,
+  PersistedSessionEnvelopeV1,
+  SessionClock,
+} from '@/application/session-persistence/index.ts'
 import { SequentialRoleAssignmentIdentitySource } from '../tests/support/sequential-role-assignment-identity-source.ts'
 
 import App from './App.tsx'
 
 describe('Phase 2 through Phase 6 host workflow', () => {
   it('adds players, toggles participation, changes role counts, and shows mismatch feedback', () => {
-    render(<App />)
+    renderApp()
 
     const prepareButton = screen.getByRole('button', { name: 'Prepare Game' })
     expect(prepareButton).toBeDisabled()
@@ -42,7 +49,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('configures every documented game setting with an explicit value', () => {
-    render(<App />)
+    renderApp()
 
     const settingDefaults = [
       ['Godfather and Serial Killer can kill each other', false],
@@ -78,7 +85,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('reviews the exact validated setup and preserves the draft when returning before assignment', () => {
-    render(<App />)
+    renderApp()
 
     addPlayer('Alice')
     addPlayer('Bob')
@@ -128,7 +135,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('assigns roles privately, numbers duplicates, tracks every card, and blocks unresolved Executioner entry', () => {
-    render(<App />)
+    renderApp()
 
     addPlayer('Alex')
     addPlayer('Alex')
@@ -211,32 +218,33 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.queryByRole('button', { name: /resolve night/i })).toBeNull()
   })
 
-  it('requires deliberate abandonment before returning an active assignment to setup', () => {
-    render(<App />)
+  it('requires deliberate abandonment before deleting an active assignment and opening fresh setup', () => {
+    renderApp()
 
     addPlayer('Alice')
     fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
     fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
     const abandonButton = screen.getByRole('button', {
-      name: 'Abandon assignment and return to setup',
+      name: 'Abandon game and delete local save',
     })
     fireEvent.click(abandonButton)
 
-    const dialog = screen.getByRole('alertdialog', { name: 'Abandon this assignment?' })
+    const dialog = screen.getByRole('alertdialog', { name: 'Abandon this game?' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
     expect(abandonButton).toHaveFocus()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Abandon assignment and return to setup' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon assignment' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abandon game and delete local save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon and delete' }))
 
-    expect(screen.getByDisplayValue('Alice')).toBeVisible()
+    expect(screen.queryByDisplayValue('Alice')).toBeNull()
+    expect(screen.getByText('0 participating players')).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Distribute physical role cards' })).toBeNull()
   })
 
   it('reassigns directly before delivery and only confirms once delivery has started', () => {
-    render(<App />)
+    renderApp()
 
     addPlayer('Alice')
     fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
@@ -252,17 +260,19 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.getByRole('alertdialog', { name: 'Generate a new assignment?' })).toBeVisible()
   })
 
-  it('abandons, edits, prepares, and creates a new game only after another explicit assignment', () => {
-    render(<App />)
+  it('abandons to fresh setup and creates a new game only after another explicit assignment', () => {
+    renderApp()
 
     addPlayer('Alice')
     fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
     fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Abandon assignment and return to setup' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon assignment' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abandon game and delete local save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon and delete' }))
 
+    addPlayer('Alice')
     addPlayer('Bob')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
 
@@ -296,17 +306,10 @@ describe('Phase 2 through Phase 6 host workflow', () => {
         },
       },
     }
-    const view = render(
-      <StrictMode>
-        <GameSetup roleAssignmentDependencies={dependencies} />
-      </StrictMode>,
-    )
+    const store = new TestGameSessionStore()
+    const view = render(createAppElement(dependencies, store, true))
 
-    view.rerender(
-      <StrictMode>
-        <GameSetup roleAssignmentDependencies={dependencies} />
-      </StrictMode>,
-    )
+    view.rerender(createAppElement(dependencies, store, true))
     expect({ randomRequestCount, gameIdRequestCount, roleInstanceIdRequestCount }).toEqual({
       randomRequestCount: 0,
       gameIdRequestCount: 0,
@@ -318,11 +321,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     })
     expect(sheriffSetting).toBeChecked()
     fireEvent.click(sheriffSetting)
-    view.rerender(
-      <StrictMode>
-        <GameSetup roleAssignmentDependencies={dependencies} />
-      </StrictMode>,
-    )
+    view.rerender(createAppElement(dependencies, store, true))
     expect(sheriffSetting).not.toBeChecked()
 
     addPlayer('Alice')
@@ -352,16 +351,49 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     })
   })
 
+  it('releases the repeated-operation guard after a handled assignment failure', () => {
+    const sequentialIdentities = new SequentialRoleAssignmentIdentitySource()
+    let roleIdentityRequestCount = 0
+    let firstRoleInstanceId: RoleInstanceId | null = null
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: { next: () => 0 },
+      identitySource: {
+        nextGameId: () => sequentialIdentities.nextGameId(),
+        nextRoleInstanceId: () => {
+          roleIdentityRequestCount += 1
+          if (roleIdentityRequestCount === 1) {
+            firstRoleInstanceId = sequentialIdentities.nextRoleInstanceId()
+            return firstRoleInstanceId
+          }
+          if (roleIdentityRequestCount === 2 && firstRoleInstanceId !== null) {
+            return firstRoleInstanceId
+          }
+          return sequentialIdentities.nextRoleInstanceId()
+        },
+      },
+    }
+    renderApp(dependencies, true)
+
+    addPlayer('Alice')
+    addPlayer('Bob')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+
+    const assignButton = screen.getByRole('button', { name: 'Assign Roles' })
+    fireEvent.click(assignButton)
+    expect(screen.getByRole('heading', { name: 'Setup prepared' })).toBeVisible()
+
+    fireEvent.click(assignButton)
+    expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
+  })
+
   it('begins night only on explicit host action in Strict Mode and prevents double-step navigation', () => {
     const dependencies: RoleAssignmentDependencies = {
       randomSource: { next: () => 0 },
       identitySource: new SequentialRoleAssignmentIdentitySource(),
     }
-    render(
-      <StrictMode>
-        <GameSetup roleAssignmentDependencies={dependencies} />
-      </StrictMode>,
-    )
+    renderApp(dependencies, true)
 
     addPlayer('Alice')
     addPlayer('Ben')
@@ -399,11 +431,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
       randomSource: { next: () => 0 },
       identitySource: new SequentialRoleAssignmentIdentitySource(),
     }
-    render(
-      <StrictMode>
-        <GameSetup roleAssignmentDependencies={dependencies} />
-      </StrictMode>,
-    )
+    renderApp(dependencies, true)
 
     addPlayer('Alice')
     addPlayer('Bob')
@@ -463,7 +491,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('rejects blank names and confirms roster removal', () => {
-    render(<App />)
+    renderApp()
 
     const nameInput = screen.getByLabelText('Player name')
     fireEvent.change(nameInput, { target: { value: '   ' } })
@@ -495,7 +523,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('keeps duplicate display names distinguishable and renames only the selected identity', () => {
-    render(<App />)
+    renderApp()
 
     addPlayer('Alex')
     addPlayer('Alex')
@@ -520,7 +548,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('retains the roster when every player is switched off', () => {
-    render(<App />)
+    renderApp()
 
     addPlayer('Alice')
     addPlayer('Bob')
@@ -533,7 +561,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
   })
 
   it('normalises an empty role input and rejects invalid numeric values without corrupting totals', () => {
-    render(<App />)
+    renderApp()
 
     const citizenCount = screen.getByRole('spinbutton', { name: 'Citizen count' })
     fireEvent.change(citizenCount, { target: { value: '' } })
@@ -559,4 +587,56 @@ function addPlayer(name: string): void {
   const input = screen.getByLabelText('Player name')
   fireEvent.change(input, { target: { value: name } })
   fireEvent.click(screen.getByRole('button', { name: 'Add player' }))
+}
+
+const TEST_CLOCK: SessionClock = {
+  now: () => '2026-07-17T10:00:00.000Z',
+}
+
+function createRoleAssignmentDependencies(): RoleAssignmentDependencies {
+  return {
+    randomSource: { next: () => 0 },
+    identitySource: new SequentialRoleAssignmentIdentitySource(),
+  }
+}
+
+class TestGameSessionStore implements GameSessionStore {
+  envelope: PersistedSessionEnvelopeV1 | null = null
+
+  load() {
+    return { ok: false, error: { type: 'NO_SAVED_SESSION' } } as const
+  }
+
+  save(envelope: PersistedSessionEnvelopeV1) {
+    this.envelope = envelope
+    return { ok: true } as const
+  }
+
+  clear() {
+    this.envelope = null
+    return { ok: true } as const
+  }
+}
+
+function createAppElement(
+  dependencies: RoleAssignmentDependencies,
+  store: TestGameSessionStore,
+  strict: boolean,
+) {
+  const app = (
+    <App
+      roleAssignmentDependencies={dependencies}
+      sessionStore={store}
+      sessionClock={TEST_CLOCK}
+      initialLoadResult={store.load()}
+    />
+  )
+  return strict ? <StrictMode>{app}</StrictMode> : app
+}
+
+function renderApp(
+  dependencies: RoleAssignmentDependencies = createRoleAssignmentDependencies(),
+  strict = false,
+) {
+  return render(createAppElement(dependencies, new TestGameSessionStore(), strict))
 }

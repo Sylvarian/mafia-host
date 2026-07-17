@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   selectCurrentNightStepView,
@@ -20,7 +20,7 @@ import './NightRunner.css'
 type NightRunnerProps = Readonly<{
   workflow: ActiveNightActionCollectionWorkflow
   error: NightActionCollectionError | null
-  onSelectTarget: (targetPlayerId: PlayerId) => void
+  onConfirmTarget: (targetPlayerId: PlayerId) => void
   onContinue: () => void
   onPrevious: () => void
   onEditAction: (actorRoleInstanceId: RoleInstanceId) => void
@@ -32,7 +32,7 @@ type NightRunnerProps = Readonly<{
 export function NightRunner({
   workflow,
   error,
-  onSelectTarget,
+  onConfirmTarget,
   onContinue,
   onPrevious,
   onEditAction,
@@ -76,10 +76,11 @@ export function NightRunner({
 
   return (
     <CollectionStep
+      key={focusKey}
       workflow={workflow}
       error={error}
       headingRef={headingRef}
-      onSelectTarget={onSelectTarget}
+      onConfirmTarget={onConfirmTarget}
       onContinue={onContinue}
       onPrevious={onPrevious}
     />
@@ -92,18 +93,21 @@ function CollectionStep({
   workflow,
   error,
   headingRef,
-  onSelectTarget,
+  onConfirmTarget,
   onContinue,
   onPrevious,
 }: Readonly<{
   workflow: CollectingNightActionsWorkflow
   error: NightActionCollectionError | null
   headingRef: HeadingRef
-  onSelectTarget: (targetPlayerId: PlayerId) => void
+  onConfirmTarget: (targetPlayerId: PlayerId) => void
   onContinue: () => void
   onPrevious: () => void
 }>) {
   const step = selectCurrentNightStepView(workflow)
+  const [selectedTargetId, setSelectedTargetId] = useState<PlayerId | null>(() =>
+    step.type === 'actor-action' ? step.selectedTargetId : null,
+  )
 
   return (
     <section className="night-runner" aria-labelledby="night-runner-heading">
@@ -169,7 +173,7 @@ function CollectionStep({
           <p className="actor-action__prompt">{step.hostPrompt}</p>
           {step.selectedTargetId === null ? null : (
             <p className="actor-action__selection" aria-live="polite">
-              Previously selected target restored. Choose another target to replace it.
+              Previously confirmed target restored. Choose another target to replace it.
             </p>
           )}
           <div
@@ -178,6 +182,7 @@ function CollectionStep({
             aria-label={`Targets for ${step.roleDisplayName}`}
           >
             {step.targetOptions.map((target) => {
+              const selected = target.playerId === selectedTargetId
               const reasonId = `target-reason-${target.playerId}`
               const reason =
                 target.disabledReason === null
@@ -191,24 +196,20 @@ function CollectionStep({
                 <div className="target-option" key={target.playerId}>
                   <button
                     type="button"
-                    className={target.selected ? 'target-button is-selected' : 'target-button'}
+                    className={selected ? 'target-button is-selected' : 'target-button'}
                     disabled={!target.enabled}
-                    aria-pressed={target.selected}
+                    aria-pressed={selected}
                     aria-describedby={reason === null ? undefined : reasonId}
                     aria-label={`${playerLabel}, ${target.alive ? 'alive' : 'dead'}${reason === null ? '' : `, unavailable: ${reason}`}`}
                     onClick={() => {
-                      onSelectTarget(target.playerId)
+                      setSelectedTargetId(target.playerId)
                     }}
                   >
                     <strong>{target.playerName}</strong>
                     {target.showStableId ? <small>ID {target.playerId}</small> : null}
                     <span>
                       {target.alive ? 'Alive' : 'Dead'} ·{' '}
-                      {target.selected
-                        ? 'Selected target'
-                        : target.enabled
-                          ? 'Available'
-                          : 'Unavailable'}
+                      {selected ? 'Selected target' : target.enabled ? 'Available' : 'Unavailable'}
                     </span>
                   </button>
                   {reason === null ? null : (
@@ -235,8 +236,17 @@ function CollectionStep({
         <button
           type="button"
           className="button button--prepare"
-          disabled={step.type === 'actor-action' && step.selectedTargetId === null}
-          onClick={onContinue}
+          disabled={step.type === 'actor-action' && selectedTargetId === null}
+          onClick={() => {
+            if (step.type === 'actor-action') {
+              if (selectedTargetId !== null) {
+                onConfirmTarget(selectedTargetId)
+              }
+              return
+            }
+
+            onContinue()
+          }}
         >
           {step.type === 'actor-action' ? 'Confirm Target / Continue' : 'Continue'}
         </button>

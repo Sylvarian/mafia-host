@@ -1,4 +1,7 @@
-import type { PersistedSessionEnvelopeV1, RestoredSessionEnvelopeV1 } from './persisted-session-v1.ts'
+import type {
+  PersistedSessionEnvelopeV1,
+  RestoredSessionEnvelopeV1,
+} from './persisted-session-v1.ts'
 import type { RestorePersistedSessionError } from './restore-persisted-session.ts'
 
 export type NoSavedSessionError = Readonly<{ type: 'NO_SAVED_SESSION' }>
@@ -46,13 +49,17 @@ export type LoadPersistedSessionResult =
   | Readonly<{ ok: true; value: RestoredSessionEnvelopeV1 }>
   | Readonly<{ ok: false; error: LoadPersistedSessionError }>
 
+export type PersistedSessionRestorer = (
+  candidate: unknown,
+) =>
+  | Readonly<{ ok: true; value: RestoredSessionEnvelopeV1 }>
+  | Readonly<{ ok: false; error: RestorePersistedSessionError }>
+
 export type SavePersistedSessionResult =
-  | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; error: SaveFailureError }>
+  Readonly<{ ok: true }> | Readonly<{ ok: false; error: SaveFailureError }>
 
 export type ClearPersistedSessionResult =
-  | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; error: ClearFailureError }>
+  Readonly<{ ok: true }> | Readonly<{ ok: false; error: ClearFailureError }>
 
 export interface GameSessionStore {
   load(): LoadPersistedSessionResult

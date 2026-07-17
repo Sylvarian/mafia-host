@@ -45,3 +45,21 @@ insertion order or player name. The prepare-Dawn operation is unavailable until 
 acknowledged, revalidates and applies the retained batch and resolution once through the domain, then
 drops all private resolution/action data from the completed Dawn workflow. It never advances to day
 discussion or evaluates a winner.
+
+`session-persistence` owns the Phase 6.5 cross-phase `ActiveAppSession` discriminated union. Exactly
+one setup, distribution, night-action, night-presentation, or Dawn workflow is authoritative at a
+time, so a started session contains one `GameState` and no stale game from an earlier stage. Pure
+application operations wrap the existing focused workflows and make every stage transition
+explicit.
+
+The same slice defines the schema-version-1 serialisable model, timestamp/envelope validation,
+stage-specific runtime restoration, canonical reconstruction, deep freezing, and public-safe
+session summaries. Derived sequence steps, progress, role descriptions, result-card text, and Dawn
+prose are rebuilt rather than trusted. Private-presentation saves retain the structured resolution
+only until Dawn; Dawn persistence has no field for the completed action batch, full resolution,
+private queue, or acknowledgements. The `GameSessionStore` and `SessionClock` contracts contain no
+browser implementation.
+
+The V1 Dawn restorer is intentionally limited to the current first-Dawn product boundary: it
+requires the structured announcement to cover every dead player. A later phase must replace that
+assumption before another-night recovery exists so earlier deaths are never announced twice.

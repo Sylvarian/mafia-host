@@ -1,0 +1,98 @@
+.session-recovery,
+.session-save-panel {
+  border: 1px solid rgba(176, 190, 197, 0.24);
+  border-radius: 1rem;
+  background: rgba(13, 20, 28, 0.92);
+  box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.2);
+}
+
+.session-recovery {
+  position: relative;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.session-recovery__eyebrow {
+  margin: 0 0 0.4rem;
+  color: #b0bec5;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.session-recovery h2 {
+  margin: 0;
+}
+
+.session-recovery__summary {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.session-recovery__privacy {
+  color: #ffd180;
+}
+
+.session-recovery__actions,
+.session-confirmation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.session-confirmation {
+  position: relative;
+  z-index: 2;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 138, 128, 0.55);
+  border-radius: 0.75rem;
+  background: #24191c;
+}
+
+.session-confirmation p {
+  margin-bottom: 0;
+}
+
+.session-save-panel {
+  position: relative;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  color: #b0bec5;
+  font-size: 0.9rem;
+}
+
+.session-save-panel__content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.session-save-panel__warning,
+.session-persistence__error {
+  color: #ffab91;
+}
+
+.session-save-panel__retry {
+  margin-left: 0.5rem;
+  border: 0;
+  background: transparent;
+  color: #90caf9;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.session-persistence__error {
+  flex-basis: 100%;
+  margin: 0.5rem 0 0;
+}

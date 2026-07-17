@@ -81,7 +81,7 @@ export type ActiveAppSessionOperation =
   | 'confirm-distribution'
   | 'reassign-roles'
   | 'begin-first-night'
-  | 'select-night-target'
+  | 'confirm-night-target'
   | 'continue-night'
   | 'previous-night'
   | 'edit-night-action'
@@ -115,7 +115,7 @@ export function createActiveAppSession(): SetupAppSession {
 export function updateSetupSession(
   session: ActiveAppSession,
   command: GameSetupWorkflowCommand,
-): DomainResult<SetupAppSession, ActiveAppSessionError> {
+): DomainResult<SetupAppSession, GameSetupEditError | InvalidActiveAppSessionStageError> {
   if (session.stage !== 'setup') {
     return invalidStage('update-setup', session.stage)
   }
@@ -133,7 +133,10 @@ export function updateSetupSession(
 export function assignSessionRoles(
   session: ActiveAppSession,
   dependencies: RoleAssignmentDependencies,
-): DomainResult<RoleDistributionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  RoleDistributionAppSession,
+  RoleDistributionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'setup') {
     return invalidStage('assign-roles', session.stage)
   }
@@ -155,7 +158,10 @@ export function setSessionCardDelivered(
   session: ActiveAppSession,
   playerId: PlayerId,
   delivered: boolean,
-): DomainResult<RoleDistributionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  RoleDistributionAppSession,
+  RoleDistributionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'role-distribution') {
     return invalidStage('set-card-delivery', session.stage)
   }
@@ -168,7 +174,10 @@ export function setSessionCardDelivered(
 
 export function confirmSessionRoleDistribution(
   session: ActiveAppSession,
-): DomainResult<RoleDistributionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  RoleDistributionAppSession,
+  RoleDistributionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'role-distribution') {
     return invalidStage('confirm-distribution', session.stage)
   }
@@ -182,7 +191,10 @@ export function confirmSessionRoleDistribution(
 export function reassignSessionRoles(
   session: ActiveAppSession,
   dependencies: RoleAssignmentDependencies,
-): DomainResult<RoleDistributionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  RoleDistributionAppSession,
+  RoleDistributionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'role-distribution') {
     return invalidStage('reassign-roles', session.stage)
   }
@@ -195,7 +207,10 @@ export function reassignSessionRoles(
 
 export function beginSessionFirstNight(
   session: ActiveAppSession,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'role-distribution') {
     return invalidStage('begin-first-night', session.stage)
   }
@@ -209,49 +224,67 @@ export function beginSessionFirstNight(
     : result
 }
 
-export function selectSessionNightTarget(
+export function confirmSessionNightTarget(
   session: ActiveAppSession,
   targetPlayerId: PlayerId,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
-  return updateNightSession(
-    session,
-    'select-night-target',
-    (workflow) => selectNightActionTarget(workflow, targetPlayerId),
-  )
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
+  return updateNightSession(session, 'confirm-night-target', (workflow) => {
+    const selectionResult = selectNightActionTarget(workflow, targetPlayerId)
+
+    return selectionResult.ok
+      ? continueNightActionCollection(selectionResult.value)
+      : selectionResult
+  })
 }
 
 export function continueSessionNight(
   session: ActiveAppSession,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
   return updateNightSession(session, 'continue-night', continueNightActionCollection)
 }
 
 export function previousSessionNight(
   session: ActiveAppSession,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
   return updateNightSession(session, 'previous-night', previousNightActionCollection)
 }
 
 export function editSessionNightAction(
   session: ActiveAppSession,
   actorRoleInstanceId: RoleInstanceId,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
-  return updateNightSession(
-    session,
-    'edit-night-action',
-    (workflow) => editNightAction(workflow, actorRoleInstanceId),
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
+  return updateNightSession(session, 'edit-night-action', (workflow) =>
+    editNightAction(workflow, actorRoleInstanceId),
   )
 }
 
 export function finaliseSessionNightActions(
   session: ActiveAppSession,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
   return updateNightSession(session, 'finalise-night-actions', finaliseNightActionCollection)
 }
 
 export function resolveSessionNight(
   session: ActiveAppSession,
-): DomainResult<NightPresentationAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightPresentationAppSession,
+  NightPresentationError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'night-action') {
     return invalidStage('resolve-night', session.stage)
   }
@@ -270,33 +303,36 @@ export function resolveSessionNight(
 export function acknowledgeSessionPrivateResult(
   session: ActiveAppSession,
   resultId: PrivateNightResultId,
-): DomainResult<NightPresentationAppSession, ActiveAppSessionError> {
-  return updatePresentationSession(
-    session,
-    'acknowledge-private-result',
-    (workflow) => acknowledgePrivateNightResult(workflow, resultId),
+): DomainResult<
+  NightPresentationAppSession,
+  NightPresentationError | InvalidActiveAppSessionStageError
+> {
+  return updatePresentationSession(session, 'acknowledge-private-result', (workflow) =>
+    acknowledgePrivateNightResult(workflow, resultId),
   )
 }
 
 export function previousSessionPrivateResult(
   session: ActiveAppSession,
-): DomainResult<NightPresentationAppSession, ActiveAppSessionError> {
-  return updatePresentationSession(
-    session,
-    'previous-private-result',
-    previousPrivateNightResult,
-  )
+): DomainResult<
+  NightPresentationAppSession,
+  NightPresentationError | InvalidActiveAppSessionStageError
+> {
+  return updatePresentationSession(session, 'previous-private-result', previousPrivateNightResult)
 }
 
 export function nextSessionPrivateResult(
   session: ActiveAppSession,
-): DomainResult<NightPresentationAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightPresentationAppSession,
+  NightPresentationError | InvalidActiveAppSessionStageError
+> {
   return updatePresentationSession(session, 'next-private-result', nextPrivateNightResult)
 }
 
 export function prepareSessionDawn(
   session: ActiveAppSession,
-): DomainResult<DawnAppSession, ActiveAppSessionError> {
+): DomainResult<DawnAppSession, NightPresentationError | InvalidActiveAppSessionStageError> {
   if (session.stage !== 'night-presentation') {
     return invalidStage('prepare-dawn', session.stage)
   }
@@ -318,7 +354,10 @@ function updateNightSession(
   update: (
     workflow: ActiveNightActionCollectionWorkflow,
   ) => DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError>,
-): DomainResult<NightActionAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightActionAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'night-action') {
     return invalidStage(operation, session.stage)
   }
@@ -335,7 +374,10 @@ function updatePresentationSession(
   update: (
     workflow: Exclude<NightPresentationWorkflow, Readonly<{ status: 'dawn' }>>,
   ) => DomainResult<NightPresentationWorkflow, NightPresentationError>,
-): DomainResult<NightPresentationAppSession, ActiveAppSessionError> {
+): DomainResult<
+  NightPresentationAppSession,
+  NightPresentationError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'night-presentation') {
     return invalidStage(operation, session.stage)
   }

@@ -27,3 +27,10 @@ deaths or hidden resolution audit fields. Its focused confirmation dialog separa
 communication from the public-safe Dawn view, supports Escape cancellation and focus restoration,
 and relies on the coordinating feature's repeated-operation guard. The public view renders only
 the application Dawn selector and deliberately offers no transition to day discussion.
+
+Phase 6.5 makes `game-setup` a stage-specific controlled feature; it no longer owns distribution,
+night, presentation, or Dawn state. `session-persistence` owns the saved-session-found and safe
+recovery screens, local save status, host-facing persistence messages, and focused confirmation
+dialogs. Resume summaries contain only stage, counters, player count, and save time. Secret data is
+not rendered until the host continues. Dialog openness, operation guards, errors, and focus remain
+transient and are not persisted.

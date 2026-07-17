@@ -13,7 +13,7 @@ export {
   previousSessionPrivateResult,
   reassignSessionRoles,
   resolveSessionNight,
-  selectSessionNightTarget,
+  confirmSessionNightTarget,
   setSessionCardDelivered,
   updateSetupSession,
 } from './active-app-session.ts'
@@ -37,6 +37,7 @@ export type {
   LoadPersistedSessionError,
   LoadPersistedSessionResult,
   NoSavedSessionError,
+  PersistedSessionRestorer,
   SaveFailureError,
   SavePersistedSessionResult,
   SessionClock,
@@ -63,3 +64,18 @@ export type {
   RestoredSessionEnvelopeV1,
   SessionStageSummary,
 } from './persisted-session-v1.ts'
+export { restorePersistedSessionEnvelopeV1 } from './restore-persisted-session.ts'
+export type {
+  InvalidDawnSessionError,
+  InvalidEnvelopeError,
+  InvalidNightActionSessionError,
+  InvalidNightPresentationSessionError,
+  InvalidRoleDistributionSessionError,
+  InvalidSetupSessionError,
+  InvalidTimestampError,
+  MultipleAuthoritativeGamesError,
+  RestorePersistedSessionError,
+  StagePhaseMismatchError,
+  UnknownPersistedStageError,
+  UnsupportedSchemaVersionError,
+} from './restore-persisted-session.ts'

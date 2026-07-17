@@ -47,6 +47,10 @@ describe('architecture boundaries', () => {
       expect(output).toContain('infrastructure-only-imports-application-contracts')
       expect(output).toContain('features-do-not-compose-infrastructure')
       expect(output).toContain('alias-forbidden.ts')
+      expect(output).toContain('persistence-forbidden.ts')
+      expect(output).toContain('browser-adapter-import.ts')
+      expect(output).toContain('session-upward-import.ts')
+      expect(output).toContain('adapter-import.ts')
       expect(output).toContain('src/App.tsx')
     },
     architectureCheckTimeout,

@@ -56,8 +56,13 @@ function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
     <NightRunner
       workflow={workflow}
       error={error}
-      onSelectTarget={(targetPlayerId: PlayerId) => {
-        applyOperation(() => selectNightActionTarget(workflow, targetPlayerId))
+      onConfirmTarget={(targetPlayerId: PlayerId) => {
+        applyOperation(() => {
+          const selectionResult = selectNightActionTarget(workflow, targetPlayerId)
+          return selectionResult.ok
+            ? continueNightActionCollection(selectionResult.value)
+            : selectionResult
+        })
       }}
       onContinue={() => {
         applyOperation(() => continueNightActionCollection(workflow))
@@ -146,7 +151,7 @@ describe('night runner host UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
     expect(screen.getByText('Doctor 1')).toBeVisible()
-    expect(screen.getByText(/Previously selected target restored/)).toBeVisible()
+    expect(screen.getByText(/Previously confirmed target restored/)).toBeVisible()
     const doctorOneGroup = screen.getByRole('group', { name: 'Targets for Doctor 1' })
     const alternative = within(doctorOneGroup)
       .getAllByRole('button')

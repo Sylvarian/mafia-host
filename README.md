@@ -6,7 +6,8 @@ physical role and result cards.
 
 ## Current status
 
-Phase 6 — Private results and Dawn — is implemented. Phase 4 guides the host through the physical
+Phase 6.5 — Versioned local session persistence and refresh recovery — is implemented on top of the
+completed Phase 6 private-results and Dawn boundary. Phase 4 guides the host through the physical
 wake sequence, allows corrections, and finalises one immutable `CollectedNightActions` batch.
 Phase 5 deterministically resolves that batch into one canonical `NightResolution` without applying
 it. Phase 6 then enters `night-resolution`, presents only Sheriff, Investigator, Consigliere, and
@@ -18,7 +19,15 @@ batch, applies provisional deaths once, preserves each acting Doctor's submitted
 per-role-instance history, and applies the configured `revealRoleOnDeath` setting. It builds a
 public-safe Dawn model containing only the night number, dead player identities, and legitimately
 public role reveals. The active game ends Phase 6 in `dawn-announcement`; there is no Day button,
-victory evaluation, neutral conversion, Jester effect, or persistence.
+victory evaluation, neutral conversion, or Jester effect.
+
+One authoritative application session now spans setup, role distribution, night-action collection,
+private-result presentation, and public Dawn. Each successful authoritative transition is saved
+under the versioned browser key `mafia-host:active-session:v1`. On a later visit, the app validates
+and canonicalises that untrusted data, shows a public-safe summary, and waits for the host to choose
+**Continue saved game** before displaying private information. Invalid or incompatible saves never
+become authoritative and are not deleted automatically. Dawn saves deliberately discard collected
+actions, the full resolution, the private-result queue, and acknowledgement evidence.
 
 When first-night killing is disabled, living Godfathers and Serial Killers remain omitted from the
 Phase 4 batch, so Phase 5 creates no visit or attack for them. Consorts are immune to Consort blocks
@@ -31,6 +40,30 @@ Executioner role instances may still be distributed, but their target remains un
 eligibility is unresolved under R-008. Any living Executioner with a null target blocks first-night
 entry with an explicit host message. Phase 4 does not assign a target, enter or skip the private
 briefing, or claim Executioner support is complete.
+
+## Local save and privacy
+
+The active session is stored with browser `localStorage` on this device. It is crash/refresh
+recovery, not a backup:
+
+- The save is local to one browser profile and device. Other browsers and devices do not receive it.
+- The save is not encrypted. It contains role assignments, night targets, private results,
+  alive/dead state, and public reveal state. Anyone who can inspect this browser profile or its
+  developer tools can read it.
+- Clearing browser site data or deleting the save in Mafia Host removes it.
+- Private/incognito sessions may discard it when the private browsing session closes.
+- A compatible deployment normally preserves it. An unsupported schema version must be deleted
+  until a migration is deliberately implemented.
+- Use one host tab. Tabs are not synchronised, merged, or locked.
+- There is no account, backend, database, cloud sync, export/import, or remote API.
+
+V1 stops at the first Dawn and deliberately requires that Dawn announcement to account for every
+currently dead player. That validation must be revised before later-night persistence is added;
+reusing it after Phase 7 would be unsafe because it could announce deaths from earlier nights again.
+
+The production Vite base remains `/mafia-host/` for GitHub Pages. The application has no nested
+client-side routes or refresh-fallback dependency: every workflow stage renders from that project
+root, and the storage key is independent of the page URL.
 
 ## Requirements
 
@@ -92,8 +125,9 @@ application/domain contracts
 - `src/application` coordinates domain behavior and may depend on domain code.
 - `src/features` owns host workflows and calls application APIs. Slice internals stay private;
   cross-slice access must use an explicit public `index` module.
-- `src/infrastructure` owns browser-specific randomness and identity adapters. They are composed
-  at `App.tsx` and cannot be imported by application or feature internals.
+- `src/infrastructure` owns browser-specific randomness, identity, time, and local-session storage
+  adapters. They are composed at the root and cannot be imported by application or feature
+  internals.
 - `src/shared/ui` is reserved for presentational components reused by at least two independent
   features.
 
@@ -117,8 +151,10 @@ adds permanent investigation data and pure, separately testable resolution stage
 the application only accepts a completed Phase 4 workflow and returns the structured domain result.
 Phase 6 adds pure death/history/reveal application and a public-safe Dawn model in the domain. The
 application owns the private-result queue, acknowledgements, navigation, phase coordination, and
-single-application guard. React renders application models and keeps only interaction guards,
-dialog state, and focus state locally.
+single-application guard. Phase 6.5 moves cross-phase ownership into one discriminated application
+session, owns the V1 serialisable schema and runtime restoration, and gives infrastructure only the
+JSON/localStorage transport boundary. React renders stage-specific application models and keeps
+only errors, interaction guards, dialog state, save status, and focus state locally.
 
 ## Project authorities
 

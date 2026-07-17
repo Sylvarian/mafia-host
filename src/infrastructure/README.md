@@ -1,7 +1,7 @@
 # Infrastructure layer
 
 [AGENTS.md](../../AGENTS.md) is the architecture authority. This directory contains narrow
-browser-specific adapters for application/domain contracts and is composed only at `App.tsx`.
+browser-specific adapters for application/domain contracts and is composed only at `main.tsx`.
 
 Phase 3 provides a Web Crypto `RandomSource` and a role-assignment identity source. Random values
 come from unsigned 32-bit Web Crypto values and satisfy the domain's `[0, 1)` contract. Game and
@@ -18,3 +18,11 @@ for an in-person roster but is not described as mathematically unbiased.
 The identity adapter requires browser Web Crypto with `randomUUID()`. It fails explicitly during
 composition when that API is unavailable or returns an empty token; no UUID package or retry loop
 is used.
+
+Phase 6.5 adds a narrow `BrowserGameSessionStore` and browser clock. The store reads, writes, or
+removes only `mafia-host:active-session:v1`, and only when its corresponding method is called. It
+owns localStorage access, JSON text transport, unavailable/read/write/quota/clear failures, and no
+console logging. The composition root injects the application restorer, so parsed JSON crosses that
+narrow contract as untrusted input without an infrastructure-to-application-implementation import.
+The adapter does not validate game rules or import feature code. The clock supplies canonical
+timestamps without putting wall-clock time into domain mechanics.

@@ -22,4 +22,26 @@ describe('BrowserRoleAssignmentIdentitySource', () => {
       'Web Crypto randomUUID() returned an empty browser-session identity.',
     )
   })
+
+  it('uses a fresh browser-session prefix after refresh so future identities cannot reuse restored values', () => {
+    const beforeRefresh = new BrowserRoleAssignmentIdentitySource({
+      randomUUID: () => 'before-refresh',
+    })
+    const restoredIdentityValues = new Set([
+      beforeRefresh.nextGameId(),
+      beforeRefresh.nextRoleInstanceId(),
+      beforeRefresh.nextRoleInstanceId(),
+    ])
+    const afterRefresh = new BrowserRoleAssignmentIdentitySource({
+      randomUUID: () => 'after-refresh',
+    })
+    const generatedAfterRefresh = [
+      afterRefresh.nextGameId(),
+      afterRefresh.nextRoleInstanceId(),
+      afterRefresh.nextRoleInstanceId(),
+    ]
+
+    expect(generatedAfterRefresh.every((value) => !restoredIdentityValues.has(value))).toBe(true)
+    expect(new Set(generatedAfterRefresh).size).toBe(generatedAfterRefresh.length)
+  })
 })

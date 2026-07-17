@@ -22,11 +22,10 @@ type RoleDistributionProps = Readonly<{
   onCardDeliveryChange: (playerId: PlayerId, delivered: boolean) => void
   onConfirmDistribution: () => void
   onReassignRoles: () => void
-  onAbandonGame: () => void
   onBeginFirstNight: () => void
 }>
 
-type Confirmation = 'none' | 'reassign' | 'abandon'
+type Confirmation = 'none' | 'reassign'
 
 export function RoleDistribution({
   workflow,
@@ -35,13 +34,11 @@ export function RoleDistribution({
   onCardDeliveryChange,
   onConfirmDistribution,
   onReassignRoles,
-  onAbandonGame,
   onBeginFirstNight,
 }: RoleDistributionProps) {
   const [confirmation, setConfirmation] = useState<Confirmation>('none')
   const confirmationButtonRef = useRef<HTMLButtonElement>(null)
   const reassignButtonRef = useRef<HTMLButtonElement>(null)
-  const abandonButtonRef = useRef<HTMLButtonElement>(null)
 
   if (workflow.status === 'confirmed') {
     return (
@@ -65,33 +62,7 @@ export function RoleDistribution({
           <button type="button" className="button button--prepare" onClick={onBeginFirstNight}>
             Begin First Night
           </button>
-          <button
-            ref={abandonButtonRef}
-            type="button"
-            className="button button--danger-quiet"
-            disabled={confirmation !== 'none'}
-            onClick={() => {
-              setConfirmation('abandon')
-            }}
-          >
-            Abandon game and return to setup
-          </button>
         </div>
-
-        {confirmation === 'abandon' ? (
-          <ConfirmationDialog
-            key="confirmed-abandon"
-            actionButtonRef={confirmationButtonRef}
-            returnFocusRef={abandonButtonRef}
-            title="Abandon this confirmed game?"
-            description="This permanently discards the active assignment and returns to the editable setup."
-            actionLabel="Yes, abandon game"
-            onConfirm={onAbandonGame}
-            onCancel={() => {
-              setConfirmation('none')
-            }}
-          />
-        ) : null}
       </section>
     )
   }
@@ -194,17 +165,6 @@ export function RoleDistribution({
           >
             Reassign Roles
           </button>
-          <button
-            ref={abandonButtonRef}
-            type="button"
-            className="button button--danger-quiet"
-            disabled={confirmation !== 'none'}
-            onClick={() => {
-              setConfirmation('abandon')
-            }}
-          >
-            Abandon assignment and return to setup
-          </button>
         </div>
         <button
           type="button"
@@ -232,21 +192,6 @@ export function RoleDistribution({
             setConfirmation('none')
             onReassignRoles()
           }}
-          onCancel={() => {
-            setConfirmation('none')
-          }}
-        />
-      ) : null}
-
-      {confirmation === 'abandon' ? (
-        <ConfirmationDialog
-          key="abandon"
-          actionButtonRef={confirmationButtonRef}
-          returnFocusRef={abandonButtonRef}
-          title="Abandon this assignment?"
-          description="This discards the active game and all delivery marks before returning to setup."
-          actionLabel="Yes, abandon assignment"
-          onConfirm={onAbandonGame}
           onCancel={() => {
             setConfirmation('none')
           }}

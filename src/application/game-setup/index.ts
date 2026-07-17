@@ -14,7 +14,7 @@ export type {
   RoleCountEditError,
   RosterEditError,
 } from './game-setup-draft.ts'
-export { inspectGameSetupDraft } from './game-setup-validation.ts'
+export { inspectGameSetupDraft, validateGameSetupDraft } from './game-setup-validation.ts'
 export type {
   GameSetupDraftCandidate,
   GameSetupValidation,
@@ -22,7 +22,4 @@ export type {
   ValidatedGameSetup,
 } from './game-setup-validation.ts'
 export { createGameSetupWorkflow, reduceGameSetupWorkflow } from './game-setup-workflow.ts'
-export type {
-  GameSetupWorkflowCommand,
-  GameSetupWorkflowState,
-} from './game-setup-workflow.ts'
+export type { GameSetupWorkflowCommand, GameSetupWorkflowState } from './game-setup-workflow.ts'

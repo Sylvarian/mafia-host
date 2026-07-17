@@ -184,10 +184,16 @@ export type PersistedAppSessionV1 =
     }>
   | Readonly<{
       stage: 'role-distribution'
-      workflowStatus: 'distributing' | 'confirmed'
+      workflowStatus: 'distributing'
       setup: PersistedValidatedSetupV1
       game: PersistedGameV1
       deliveredPlayerIds: readonly string[]
+    }>
+  | Readonly<{
+      stage: 'role-distribution'
+      workflowStatus: 'confirmed'
+      setup: PersistedValidatedSetupV1
+      game: PersistedGameV1
     }>
   | Readonly<{
       stage: 'night-action'
@@ -263,21 +269,25 @@ export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedApp
         workflowStatus: session.workflow.status,
         draft: copySetupDraft(session.workflow.draft),
       })
-    case 'role-distribution':
-      return deepFreeze({
-        stage: 'role-distribution',
-        workflowStatus: session.workflow.status,
+    case 'role-distribution': {
+      const source = {
+        stage: 'role-distribution' as const,
         setup: {
           participatingPlayers: session.workflow.setup.participatingPlayers.map(copyPlayer),
           roleCounts: session.workflow.setup.roleCounts.map(copyRoleCount),
           settings: copySettings(session.workflow.setup.settings),
         },
         game: copyGame(session.workflow.game),
-        deliveredPlayerIds:
-          session.workflow.status === 'distributing'
-            ? [...session.workflow.deliveredPlayerIds]
-            : session.workflow.game.players.map((player) => player.playerId),
-      })
+      }
+
+      return session.workflow.status === 'distributing'
+        ? deepFreeze({
+            ...source,
+            workflowStatus: 'distributing' as const,
+            deliveredPlayerIds: [...session.workflow.deliveredPlayerIds],
+          })
+        : deepFreeze({ ...source, workflowStatus: 'confirmed' as const })
+    }
     case 'night-action': {
       const submittedActions =
         session.workflow.status === 'complete'
@@ -406,8 +416,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
       })
     case 'night-presentation':
       return Object.freeze({
-        stage:
-          session.workflow.status === 'ready-for-dawn' ? 'Ready for Dawn' : 'Private results',
+        stage: session.workflow.status === 'ready-for-dawn' ? 'Ready for Dawn' : 'Private results',
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
@@ -474,13 +483,15 @@ function copyGame(game: ActiveGame): PersistedGameV1 {
   }
 }
 
-function copyNightAction(action: Readonly<{
-  actorPlayerId: PlayerId
-  actorRoleInstanceId: RoleInstanceId
-  actorRoleId: RoleId
-  actionKind: NightActionKind
-  targetPlayerId: PlayerId
-}>): PersistedSubmittedNightActionV1 {
+function copyNightAction(
+  action: Readonly<{
+    actorPlayerId: PlayerId
+    actorRoleInstanceId: RoleInstanceId
+    actorRoleId: RoleId
+    actionKind: NightActionKind
+    targetPlayerId: PlayerId
+  }>,
+): PersistedSubmittedNightActionV1 {
   return { ...action }
 }
 

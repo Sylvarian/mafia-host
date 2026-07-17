@@ -62,7 +62,8 @@ module.exports = {
       from: { path: '(^|/)src/infrastructure/' },
       to: {
         path: '(^|/)src/application/',
-        pathNot: '(^|/)src/application/(role-assignment/)?identity-source[.]ts$',
+        pathNot:
+          '(^|/)src/application/((role-assignment/)?identity-source|session-persistence/(game-session-store|persisted-session-v1))[.]ts$',
       },
     },
     {

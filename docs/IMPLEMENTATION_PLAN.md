@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Initial persistence:** None  
+**Persistence:** One versioned local active-session save implemented in Phase 6.5<br>
 **Backend:** None
 
 ---
@@ -435,6 +435,49 @@ For Investigator/Consigliere:
 
 ---
 
+## Phase 6.5 — Versioned local session persistence and refresh recovery
+
+**Status: Implemented.**
+
+### Goal
+
+Allow one host-operated active session to resume on the same browser profile and device after a
+refresh, tab/browser restart, or return to the deployed GitHub Pages site.
+
+### Work
+
+- Move cross-phase authority into one application-owned discriminated session union.
+- Persist successful authoritative transitions under `mafia-host:active-session:v1`.
+- Define a schema-version-1 envelope with a canonical timestamp and exhaustive stage union.
+- Treat JSON as untrusted and explicitly validate/canonicalise setup, distribution, night-action,
+  night-presentation, and Dawn stages.
+- Rebuild derived workflow sequence, progress, registry metadata, result cards, and public views.
+- Show a public-safe resume screen and require host acknowledgement before private information.
+- Provide confirmed delete/start-new/abandon controls with safe storage-failure handling.
+- Keep save failures visible and non-blocking while the in-memory game continues.
+- Discard action, resolution, private-result, and acknowledgement material from Dawn saves.
+- Document unencrypted local privacy, one-tab operation, and the lack of backend/cloud sync.
+
+### Tests
+
+- Envelope version, timestamp, shape, extra-field, immutability, and canonical ownership tests.
+- Browser adapter success and unavailable/read/write/quota/clear failure tests.
+- Round trips for every Phase 2–6 authoritative workflow status.
+- Forged acknowledgement, cross-game, stage/phase, and private-Dawn rejection tests.
+- React refresh/remount coverage at setup, partial distribution, mid-night collection, private
+  presentation, and Dawn.
+- Strict Mode deduplication, save failure/retry, delete/cancel, invalid/incompatible recovery, and
+  privacy regressions.
+
+### Acceptance criteria
+
+- A valid saved session resumes the exact authoritative stage only after host acknowledgement.
+- Invalid and unsupported saves never become authoritative or disappear automatically.
+- Dawn persistence contains only its active game, participants, and structured public announcement.
+- The app remains a static Vite/GitHub Pages application with no backend or Phase 7 behavior.
+
+---
+
 ## Phase 7 — Day dashboard, Mayor, trial, and voting
 
 ### Goal
@@ -709,13 +752,15 @@ GitHub:
 
 ## Phase 13 — Optional crash recovery, not saved games
 
+**Status: Superseded by the implemented Phase 6.5 local active-session recovery.**
+
 ### Goal
 
 Reduce accidental loss from a refresh without adding a game database.
 
 ### Work
 
-Optional only after core release:
+The original optional outline was:
 
 - Store one active-game snapshot in `sessionStorage` or `localStorage`.
 - Restore only after schema validation.
