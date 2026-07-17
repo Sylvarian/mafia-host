@@ -96,6 +96,8 @@ function getInvalidGameStateMessage(
       return `The active game cannot begin in the unknown phase ${error.phase}.`
     case 'INVALID_COUNTER':
       return `The active game rejected ${error.counter} counter ${String(error.value)}.`
+    case 'INVALID_PLAYER_ALIVE_STATE':
+      return `Player ID ${error.playerId} has an invalid alive state; expected an explicit boolean.`
     case 'INVALID_ROLE_ORDINAL':
       return `Role instance ${error.roleInstanceId} has invalid ordinal ${String(error.ordinal)}.`
     case 'ROLE_ORDINAL_MISMATCH':

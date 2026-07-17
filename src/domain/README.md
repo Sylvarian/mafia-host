@@ -17,6 +17,13 @@ target validation, complete-batch validation, and frozen collected batches. The 
 contains immutable collection metadata and explicit physical order, but no executable callbacks or
 effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Godfather and
 Serial Killer actors are excluded from collection requirements. Mutual Godfather/Serial targets and
-Consort-on-Consort targets remain structurally valid on nights when those actors act. Resolution,
-visits, blocks, immunity, results, deaths, conversion, voting, and win evaluation remain later-phase
-work.
+Consort-on-Consort targets remain structurally valid on nights when those actors act.
+
+Phase 5 adds immutable, setup-independent investigation Groups A through D plus an explicit
+canonical role-to-group mapping. It also adds pure stages for canonical action ordering, Consort
+block attempts and immunity, effective actions, visits, frames, Doctor protections, attacks,
+provisional deaths, Sheriff suspicion, shared Investigator/Consigliere results, and Detective
+tracking. The orchestration function revalidates Phase 4 input and returns a deeply frozen
+`NightResolution`. It never mutates `GameState`, applies a provisional death, advances the phase,
+uses randomness, generates Dawn output, converts a role, triggers a Jester effect, or evaluates a
+winner.

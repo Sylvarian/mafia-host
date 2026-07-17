@@ -300,7 +300,8 @@ Implement target validation:
 
 ### Goal
 
-Resolve Mafia/Town interactions deterministically.
+Convert a canonical completed Phase 4 action batch into a deterministic, immutable resolution
+result without applying it to the active game.
 
 ### Work
 
@@ -316,9 +317,12 @@ Implement pure domain modules:
 
 Implement first set of interactions:
 
+- Consort role-block attempts and immunity
+- Successful blocked-actor records
+- Final visits
 - Godfather attack
+- Serial Killer attack
 - Framer frame
-- Consort block
 - Doctor protection
 - Sheriff result
 - Investigator result group
@@ -327,24 +331,35 @@ Implement first set of interactions:
 
 Implement permanent investigation-group data.
 
-Resolution should return structured results:
+Resolution returns one canonical structured result:
 
 ```ts
 type NightResolution = {
-  deaths: DeathRecord[];
-  privateResults: PrivateRoleResult[];
-  publicAnnouncement: PublicAnnouncement;
+  gameId: GameId;
+  nightNumber: number;
+  roleBlockAttempts: RoleBlockAttempt[];
+  blockedActors: BlockedActorRecord[];
   finalVisits: VisitRecord[];
-  conversions: RoleConversion[];
-  personalWins: PersonalWin[];
-  pendingEffects: PendingEffect[];
+  frames: FrameRecord[];
+  protections: ProtectionRecord[];
+  attackAttempts: AttackAttempt[];
+  provisionalDeaths: ProvisionalDeath[];
+  sheriffResults: SheriffResult[];
+  investigationResults: InvestigationResult[];
+  detectiveResults: DetectiveResult[];
 };
 ```
 
+The result does not contain an updated `GameState`, Dawn prose, public role-reveal decisions,
+Executioner conversion, Jester effects, personal or faction wins, or a next phase. Provisional
+deaths are not applied, every active-game `alive` value remains unchanged, and the game remains in
+`night-action-collection` for Phase 6.
+
 ### Required rule decisions
 
-- Implement decided R-001, R-003, R-004, and R-005 exactly as recorded in the rules specification.
+- Implement decided R-001 through R-005 exactly as recorded in the rules specification.
 - Use the decided permanent Groups A through D; Group D contains four roles.
+- R-006 through R-012 are outside Phase 5 and must remain unresolved.
 
 ### Tests
 
@@ -364,7 +379,10 @@ At minimum:
 ### Acceptance criteria
 
 - Domain tests can resolve a full night without rendering UI.
-- UI only displays returned results.
+- Resolution is deterministic and independent of caller action-array order.
+- The input game and action batch remain unchanged.
+- The active game remains in `night-action-collection` with deaths unapplied.
+- Phase 6 presentation and state application are not started.
 
 ---
 
@@ -773,9 +791,9 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Before Phase 5 or later begins, decide:
+Before a later phase implements behaviour governed by these decisions, decide:
 
-- R-006 through R-012 in the rules document; R-001 through R-005 are already decided.
+- R-006 through R-012 in the rules document; they do not block the result-only Phase 5 scope.
 - No permanent-group decision remains: Groups A through D are authoritative and setup-independent.
 - Whether Serial Killer is definitely included in the first release.
 - Whether vote entry is per player as specified or host-decided manually.

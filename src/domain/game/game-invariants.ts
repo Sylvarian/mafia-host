@@ -218,6 +218,17 @@ function copyGamePlayers(
       return fail({ type: 'MISSING_ROLE_ASSIGNMENT', playerId: candidate.playerId })
     }
 
+    if (typeof candidate.alive !== 'boolean') {
+      return fail({
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'INVALID_PLAYER_ALIVE_STATE',
+          playerId: candidate.playerId,
+          value: candidate.alive,
+        },
+      })
+    }
+
     if (roleInstanceIds.has(candidate.role.instanceId)) {
       return fail({
         type: 'DUPLICATE_ROLE_ASSIGNMENT',

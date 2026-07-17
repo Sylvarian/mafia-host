@@ -29,3 +29,9 @@ phase, assignments, alive state, settings, and counters. Finalisation produces a
 batch and deliberately leaves the game in `night-action-collection`. The sequence and batch share
 the domain collection-eligibility rule that omits Godfather and Serial Killer actors from a disabled
 first night while retaining all living Mafia in the private overview.
+
+`night-resolution` owns one narrow Phase 5 operation over a completed Phase 4 workflow. It passes
+the authoritative game, canonical batch, and Doctor previous-target context through domain
+revalidation, then returns structured success or failure. It keeps no global resolution cache and
+does not dispatch a command, apply deaths, advance the phase, or introduce presentation state, so
+identical calls are deterministic and idempotent.

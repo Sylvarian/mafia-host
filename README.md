@@ -6,22 +6,26 @@ physical role and result cards.
 
 ## Current status
 
-Phase 4 — Night action collection — is implemented. After the Phase 3 physical distribution is
-confirmed, the host deliberately begins the first night, gives close-eyes instructions, privately
-reviews the living Mafia, and collects one target from every living acting role instance in an
-explicit physical wake order. When first-night killing is disabled, living Godfathers and Serial
-Killers are omitted from action collection while the Godfather remains in the Mafia overview.
-Duplicate copies act separately. The host can move backward, replace a target, review every action,
-edit from review, and finalise one immutable collected-action batch.
+Phase 5 — Core night resolution — is implemented as a framework-independent domain pipeline and a
+narrow application operation. Phase 4 still guides the host through the physical wake sequence,
+allows corrections, and finalises one immutable `CollectedNightActions` batch. Phase 5 revalidates
+that completed batch and deterministically calculates Consort block attempts and immunity, blocked
+actors, final visits, temporary frames, Doctor protections, Godfather and Serial Killer attack
+outcomes, provisional deaths, Sheriff results, permanent Investigator/Consigliere groups, and
+Detective tracking results.
 
-Phase 4 records intent only. Finalisation leaves the authoritative `GameState` in
-`night-action-collection`; it does not enter `night-resolution`, apply role blocks, frames,
-protections, attacks, deaths, visits, investigation results, conversions, or victory checks. The
-`godfatherAndSerialCanKillEachOther` never rejects mutual target collection on nights when the
-roles act; its lethal effect remains Phase 5 work. The
-`godfatherAppearsSuspiciousToSheriff` setting is stored through setup and active-game creation but
-does not produce a Sheriff result before Phase 5. Consort-on-Consort targets remain valid intent;
-Consort immunity is also deferred to Phase 5.
+Resolution returns one immutable `NightResolution`; it does not mutate or replace the authoritative
+`GameState`. In particular, players remain alive in the active game and the phase remains
+`night-action-collection`. The result contains no Dawn prose, public role reveal, Executioner
+conversion, Jester effect, personal or faction victory, or next phase. Applying provisional deaths
+and communicating private/public results remain Phase 6 work. No Phase 5 UI was added.
+
+When first-night killing is disabled, living Godfathers and Serial Killers remain omitted from the
+Phase 4 batch, so Phase 5 creates no visit or attack for them. Consorts are immune to Consort blocks
+but still visit and perform their submitted action. Temporary frames affect Sheriff and the shared
+permanent Investigator/Consigliere group resolver without changing the target's actual role. One
+unblocked Doctor protection prevents every ordinary Godfather and Serial Killer attack against its
+target for that night.
 
 Executioner role instances may still be distributed, but their target remains unset because target
 eligibility is unresolved under R-008. Any living Executioner with a null target blocks first-night
@@ -108,8 +112,10 @@ because those dependencies do not appear in an import graph.
 
 The layer-specific README files point back to the architecture authority. Phase 4 adds immutable
 domain action values and structural validation, while application code owns the physical sequence,
-begin-night use case, draft collection, correction, review, and final batch coordination. React
-renders application selectors and keeps only interaction guards and focus state locally.
+begin-night use case, draft collection, correction, review, and final batch coordination. Phase 5
+adds permanent investigation data and pure, separately testable resolution stages in the domain;
+the application only accepts a completed Phase 4 workflow and returns the structured domain result.
+React renders application selectors and keeps only interaction guards and focus state locally.
 
 ## Project authorities
 
