@@ -7,6 +7,7 @@ export type { Faction } from '@/domain/roles/faction.ts'
 
 export { getParticipatingPlayerCount } from './game-setup-draft.ts'
 export type {
+  GameSetupDraft,
   GameSettingKey,
   GameSetupEditError,
   RoleCount,
@@ -21,3 +22,7 @@ export type {
   ValidatedGameSetup,
 } from './game-setup-validation.ts'
 export { createGameSetupWorkflow, reduceGameSetupWorkflow } from './game-setup-workflow.ts'
+export type {
+  GameSetupWorkflowCommand,
+  GameSetupWorkflowState,
+} from './game-setup-workflow.ts'
