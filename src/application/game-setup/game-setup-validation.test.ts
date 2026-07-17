@@ -1,0 +1,167 @@
+import { describe, expect, it } from 'vitest'
+
+import type { DomainResult } from '@/domain/game/domain-result.ts'
+import { playerId, roleId } from '@/domain/identifiers.ts'
+import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
+
+import {
+  addPlayer,
+  createInitialGameSetupDraft,
+  setGameSetting,
+  setRoleCount,
+  togglePlayerParticipation,
+  type GameSetupDraft,
+} from './game-setup-draft.ts'
+import { inspectGameSetupDraft, validateGameSetupDraft } from './game-setup-validation.ts'
+
+describe('game setup validation', () => {
+  it('reports no participants and no Mafia for the initial draft', () => {
+    const validation = inspectGameSetupDraft(createInitialGameSetupDraft())
+
+    expect(validation.isValid).toBe(false)
+    expect(validation.participatingPlayerCount).toBe(0)
+    expect(validation.selectedRoleCount).toBe(0)
+    expect(validation.errors).toEqual([
+      { type: 'NO_PARTICIPATING_PLAYERS' },
+      { type: 'NO_MAFIA_ROLE' },
+    ])
+  })
+
+  it('reports the exact count mismatch', () => {
+    const withAlice = expectSuccess(addPlayer(createInitialGameSetupDraft(), 'Alice'))
+    const withBob = expectSuccess(addPlayer(withAlice, 'Bob'))
+    const draft = expectSuccess(setRoleCount(withBob, ROLE_IDS.godfather, 1))
+    const validation = inspectGameSetupDraft(draft)
+
+    expect(validation.roleCountDifference).toBe(-1)
+    expect(validation.errors).toContainEqual({
+      type: 'ROLE_COUNT_MISMATCH',
+      participatingCount: 2,
+      selectedRoleCount: 1,
+    })
+  })
+
+  it('rejects a matching composition with no Mafia role', () => {
+    const withAlice = expectSuccess(addPlayer(createInitialGameSetupDraft(), 'Alice'))
+    const draft = expectSuccess(setRoleCount(withAlice, ROLE_IDS.citizen, 1))
+    const validation = inspectGameSetupDraft(draft)
+
+    expect(validation.errors).toContainEqual({ type: 'NO_MAFIA_ROLE' })
+    expect(validation.errors).not.toContainEqual(
+      expect.objectContaining({
+        type: 'ROLE_COUNT_MISMATCH',
+      }),
+    )
+  })
+
+  it.each([
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])('returns a structured error for the invalid draft count %s', (count) => {
+    const initial = createInitialGameSetupDraft()
+    const invalidDraft: GameSetupDraft = {
+      ...initial,
+      roleCounts: initial.roleCounts.map((roleCount) =>
+        roleCount.roleId === ROLE_IDS.godfather ? { ...roleCount, count } : roleCount,
+      ),
+    }
+    const validation = inspectGameSetupDraft(invalidDraft)
+    const result = validateGameSetupDraft(invalidDraft)
+
+    expect(validation.selectedRoleCount).toBe(0)
+    expect(validation.roleCountDifference).toBe(0)
+    expect(Number.isFinite(validation.selectedRoleCount)).toBe(true)
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected the invalid role count to fail validation.')
+    }
+
+    expect(result.error).toContainEqual({
+      type: 'INVALID_ROLE_COUNT',
+      roleId: ROLE_IDS.godfather,
+      count,
+    })
+  })
+
+  it('reports unknown, duplicate, and missing role entries in deterministic order', () => {
+    const initial = createInitialGameSetupDraft()
+    const unknownRoleId = roleId('unknown-role')
+    const malformedDraft: GameSetupDraft = {
+      ...initial,
+      roleCounts: [
+        ...initial.roleCounts.filter((entry) => entry.roleId !== ROLE_IDS.citizen),
+        { roleId: ROLE_IDS.godfather, count: 0 },
+        { roleId: unknownRoleId, count: 1 },
+      ],
+    }
+    const validation = inspectGameSetupDraft(malformedDraft)
+
+    expect(validation.errors).toEqual([
+      { type: 'DUPLICATE_ROLE_COUNT', roleId: ROLE_IDS.godfather },
+      { type: 'UNKNOWN_ROLE_COUNT', roleId: unknownRoleId },
+      { type: 'MISSING_ROLE_COUNT', roleId: ROLE_IDS.citizen },
+      { type: 'NO_PARTICIPATING_PLAYERS' },
+      { type: 'ROLE_COUNT_MISMATCH', participatingCount: 0, selectedRoleCount: 1 },
+      { type: 'NO_MAFIA_ROLE' },
+    ])
+  })
+
+  it('rejects an empty stable player ID', () => {
+    const withMafia = expectSuccess(
+      setRoleCount(createInitialGameSetupDraft(), ROLE_IDS.godfather, 1),
+    )
+    const invalidDraft: GameSetupDraft = {
+      ...withMafia,
+      roster: [{ id: playerId('   '), name: 'Alice', playing: true }],
+    }
+    const validation = inspectGameSetupDraft(invalidDraft)
+
+    expect(validation.errors).toEqual([{ type: 'INVALID_PLAYER_ID', playerId: '   ' }])
+  })
+
+  it('creates an immutable validated setup with participating players only', () => {
+    const withAlice = expectSuccess(addPlayer(createInitialGameSetupDraft(), 'Alice'))
+    const withBob = expectSuccess(addPlayer(withAlice, 'Bob'))
+    const bobId = withBob.roster[1]?.id ?? missingPlayerId()
+    const withBobOff = expectSuccess(togglePlayerParticipation(withBob, bobId))
+    const withGodfather = expectSuccess(setRoleCount(withBobOff, ROLE_IDS.godfather, 1))
+    const configured = setGameSetting(withGodfather, 'revealRoleOnDeath', true)
+    const result = validateGameSetupDraft(configured)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected the setup to be valid.')
+    }
+
+    expect(result.value.participatingPlayers).toEqual([
+      { id: 'player-1', name: 'Alice', playing: true },
+    ])
+    expect(result.value.participatingPlayers).not.toContainEqual(
+      expect.objectContaining({ name: 'Bob' }),
+    )
+    expect(result.value.settings.revealRoleOnDeath).toBe(true)
+    expect(result.value).not.toHaveProperty('phase')
+    expect(result.value.participatingPlayers[0]).not.toHaveProperty('role')
+    expect(Object.isFrozen(result.value)).toBe(true)
+    expect(Object.isFrozen(result.value.participatingPlayers)).toBe(true)
+    expect(Object.isFrozen(result.value.participatingPlayers[0])).toBe(true)
+    expect(Object.isFrozen(result.value.roleCounts)).toBe(true)
+    expect(Object.isFrozen(result.value.settings)).toBe(true)
+  })
+})
+
+function expectSuccess<Value, Failure>(result: DomainResult<Value, Failure>): Value {
+  if (!result.ok) {
+    throw new Error('Expected the setup operation to succeed.')
+  }
+
+  return result.value
+}
+
+function missingPlayerId(): never {
+  throw new Error('Expected the test player to exist.')
+}

@@ -6,10 +6,12 @@ physical role and result cards.
 
 ## Current status
 
-Phase 1 — Core domain model and phase machine — is implemented. The repository now has a
-framework-independent game model, explicit phase transitions, immutable command/event reduction,
-domain invariant validation, and injected randomness with deterministic test support. Host-facing
-roster, setup, assignment, role ability, voting, and resolution features have not started.
+Phase 2 — Player roster and game setup UI — is implemented. The host can maintain an in-memory
+roster, choose participants, configure counts for every named role, set all documented game
+settings, and prepare an immutable validated setup for the next phase. The application layer owns
+the single pre-game draft and its validation; the domain owns the authoritative setup-only role
+registry. Role assignment, role instances, active-game creation, abilities, voting, and resolution
+have not started.
 
 ## Requirements
 
@@ -83,8 +85,9 @@ its deliberately invalid fixtures are excluded from normal production analysis.
 ESLint separately rejects browser globals in domain modules because those dependencies do not
 appear in an import graph.
 
-The layer-specific README files point back to the architecture authority. Phase 1 implementation is
-confined to the domain layer; application and feature layers remain intentionally empty.
+The layer-specific README files point back to the architecture authority. Phase 2 adds a focused
+application setup model and reducer-driven roster/setup features while leaving the Phase 1 active
+`GameState` boundary unchanged: active state still begins at `role-distribution` after assignment.
 
 ## Project authorities
 
