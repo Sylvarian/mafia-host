@@ -4,6 +4,7 @@ import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
 import type { RoleInstance } from '../roles/role-instance.ts'
+import type { DoctorPreviousTarget } from './doctor-previous-target.ts'
 import type { DayNumber, NightNumber } from './game-records.ts'
 import type { GameSettings } from './game-settings.ts'
 
@@ -15,17 +16,22 @@ export type GameState = Readonly<{
   settings: GameSettings
   nightNumber: NightNumber
   dayNumber: DayNumber
+  doctorPreviousTargets: readonly DoctorPreviousTarget[]
 }>
 
 export type GamePlayerCandidate = Readonly<Omit<GamePlayer, 'role'> & { role: RoleInstance | null }>
 
 export type GameStateCandidate = Readonly<
-  Omit<GameState, 'phase' | 'players' | 'settings' | 'nightNumber' | 'dayNumber'> & {
+  Omit<
+    GameState,
+    'phase' | 'players' | 'settings' | 'nightNumber' | 'dayNumber' | 'doctorPreviousTargets'
+  > & {
     phase: string
     players: readonly GamePlayerCandidate[]
     settings: unknown
     nightNumber: number
     dayNumber: number
+    doctorPreviousTargets: unknown
   }
 >
 

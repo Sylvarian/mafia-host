@@ -27,3 +27,11 @@ tracking. The orchestration function revalidates Phase 4 input and returns a dee
 `NightResolution`. It never mutates `GameState`, applies a provisional death, advances the phase,
 uses randomness, generates Dawn output, converts a role, triggers a Jester effect, or evaluates a
 winner.
+
+Phase 6 adds one canonical `DoctorPreviousTarget` array to `GameState`, with runtime validation,
+per-role-instance uniqueness, participating-player ordering, and immutable canonical copies. The
+night-application boundary explicitly enters `night-resolution`, revalidates the resolution against
+the completed action batch, applies provisional deaths and configured public role reveals once,
+records every acting Doctor's submitted target even if blocked or killed, builds a public-safe Dawn
+model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, Executioner
+fields, and personal-win state and performs no neutral or faction outcome calculation.

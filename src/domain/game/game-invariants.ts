@@ -1,9 +1,17 @@
-import type { PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
+import {
+  playerId,
+  roleInstanceId,
+  type PlayerId,
+  type RoleId,
+  type RoleInstanceId,
+} from '../identifiers.ts'
 import { isGamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
+import { ROLE_IDS } from '../roles/role-registry.ts'
 import { fail, succeed, type DomainResult } from './domain-result.ts'
+import type { DoctorPreviousTarget } from './doctor-previous-target.ts'
 import type { CreateGameError, GameInvariantError } from './game-errors.ts'
 import { validateGameSettings } from './game-settings.ts'
 import type {
@@ -28,6 +36,7 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     settings: input.settings,
     nightNumber: 0,
     dayNumber: 0,
+    doctorPreviousTargets: [],
   })
 
   if (!gameResult.ok) {
@@ -42,6 +51,10 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
 export function validateGameState(
   candidate: GameStateCandidate,
 ): DomainResult<GameState, GameInvariantError> {
+  if (!isRuntimeIdentity(candidate.id)) {
+    return invalidIdentity('gameId', candidate.id)
+  }
+
   if (!isGamePhase(candidate.phase)) {
     return fail({
       type: 'INVALID_GAME_STATE',
@@ -89,6 +102,16 @@ export function validateGameState(
     playerResult.value.map((gamePlayer) => gamePlayer.playerId),
   )
 
+  const doctorHistoryResult = copyDoctorPreviousTargets(
+    candidate.doctorPreviousTargets,
+    playerResult.value,
+    candidate.nightNumber,
+  )
+
+  if (!doctorHistoryResult.ok) {
+    return doctorHistoryResult
+  }
+
   for (const gamePlayer of playerResult.value) {
     if (
       gamePlayer.executionerTargetId !== null &&
@@ -110,7 +133,133 @@ export function validateGameState(
     settings: settingsResult.value,
     nightNumber: candidate.nightNumber,
     dayNumber: candidate.dayNumber,
+    doctorPreviousTargets: doctorHistoryResult.value,
   })
+}
+
+function copyDoctorPreviousTargets(
+  candidate: unknown,
+  gamePlayers: readonly GamePlayer[],
+  currentNightNumber: number,
+): DomainResult<readonly DoctorPreviousTarget[], GameInvariantError> {
+  if (!isUnknownArray(candidate)) {
+    return fail({ type: 'INVALID_DOCTOR_HISTORY', value: candidate })
+  }
+
+  const copiedHistory: DoctorPreviousTarget[] = []
+  const roleInstanceIds = new Set<RoleInstanceId>()
+  let previousPlayerIndex = -1
+
+  for (const [index, entry] of candidate.entries()) {
+    if (!isUnknownRecord(entry)) {
+      return fail({
+        type: 'INVALID_DOCTOR_HISTORY_ENTRY',
+        index,
+        field: 'doctorRoleInstanceId',
+        value: undefined,
+      })
+    }
+
+    const doctorRoleInstanceId =
+      'doctorRoleInstanceId' in entry ? entry.doctorRoleInstanceId : undefined
+    const targetPlayerId = 'targetPlayerId' in entry ? entry.targetPlayerId : undefined
+    const nightNumber = 'nightNumber' in entry ? entry.nightNumber : undefined
+
+    if (typeof doctorRoleInstanceId !== 'string') {
+      return fail({
+        type: 'INVALID_DOCTOR_HISTORY_ENTRY',
+        index,
+        field: 'doctorRoleInstanceId',
+        value: doctorRoleInstanceId,
+      })
+    }
+
+    if (typeof targetPlayerId !== 'string') {
+      return fail({
+        type: 'INVALID_DOCTOR_HISTORY_ENTRY',
+        index,
+        field: 'targetPlayerId',
+        value: targetPlayerId,
+      })
+    }
+
+    if (typeof nightNumber !== 'number') {
+      return fail({
+        type: 'INVALID_DOCTOR_HISTORY_ENTRY',
+        index,
+        field: 'nightNumber',
+        value: nightNumber,
+      })
+    }
+
+    const validatedDoctorRoleInstanceId = roleInstanceId(doctorRoleInstanceId)
+    const validatedTargetPlayerId = playerId(targetPlayerId)
+
+    const doctor = gamePlayers.find(
+      (player) => player.role.instanceId === validatedDoctorRoleInstanceId,
+    )
+
+    if (doctor === undefined) {
+      return fail({
+        type: 'UNKNOWN_DOCTOR_ROLE_INSTANCE',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+      })
+    }
+
+    if (doctor.role.roleId !== ROLE_IDS.doctor) {
+      return fail({
+        type: 'NON_DOCTOR_HISTORY_ENTRY',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+        roleId: doctor.role.roleId,
+      })
+    }
+
+    if (!gamePlayers.some((player) => player.playerId === validatedTargetPlayerId)) {
+      return fail({
+        type: 'UNKNOWN_DOCTOR_TARGET',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+        targetPlayerId: validatedTargetPlayerId,
+      })
+    }
+
+    if (!Number.isSafeInteger(nightNumber) || nightNumber < 0 || nightNumber > currentNightNumber) {
+      return fail({
+        type: 'INVALID_DOCTOR_HISTORY_NIGHT',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+        nightNumber,
+        currentNightNumber,
+      })
+    }
+
+    if (roleInstanceIds.has(validatedDoctorRoleInstanceId)) {
+      return fail({
+        type: 'DUPLICATE_DOCTOR_HISTORY',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+      })
+    }
+
+    const playerIndex = gamePlayers.indexOf(doctor)
+    if (playerIndex < previousPlayerIndex) {
+      return fail({
+        type: 'DOCTOR_HISTORY_ORDER_MISMATCH',
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+        expectedIndex: previousPlayerIndex,
+        actualIndex: playerIndex,
+      })
+    }
+
+    roleInstanceIds.add(validatedDoctorRoleInstanceId)
+    previousPlayerIndex = playerIndex
+    copiedHistory.push(
+      Object.freeze({
+        doctorRoleInstanceId: validatedDoctorRoleInstanceId,
+        targetPlayerId: validatedTargetPlayerId,
+        nightNumber,
+      }),
+    )
+  }
+
+  return succeed(Object.freeze(copiedHistory))
 }
 
 function validateRosterAssignments(
@@ -187,7 +336,11 @@ function copyRoleDefinitions(
   const roleIds = new Set<RoleId>()
   const copiedDefinitions: RoleDefinition[] = []
 
-  for (const definition of definitions) {
+  for (const [index, definition] of definitions.entries()) {
+    if (!isRuntimeIdentity(definition.id)) {
+      return invalidIdentity('roleDefinitionId', definition.id, index)
+    }
+
     if (roleIds.has(definition.id)) {
       return fail({ type: 'DUPLICATE_ROLE_DEFINITION', roleId: definition.id })
     }
@@ -207,7 +360,11 @@ function copyGamePlayers(
   const roleInstanceIds = new Set<RoleInstanceId>()
   const gamePlayers: GamePlayer[] = []
 
-  for (const candidate of candidates) {
+  for (const [index, candidate] of candidates.entries()) {
+    if (!isRuntimeIdentity(candidate.playerId)) {
+      return invalidIdentity('playerId', candidate.playerId, index)
+    }
+
     if (playerIds.has(candidate.playerId)) {
       return fail({ type: 'DUPLICATE_PARTICIPATING_PLAYER', playerId: candidate.playerId })
     }
@@ -216,6 +373,14 @@ function copyGamePlayers(
 
     if (candidate.role === null) {
       return fail({ type: 'MISSING_ROLE_ASSIGNMENT', playerId: candidate.playerId })
+    }
+
+    if (!isRuntimeIdentity(candidate.role.instanceId)) {
+      return invalidIdentity('roleInstanceId', candidate.role.instanceId, index)
+    }
+
+    if (!isRuntimeIdentity(candidate.role.roleId)) {
+      return invalidIdentity('roleId', candidate.role.roleId, index)
     }
 
     if (typeof candidate.alive !== 'boolean') {
@@ -263,6 +428,18 @@ function copyGamePlayers(
 
     if (
       candidate.publiclyRevealedRoleId !== null &&
+      typeof candidate.publiclyRevealedRoleId !== 'string'
+    ) {
+      return fail({
+        type: 'INVALID_PUBLIC_ROLE_REVEAL',
+        playerId: candidate.playerId,
+        reason: 'invalid-type',
+        value: candidate.publiclyRevealedRoleId,
+      })
+    }
+
+    if (
+      candidate.publiclyRevealedRoleId !== null &&
       !roleIds.has(candidate.publiclyRevealedRoleId)
     ) {
       return fail({
@@ -270,6 +447,19 @@ function copyGamePlayers(
         playerId: candidate.playerId,
         roleId: candidate.publiclyRevealedRoleId,
         reference: 'public-role-reveal',
+      })
+    }
+
+    if (
+      candidate.publiclyRevealedRoleId !== null &&
+      candidate.publiclyRevealedRoleId !== candidate.role.roleId
+    ) {
+      return fail({
+        type: 'INVALID_PUBLIC_ROLE_REVEAL',
+        playerId: candidate.playerId,
+        reason: 'assigned-role-mismatch',
+        assignedRoleId: candidate.role.roleId,
+        revealedRoleId: candidate.publiclyRevealedRoleId,
       })
     }
 
@@ -330,4 +520,35 @@ function validateRoleOrdinals(
 
 function isNonNegativeInteger(value: number): boolean {
   return Number.isInteger(value) && value >= 0
+}
+
+function isRuntimeIdentity(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function invalidIdentity(
+  field: Extract<
+    Extract<GameInvariantError, Readonly<{ type: 'INVALID_GAME_STATE' }>>['reason'],
+    Readonly<{ type: 'INVALID_IDENTITY' }>
+  >['field'],
+  value: unknown,
+  index?: number,
+): DomainResult<never, GameInvariantError> {
+  return fail({
+    type: 'INVALID_GAME_STATE',
+    reason: {
+      type: 'INVALID_IDENTITY',
+      field,
+      ...(index === undefined ? {} : { index }),
+      value,
+    },
+  })
+}
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value)
+}
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null
 }

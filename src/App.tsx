@@ -18,20 +18,23 @@ function App() {
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 4 · Night action collection</p>
+        <p>Phase 6 · Private results and Dawn</p>
       </header>
 
       <main className="app-main">
         <section className="app-intro" aria-labelledby="page-heading">
-          <p className="app-intro__eyebrow">Prepare tonight’s table</p>
-          <h1 id="page-heading">Set up, deal, and collect the night</h1>
+          <p className="app-intro__eyebrow">Run tonight’s table</p>
+          <h1 id="page-heading">Set up, resolve, and announce Dawn</h1>
           <p>
             Validate the roster and role composition, privately assign roles, and track every
-            physical card handed to players, then collect private night-action intent.
+            physical card handed to players, then collect and resolve private night-action intent
+            before a public-safe Dawn.
           </p>
           <div className="app-intro__boundary">
             <strong>Host-only workflow</strong>
-            <span>Assignments and night targets stay private to the host.</span>
+            <span>
+              Assignments, night targets, and investigative results stay private to the host.
+            </span>
           </div>
         </section>
 

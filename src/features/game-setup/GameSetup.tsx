@@ -13,6 +13,17 @@ import {
   type PlayerId as NightPlayerId,
   type RoleInstanceId,
 } from '@/application/night-actions/index.ts'
+import {
+  acknowledgePrivateNightResult,
+  beginNightResultPresentation,
+  nextPrivateNightResult,
+  prepareDawnAnnouncement,
+  previousPrivateNightResult,
+  selectNightPresentationView,
+  type NightPresentationError,
+  type NightPresentationWorkflow,
+  type PrivateNightResultId,
+} from '@/application/night-presentation/index.ts'
 
 import {
   assignRoleDistribution,
@@ -35,6 +46,7 @@ import {
   type GameSettingKey,
   type RoleId,
 } from '@/application/game-setup/index.ts'
+import { DawnPresentation, getNightPresentationErrorMessage } from '@/features/dawn/index.ts'
 import { PlayerRoster } from '@/features/roster/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import {
@@ -90,12 +102,29 @@ type NightFeatureAction =
   | Readonly<{ type: 'OPERATION_FAILED'; error: NightActionCollectionError }>
   | Readonly<{ type: 'RESET' }>
 
+type NightPresentationFeatureState = Readonly<{
+  workflow: NightPresentationWorkflow | null
+  error: NightPresentationError | null
+}>
+
+type NightPresentationFeatureAction =
+  | Readonly<{
+      type: 'WORKFLOW_UPDATED'
+      workflow: NightPresentationWorkflow
+    }>
+  | Readonly<{ type: 'OPERATION_FAILED'; error: NightPresentationError }>
+  | Readonly<{ type: 'RESET' }>
+
 const initialDistributionState: DistributionFeatureState = {
   status: 'not-started',
   error: null,
 }
 
 const initialNightState: NightFeatureState = { workflow: null, error: null }
+const initialNightPresentationState: NightPresentationFeatureState = {
+  workflow: null,
+  error: null,
+}
 
 export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
   const [workflow, dispatch] = useReducer(
@@ -108,8 +137,13 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
     initialDistributionState,
   )
   const [nightState, dispatchNight] = useReducer(reduceNightFeatureState, initialNightState)
+  const [nightPresentationState, dispatchNightPresentation] = useReducer(
+    reduceNightPresentationFeatureState,
+    initialNightPresentationState,
+  )
   const identityOperationPendingRef = useRef(false)
   const nightOperationPendingRef = useRef(false)
+  const presentationOperationPendingRef = useRef(false)
 
   useEffect(() => {
     identityOperationPendingRef.current = false
@@ -119,7 +153,36 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
     nightOperationPendingRef.current = false
   }, [nightState])
 
+  useEffect(() => {
+    presentationOperationPendingRef.current = false
+  }, [nightPresentationState])
+
   if (workflow.status === 'ready') {
+    if (nightPresentationState.workflow !== null) {
+      const activePresentationWorkflow = nightPresentationState.workflow
+
+      return (
+        <DawnPresentation
+          view={selectNightPresentationView(activePresentationWorkflow)}
+          error={nightPresentationState.error}
+          onAcknowledgeResult={(resultId: PrivateNightResultId) => {
+            applyPresentationOperation(() =>
+              acknowledgePrivateNightResult(activePresentationWorkflow, resultId),
+            )
+          }}
+          onPreviousResult={() => {
+            applyPresentationOperation(() => previousPrivateNightResult(activePresentationWorkflow))
+          }}
+          onNextResult={() => {
+            applyPresentationOperation(() => nextPrivateNightResult(activePresentationWorkflow))
+          }}
+          onPrepareDawn={() => {
+            applyPresentationOperation(() => prepareDawnAnnouncement(activePresentationWorkflow))
+          }}
+        />
+      )
+    }
+
     if (nightState.workflow !== null) {
       const activeNightWorkflow = nightState.workflow
 
@@ -141,6 +204,17 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
           }}
           onFinalise={() => {
             applyNightOperation(() => finaliseNightActionCollection(activeNightWorkflow))
+          }}
+          resolutionErrorMessage={
+            nightPresentationState.error === null
+              ? null
+              : getNightPresentationErrorMessage(nightPresentationState.error)
+          }
+          onResolveNight={() => {
+            applyPresentationOperation(
+              () => beginNightResultPresentation(activeNightWorkflow),
+              true,
+            )
           }}
         />
       )
@@ -283,6 +357,35 @@ export function GameSetup({ roleAssignmentDependencies }: GameSetupProps) {
     }
   }
 
+  function applyPresentationOperation(
+    operation: () =>
+      | Readonly<{ ok: true; value: NightPresentationWorkflow }>
+      | Readonly<{ ok: false; error: NightPresentationError }>,
+    clearNightOnSuccess = false,
+  ): void {
+    if (presentationOperationPendingRef.current) {
+      return
+    }
+
+    presentationOperationPendingRef.current = true
+
+    try {
+      const result = operation()
+      dispatchNightPresentation(
+        result.ok
+          ? { type: 'WORKFLOW_UPDATED', workflow: result.value }
+          : { type: 'OPERATION_FAILED', error: result.error },
+      )
+
+      if (result.ok && clearNightOnSuccess) {
+        dispatchNight({ type: 'RESET' })
+      }
+    } catch (error: unknown) {
+      presentationOperationPendingRef.current = false
+      throw error
+    }
+  }
+
   return (
     <div className="game-setup">
       <PlayerRoster
@@ -354,5 +457,19 @@ function reduceNightFeatureState(
       return { ...state, error: action.error }
     case 'RESET':
       return initialNightState
+  }
+}
+
+function reduceNightPresentationFeatureState(
+  state: NightPresentationFeatureState,
+  action: NightPresentationFeatureAction,
+): NightPresentationFeatureState {
+  switch (action.type) {
+    case 'WORKFLOW_UPDATED':
+      return { workflow: action.workflow, error: null }
+    case 'OPERATION_FAILED':
+      return { ...state, error: action.error }
+    case 'RESET':
+      return initialNightPresentationState
   }
 }

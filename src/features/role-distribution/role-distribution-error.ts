@@ -81,6 +81,24 @@ function getActiveGameRejectionMessage(error: ActiveGameRejection): string {
       return `The active game contains an unknown ${error.reference} player ID ${error.playerId}.`
     case 'UNKNOWN_ROLE_REFERENCE':
       return `Player ID ${error.playerId} references unknown ${error.reference} role ${error.roleId}.`
+    case 'INVALID_PUBLIC_ROLE_REVEAL':
+      return `Player ID ${error.playerId} has an invalid public role reveal value.`
+    case 'INVALID_DOCTOR_HISTORY':
+      return 'The active game Doctor history must be an array.'
+    case 'INVALID_DOCTOR_HISTORY_ENTRY':
+      return `Doctor history entry ${String(error.index + 1)} has an invalid ${error.field} value.`
+    case 'UNKNOWN_DOCTOR_ROLE_INSTANCE':
+      return `Doctor history references unknown role instance ${error.doctorRoleInstanceId}.`
+    case 'NON_DOCTOR_HISTORY_ENTRY':
+      return `Role instance ${error.doctorRoleInstanceId} is not a Doctor and cannot have Doctor target history.`
+    case 'UNKNOWN_DOCTOR_TARGET':
+      return `Doctor history references unknown target player ${error.targetPlayerId}.`
+    case 'INVALID_DOCTOR_HISTORY_NIGHT':
+      return `Doctor history has invalid night number ${String(error.nightNumber)}.`
+    case 'DUPLICATE_DOCTOR_HISTORY':
+      return `Doctor role instance ${error.doctorRoleInstanceId} appears more than once in target history.`
+    case 'DOCTOR_HISTORY_ORDER_MISMATCH':
+      return 'Doctor target history is not in canonical participating-player order.'
     case 'INVALID_GAME_STATE':
       return getInvalidGameStateMessage(error.reason)
   }
@@ -96,6 +114,8 @@ function getInvalidGameStateMessage(
       return `The active game cannot begin in the unknown phase ${error.phase}.`
     case 'INVALID_COUNTER':
       return `The active game rejected ${error.counter} counter ${String(error.value)}.`
+    case 'INVALID_IDENTITY':
+      return `The active game rejected an invalid ${error.field} identity.`
     case 'INVALID_PLAYER_ALIVE_STATE':
       return `Player ID ${error.playerId} has an invalid alive state; expected an explicit boolean.`
     case 'INVALID_ROLE_ORDINAL':

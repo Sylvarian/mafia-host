@@ -71,6 +71,8 @@ function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
       onFinalise={() => {
         applyOperation(() => finaliseNightActionCollection(workflow))
       }}
+      onResolveNight={() => undefined}
+      resolutionErrorMessage={null}
     />
   )
 }
@@ -186,7 +188,8 @@ describe('night runner host UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Finish Collecting Night Actions' }))
     expect(screen.getByRole('heading', { name: 'Night actions collected' })).toHaveFocus()
-    expect(screen.getByText('Ready for night resolution in Phase 5')).toBeVisible()
+    expect(screen.getByText('Ready to resolve night results')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Resolve Night' })).toBeVisible()
     expect(screen.getByText(/game remains in night-action-collection/i)).toBeVisible()
     expect(screen.queryByText(/was killed|appears suspicious|investigation result/i)).toBeNull()
   })

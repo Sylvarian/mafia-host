@@ -388,6 +388,8 @@ At minimum:
 
 ## Phase 6 — Dawn and private-result communication
 
+**Status: Implemented for the scoped private-result, resolution-application, and Dawn boundary.**
+
 ### Goal
 
 Help the host communicate night outcomes using physical cards/paper.
@@ -401,13 +403,13 @@ Build `features/dawn`:
 - Investigator card/group
 - Consigliere card/group
 - Detective tracked visit
-- Executioner conversion notice
-- Death summary
-- Cause of death for host
-- Public announcement preview
+- Explicit acknowledgement of every private result
+- Deliberate host-only privacy confirmation before Dawn
+- Immutable provisional-death application
+- Minimal per-Doctor submitted-target history
+- Public-safe death summary
 - Role reveal on/off handling
-- Confirm announcement delivered
-- Enter Day button
+- Stop in `dawn-announcement`
 
 For Investigator/Consigliere:
 
@@ -418,13 +420,18 @@ For Investigator/Consigliere:
 ### Tests
 
 - Public output excludes hidden roles when setting is off.
-- Host output always retains actual role/cause.
+- Private output contains only actual player-facing investigative results.
+- Deaths are not applied before private results are complete.
+- Doctor history records submitted selections even when blocked or killed.
 - Quiet-night announcement appears when no deaths.
 - Result queue contains only living actors whose actions produced results.
+- No hidden attack, block, frame, or protection data reaches Dawn.
 
 ### Acceptance criteria
 
 - Host can conduct all private result reveals without consulting handwritten notes.
+- The active game finishes in `dawn-announcement`.
+- Phase 7 controls, neutral effects, and victory evaluation are not started.
 
 ---
 

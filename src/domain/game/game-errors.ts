@@ -73,12 +73,34 @@ export type UnknownRoleReferenceError = Readonly<{
   reference: 'assigned-role' | 'public-role-reveal'
 }>
 
+export type InvalidPublicRoleRevealError = Readonly<{
+  type: 'INVALID_PUBLIC_ROLE_REVEAL'
+  playerId: PlayerId
+}> &
+  (
+    | Readonly<{
+        reason: 'invalid-type'
+        value: unknown
+      }>
+    | Readonly<{
+        reason: 'assigned-role-mismatch'
+        assignedRoleId: RoleId
+        revealedRoleId: RoleId
+      }>
+  )
+
 export type InvalidGameStateError = Readonly<{
   type: 'INVALID_GAME_STATE'
   reason:
     | InvalidGameSettingError
     | Readonly<{ type: 'INVALID_PHASE'; phase: string }>
     | Readonly<{ type: 'INVALID_COUNTER'; counter: 'day' | 'night'; value: number }>
+    | Readonly<{
+        type: 'INVALID_IDENTITY'
+        field: 'gameId' | 'playerId' | 'roleDefinitionId' | 'roleId' | 'roleInstanceId'
+        index?: number
+        value: unknown
+      }>
     | Readonly<{
         type: 'INVALID_PLAYER_ALIVE_STATE'
         playerId: PlayerId
@@ -98,6 +120,45 @@ export type InvalidGameStateError = Readonly<{
       }>
 }>
 
+export type DoctorPreviousTargetInvariantError =
+  | Readonly<{ type: 'INVALID_DOCTOR_HISTORY'; value: unknown }>
+  | Readonly<{
+      type: 'INVALID_DOCTOR_HISTORY_ENTRY'
+      index: number
+      field: 'doctorRoleInstanceId' | 'targetPlayerId' | 'nightNumber'
+      value: unknown
+    }>
+  | Readonly<{
+      type: 'UNKNOWN_DOCTOR_ROLE_INSTANCE'
+      doctorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'NON_DOCTOR_HISTORY_ENTRY'
+      doctorRoleInstanceId: RoleInstanceId
+      roleId: RoleId
+    }>
+  | Readonly<{
+      type: 'UNKNOWN_DOCTOR_TARGET'
+      doctorRoleInstanceId: RoleInstanceId
+      targetPlayerId: PlayerId
+    }>
+  | Readonly<{
+      type: 'INVALID_DOCTOR_HISTORY_NIGHT'
+      doctorRoleInstanceId: RoleInstanceId
+      nightNumber: number
+      currentNightNumber: number
+    }>
+  | Readonly<{
+      type: 'DUPLICATE_DOCTOR_HISTORY'
+      doctorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'DOCTOR_HISTORY_ORDER_MISMATCH'
+      doctorRoleInstanceId: RoleInstanceId
+      expectedIndex: number
+      actualIndex: number
+    }>
+
 export type GameInvariantError =
   | DuplicateParticipatingPlayerError
   | DuplicateRoleAssignmentError
@@ -106,6 +167,8 @@ export type GameInvariantError =
   | MissingRoleAssignmentError
   | UnknownPlayerReferenceError
   | UnknownRoleReferenceError
+  | InvalidPublicRoleRevealError
+  | DoctorPreviousTargetInvariantError
   | InvalidGameStateError
 
 export type CreateGameError =

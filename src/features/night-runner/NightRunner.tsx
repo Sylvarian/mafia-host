@@ -25,6 +25,8 @@ type NightRunnerProps = Readonly<{
   onPrevious: () => void
   onEditAction: (actorRoleInstanceId: RoleInstanceId) => void
   onFinalise: () => void
+  onResolveNight: () => void
+  resolutionErrorMessage: string | null
 }>
 
 export function NightRunner({
@@ -35,6 +37,8 @@ export function NightRunner({
   onPrevious,
   onEditAction,
   onFinalise,
+  onResolveNight,
+  resolutionErrorMessage,
 }: NightRunnerProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const focusKey =
@@ -47,7 +51,14 @@ export function NightRunner({
   }, [focusKey])
 
   if (workflow.status === 'complete') {
-    return <CollectionComplete workflow={workflow} headingRef={headingRef} />
+    return (
+      <CollectionComplete
+        workflow={workflow}
+        headingRef={headingRef}
+        resolutionErrorMessage={resolutionErrorMessage}
+        onResolveNight={onResolveNight}
+      />
+    )
   }
 
   if (workflow.status === 'reviewing') {
@@ -301,7 +312,14 @@ function ActionReview({
 function CollectionComplete({
   workflow,
   headingRef,
-}: Readonly<{ workflow: CompleteNightActionsWorkflow; headingRef: HeadingRef }>) {
+  resolutionErrorMessage,
+  onResolveNight,
+}: Readonly<{
+  workflow: CompleteNightActionsWorkflow
+  headingRef: HeadingRef
+  resolutionErrorMessage: string | null
+  onResolveNight: () => void
+}>) {
   return (
     <section className="night-runner night-complete" aria-labelledby="night-complete-heading">
       <p className="night-runner__eyebrow">
@@ -310,12 +328,20 @@ function CollectionComplete({
       <h2 id="night-complete-heading" ref={headingRef} tabIndex={-1}>
         Night actions collected
       </h2>
-      <p className="night-complete__lead">Ready for night resolution in Phase 5</p>
+      <p className="night-complete__lead">Ready to resolve night results</p>
       <p>
         {workflow.collectedActions.actions.length} action
         {workflow.collectedActions.actions.length === 1 ? '' : 's'} recorded as intent. The game
         remains in night-action-collection.
       </p>
+      {resolutionErrorMessage === null ? null : (
+        <p className="night-runner__error" role="alert">
+          {resolutionErrorMessage}
+        </p>
+      )}
+      <button type="button" className="button button--prepare" onClick={onResolveNight}>
+        Resolve Night
+      </button>
     </section>
   )
 }

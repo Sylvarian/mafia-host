@@ -91,6 +91,7 @@ describe('game invariants', () => {
       phase: 'role-distribution',
       nightNumber: 0,
       dayNumber: 0,
+      doctorPreviousTargets: [],
     })
     expect(result.value.players.map((player) => player.playerId)).toEqual([aliceId, bobId])
   })
@@ -443,5 +444,123 @@ describe('game invariants', () => {
         },
       },
     })
+  })
+
+  it('rejects malformed runtime game, player, role, and role-instance identities', () => {
+    const created = createGame(validInput())
+    if (!created.ok) {
+      throw new Error('Expected the test game to be valid.')
+    }
+    const createdAlice = created.value.players[0]
+    const createdBob = created.value.players[1]
+    if (createdAlice === undefined || createdBob === undefined) {
+      throw new Error('Expected Alice and Bob.')
+    }
+
+    expect(validateGameState({ ...created.value, id: 7 as never })).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: { type: 'INVALID_IDENTITY', field: 'gameId' },
+      },
+    })
+    expect(
+      validateGameState({
+        ...created.value,
+        players: [{ ...createdAlice, playerId: 7 as never }, createdBob],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: { type: 'INVALID_IDENTITY', field: 'playerId', index: 0 },
+      },
+    })
+    expect(
+      validateGameState({
+        ...created.value,
+        players: [
+          {
+            ...createdAlice,
+            role: { ...createdAlice.role, roleId: 7 as never },
+          },
+          createdBob,
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: { type: 'INVALID_IDENTITY', field: 'roleId', index: 0 },
+      },
+    })
+    expect(
+      validateGameState({
+        ...created.value,
+        players: [
+          {
+            ...createdAlice,
+            role: { ...createdAlice.role, instanceId: 7 as never },
+          },
+          createdBob,
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: { type: 'INVALID_IDENTITY', field: 'roleInstanceId', index: 0 },
+      },
+    })
+    expect(
+      validateGameState({
+        ...created.value,
+        players: [{ ...createdAlice, alive: 'yes' as never }, createdBob],
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'INVALID_PLAYER_ALIVE_STATE',
+          playerId: aliceId,
+          value: 'yes',
+        },
+      },
+    })
+  })
+
+  it('requires an existing public reveal to match the immutable assigned role', () => {
+    const created = createGame(validInput())
+    if (!created.ok) {
+      throw new Error('Expected the test game to be valid.')
+    }
+
+    expect(
+      validateGameState({
+        ...created.value,
+        players: created.value.players.map((player) =>
+          player.playerId === aliceId ? { ...player, publiclyRevealedRoleId: doctorId } : player,
+        ),
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_PUBLIC_ROLE_REVEAL',
+        playerId: aliceId,
+        reason: 'assigned-role-mismatch',
+        assignedRoleId: citizenId,
+        revealedRoleId: doctorId,
+      },
+    })
+
+    expect(
+      validateGameState({
+        ...created.value,
+        players: created.value.players.map((player) =>
+          player.playerId === aliceId ? { ...player, publiclyRevealedRoleId: citizenId } : player,
+        ),
+      }).ok,
+    ).toBe(true)
   })
 })

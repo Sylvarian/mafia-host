@@ -32,11 +32,24 @@ export function resolveNight(
   input: NightResolutionInput,
 ): DomainResult<NightResolution, NightResolutionError> {
   const { game, collectedActions, previousTargets } = input
+  const collectedActionsCandidate: unknown = collectedActions
 
   if (game.phase !== 'night-action-collection') {
     return fail({
       type: 'INVALID_NIGHT_RESOLUTION_PHASE',
       currentPhase: game.phase,
+    })
+  }
+
+  if (
+    !isUnknownRecord(collectedActionsCandidate) ||
+    typeof collectedActionsCandidate.gameId !== 'string' ||
+    typeof collectedActionsCandidate.nightNumber !== 'number' ||
+    !Array.isArray(collectedActionsCandidate.actions)
+  ) {
+    return fail({
+      type: 'INVALID_COLLECTED_NIGHT_ACTIONS',
+      error: { type: 'INVALID_ACTION_BATCH', reason: 'invalid-batch' },
     })
   }
 
@@ -123,4 +136,8 @@ export function resolveNight(
       detectiveResults,
     }),
   )
+}
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null
 }

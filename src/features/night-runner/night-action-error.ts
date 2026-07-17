@@ -48,6 +48,8 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return 'A Doctor’s previous target is not part of this game.'
     case 'ACTION_BATCH_GAME_MISMATCH':
       return 'The collected action batch does not belong to this game and night.'
+    case 'INVALID_ACTION_BATCH':
+      return 'The collected night-action batch is malformed and cannot be used.'
     case 'UNKNOWN_SEQUENCE_ROLE':
       return 'A living player has a role that is missing from the collection registry.'
     case 'ACTIVE_GAME_REJECTED':

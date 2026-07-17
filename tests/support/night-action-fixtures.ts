@@ -1,4 +1,5 @@
 import type { GameSettings } from '../../src/domain/game/game-settings.ts'
+import type { DoctorPreviousTarget } from '../../src/domain/game/doctor-previous-target.ts'
 import type { GameState } from '../../src/domain/game/game-state.ts'
 import {
   gameId,
@@ -35,6 +36,7 @@ export function createNightFixture(
     nightNumber?: number
     settings?: Partial<GameSettings>
     distributionStatus?: RoleDistributionWorkflow['status']
+    doctorPreviousTargets?: readonly DoctorPreviousTarget[]
   }> = {},
 ): Readonly<{
   game: GameState
@@ -87,6 +89,7 @@ export function createNightFixture(
     settings,
     nightNumber: options.nightNumber ?? 0,
     dayNumber: 0,
+    doctorPreviousTargets: options.doctorPreviousTargets ?? [],
   }
   const roleCounts = ROLE_REGISTRY.map((role) => ({
     roleId: role.id,

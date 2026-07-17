@@ -11,6 +11,7 @@ import {
   editNightAction,
   finaliseNightActionCollection,
   previousNightActionCollection,
+  selectDoctorPreviousTargetsForNight,
   selectNightActionTarget,
   type CollectingNightActionsWorkflow,
   type NightActionCollectionWorkflow,
@@ -135,17 +136,69 @@ describe('begin first night', () => {
   })
 
   it('rejects invalid previous-target identities at entry without changing the original game', () => {
-    const fixture = createNightFixture([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }])
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
+      {
+        doctorPreviousTargets: [
+          {
+            doctorRoleInstanceId: roleInstanceId('unknown-doctor'),
+            targetPlayerId: playerId('player-2'),
+            nightNumber: 0,
+          },
+        ],
+      },
+    )
 
     expect(
-      beginFirstNight(createNightActionCollectionWorkflow(fixture.distribution), [
-        { actorRoleInstanceId: roleInstanceId('unknown-doctor'), targetPlayerId: null },
-      ]),
+      beginFirstNight(createNightActionCollectionWorkflow(fixture.distribution)),
     ).toMatchObject({
       ok: false,
-      error: { type: 'UNKNOWN_PREVIOUS_TARGET_ROLE_INSTANCE' },
+      error: {
+        type: 'ACTIVE_GAME_REJECTED',
+        error: { type: 'UNKNOWN_DOCTOR_ROLE_INSTANCE' },
+      },
     })
     expect(fixture.game).toMatchObject({ phase: 'role-distribution', nightNumber: 0 })
+  })
+
+  it('derives Doctor repeat-target context only from authoritative GameState history', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
+      {
+        settings: {
+          doctorCannotRepeatPreviousTarget: true,
+          doctorCanSelfProtect: true,
+        },
+        doctorPreviousTargets: [
+          {
+            doctorRoleInstanceId: roleInstanceId('role-instance-1'),
+            targetPlayerId: playerId('player-2'),
+            nightNumber: 0,
+          },
+        ],
+      },
+    )
+    const begun = beginFirstNight(createNightActionCollectionWorkflow(fixture.distribution))
+
+    expect(begun.ok).toBe(true)
+    if (!begun.ok) throw new Error('Expected night entry from persisted history.')
+    expect(selectDoctorPreviousTargetsForNight(begun.value.game)).toEqual([
+      {
+        actorRoleInstanceId: roleInstanceId('role-instance-1'),
+        targetPlayerId: playerId('player-2'),
+      },
+    ])
+
+    const doctorStepIndex = begun.value.steps.findIndex((step) => step.type === 'actor-action')
+    const atDoctor = { ...begun.value, currentStepIndex: doctorStepIndex }
+    expect(selectNightActionTarget(atDoctor, playerId('player-2'))).toEqual({
+      ok: false,
+      error: {
+        type: 'DOCTOR_REPEATED_PREVIOUS_TARGET',
+        actorRoleInstanceId: roleInstanceId('role-instance-1'),
+        targetPlayerId: playerId('player-2'),
+      },
+    })
   })
 
   it('returns a structured active-game error for malformed duplicate ordinals', () => {

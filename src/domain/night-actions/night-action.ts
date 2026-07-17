@@ -61,6 +61,11 @@ export type NightActionValidationError =
 export type NightActionBatchError =
   | NightActionValidationError
   | Readonly<{
+      type: 'INVALID_ACTION_BATCH'
+      reason: 'invalid-batch' | 'invalid-action'
+      index?: number
+    }>
+  | Readonly<{
       type: 'UNEXPECTED_ACTION'
       actorPlayerId: PlayerId
       actorRoleInstanceId: RoleInstanceId
@@ -308,6 +313,29 @@ export function validateCollectedNightActions(
   batch: CollectedNightActions,
   previousTargets: readonly PreviousNightTarget[] = [],
 ): DomainResult<CollectedNightActions, NightActionBatchError> {
+  const batchCandidate: unknown = batch
+  if (
+    !isUnknownRecord(batchCandidate) ||
+    typeof batchCandidate.gameId !== 'string' ||
+    !Number.isSafeInteger(batchCandidate.nightNumber) ||
+    !isUnknownArray(batchCandidate.actions)
+  ) {
+    return fail({ type: 'INVALID_ACTION_BATCH', reason: 'invalid-batch' })
+  }
+
+  for (const [index, action] of batchCandidate.actions.entries()) {
+    if (
+      !isUnknownRecord(action) ||
+      typeof action.actorPlayerId !== 'string' ||
+      typeof action.actorRoleInstanceId !== 'string' ||
+      typeof action.actorRoleId !== 'string' ||
+      typeof action.actionKind !== 'string' ||
+      typeof action.targetPlayerId !== 'string'
+    ) {
+      return fail({ type: 'INVALID_ACTION_BATCH', reason: 'invalid-action', index })
+    }
+  }
+
   if (batch.gameId !== game.id) {
     return fail({ type: 'ACTION_BATCH_GAME_MISMATCH', reason: 'game-id' })
   }
@@ -370,4 +398,12 @@ export function validatePreviousNightTargets(
   }
 
   return succeed(Object.freeze(copiedTargets))
+}
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value)
+}
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null
 }

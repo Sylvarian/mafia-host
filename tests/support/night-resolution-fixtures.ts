@@ -1,4 +1,5 @@
 import type { GameSettings } from '../../src/domain/game/game-settings.ts'
+import type { Player } from '../../src/domain/players/player.ts'
 import type {
   PreviousNightTarget,
   SubmittedNightAction,
@@ -13,6 +14,8 @@ import {
   type NightResolutionInput,
 } from '../../src/domain/resolution/night-resolution.ts'
 import type { NightResolution } from '../../src/domain/resolution/night-resolution-models.ts'
+import { buildNightActionSequence } from '../../src/application/night-actions/night-sequence.ts'
+import type { CompleteNightActionsWorkflow } from '../../src/application/night-actions/night-action-workflow.ts'
 import { createNightFixture, type NightFixtureRole } from './night-action-fixtures.ts'
 
 export type ResolutionFixture = Readonly<NightResolutionInput>
@@ -77,4 +80,33 @@ export function resolveFixture(fixture: ResolutionFixture): NightResolution {
     throw new Error(`Expected night resolution success: ${JSON.stringify(result.error)}`)
   }
   return result.value
+}
+
+export function createCompleteNightWorkflow(
+  fixture: ResolutionFixture,
+  names: readonly string[] = [],
+): CompleteNightActionsWorkflow {
+  const sequenceResult = buildNightActionSequence(fixture.game)
+  if (!sequenceResult.ok) {
+    throw new Error(`Expected a valid night sequence: ${JSON.stringify(sequenceResult.error)}`)
+  }
+
+  const participants: readonly Player[] = Object.freeze(
+    fixture.game.players.map((player, index) =>
+      Object.freeze({
+        id: player.playerId,
+        name: names[index] ?? `Player ${String(index + 1)}`,
+        playing: true,
+      }),
+    ),
+  )
+
+  return Object.freeze({
+    status: 'complete',
+    game: fixture.game,
+    participants,
+    steps: sequenceResult.value,
+    previousTargets: fixture.previousTargets,
+    collectedActions: fixture.collectedActions,
+  })
 }

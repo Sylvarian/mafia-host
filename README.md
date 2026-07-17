@@ -6,19 +6,19 @@ physical role and result cards.
 
 ## Current status
 
-Phase 5 — Core night resolution — is implemented as a framework-independent domain pipeline and a
-narrow application operation. Phase 4 still guides the host through the physical wake sequence,
-allows corrections, and finalises one immutable `CollectedNightActions` batch. Phase 5 revalidates
-that completed batch and deterministically calculates Consort block attempts and immunity, blocked
-actors, final visits, temporary frames, Doctor protections, Godfather and Serial Killer attack
-outcomes, provisional deaths, Sheriff results, permanent Investigator/Consigliere groups, and
-Detective tracking results.
+Phase 6 — Private results and Dawn — is implemented. Phase 4 guides the host through the physical
+wake sequence, allows corrections, and finalises one immutable `CollectedNightActions` batch.
+Phase 5 deterministically resolves that batch into one canonical `NightResolution` without applying
+it. Phase 6 then enters `night-resolution`, presents only Sheriff, Investigator, Consigliere, and
+Detective player-facing results in physical action order, and requires each result to be
+acknowledged before the host can cross the explicit public-Dawn privacy gate.
 
-Resolution returns one immutable `NightResolution`; it does not mutate or replace the authoritative
-`GameState`. In particular, players remain alive in the active game and the phase remains
-`night-action-collection`. The result contains no Dawn prose, public role reveal, Executioner
-conversion, Jester effect, personal or faction victory, or next phase. Applying provisional deaths
-and communicating private/public results remain Phase 6 work. No Phase 5 UI was added.
+At that boundary, the domain revalidates the canonical resolution against the completed action
+batch, applies provisional deaths once, preserves each acting Doctor's submitted target as minimal
+per-role-instance history, and applies the configured `revealRoleOnDeath` setting. It builds a
+public-safe Dawn model containing only the night number, dead player identities, and legitimately
+public role reveals. The active game ends Phase 6 in `dawn-announcement`; there is no Day button,
+victory evaluation, neutral conversion, Jester effect, or persistence.
 
 When first-night killing is disabled, living Godfathers and Serial Killers remain omitted from the
 Phase 4 batch, so Phase 5 creates no visit or attack for them. Consorts are immune to Consort blocks
@@ -115,7 +115,10 @@ domain action values and structural validation, while application code owns the 
 begin-night use case, draft collection, correction, review, and final batch coordination. Phase 5
 adds permanent investigation data and pure, separately testable resolution stages in the domain;
 the application only accepts a completed Phase 4 workflow and returns the structured domain result.
-React renders application selectors and keeps only interaction guards and focus state locally.
+Phase 6 adds pure death/history/reveal application and a public-safe Dawn model in the domain. The
+application owns the private-result queue, acknowledgements, navigation, phase coordination, and
+single-application guard. React renders application models and keeps only interaction guards,
+dialog state, and focus state locally.
 
 ## Project authorities
 

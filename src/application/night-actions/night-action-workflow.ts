@@ -124,7 +124,6 @@ export function createNightActionCollectionWorkflow(
 
 export function beginFirstNight(
   workflow: NightActionCollectionWorkflow,
-  previousTargets: readonly PreviousNightTarget[] = [],
 ): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
   if (workflow.status !== 'not-started') {
     return invalidWorkflowState('begin-first-night', workflow.status)
@@ -183,7 +182,10 @@ export function beginFirstNight(
     return sequenceResult
   }
 
-  const previousTargetsResult = validatePreviousNightTargets(game, previousTargets)
+  const previousTargetsResult = validatePreviousNightTargets(
+    game,
+    selectDoctorPreviousTargetsForNight(game),
+  )
 
   if (!previousTargetsResult.ok) {
     return previousTargetsResult
@@ -229,6 +231,19 @@ export function beginFirstNight(
     previousTargets: previousTargetsCopy,
     returnToReviewAfterActor: false,
   })
+}
+
+export function selectDoctorPreviousTargetsForNight(
+  game: GameState,
+): readonly PreviousNightTarget[] {
+  return Object.freeze(
+    game.doctorPreviousTargets.map((entry) =>
+      Object.freeze({
+        actorRoleInstanceId: entry.doctorRoleInstanceId,
+        targetPlayerId: entry.targetPlayerId,
+      }),
+    ),
+  )
 }
 
 export function selectNightActionTarget(

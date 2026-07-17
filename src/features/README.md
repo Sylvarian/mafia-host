@@ -20,3 +20,10 @@ rapid repeated operations. React does not construct actions, validate target rul
 second action list, dispatch `ADVANCE_PHASE`, resolve effects, or transition to `night-resolution`.
 First-night killing-role omissions and Consort target availability are rendered from application
 selectors backed by domain collection rules; the feature does not duplicate either rule.
+
+Phase 6 adds `dawn`. Its private view renders one application-owned investigative result at a time,
+shows a clear host-only warning, supports acknowledged back/forward review, and never renders
+deaths or hidden resolution audit fields. Its focused confirmation dialog separates private
+communication from the public-safe Dawn view, supports Escape cancellation and focus restoration,
+and relies on the coordinating feature's repeated-operation guard. The public view renders only
+the application Dawn selector and deliberately offers no transition to day discussion.

@@ -8,7 +8,7 @@ import { SequentialRoleAssignmentIdentitySource } from '../tests/support/sequent
 
 import App from './App.tsx'
 
-describe('Phase 2 through Phase 4 host workflow', () => {
+describe('Phase 2 through Phase 6 host workflow', () => {
   it('adds players, toggles participation, changes role counts, and shows mismatch feedback', () => {
     render(<App />)
 
@@ -392,6 +392,74 @@ describe('Phase 2 through Phase 4 host workflow', () => {
     expect(
       screen.queryByText('Godfather', { selector: '.actor-action__identity > strong' }),
     ).toBeNull()
+  })
+
+  it('runs the integrated host flow through private results and stops at public Dawn', () => {
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: { next: () => 0 },
+      identitySource: new SequentialRoleAssignmentIdentitySource(),
+    }
+    render(
+      <StrictMode>
+        <GameSetup roleAssignmentDependencies={dependencies} />
+      </StrictMode>,
+    )
+
+    addPlayer('Alice')
+    addPlayer('Bob')
+    addPlayer('Casey')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Sheriff count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Allow first-night kills/i }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Reveal role on death/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Role Distribution' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin First Night' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Targets for Godfather' })).getByRole('button', {
+        name: 'Bob, alive',
+      }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Targets for Sheriff' })).getByRole('button', {
+        name: 'Casey, alive',
+      }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Collecting Night Actions' }))
+
+    const resolveButton = screen.getByRole('button', { name: 'Resolve Night' })
+    act(() => {
+      resolveButton.click()
+      resolveButton.click()
+    })
+    expect(screen.getByRole('heading', { name: 'Only show this result to Alice' })).toHaveFocus()
+    expect(screen.getByText('Casey appears suspicious.')).toBeVisible()
+    expect(screen.queryByText(/Bob died/i)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Result communicated' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Dawn Announcement' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn Announcement' }))
+
+    expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toHaveFocus()
+    expect(screen.getByText('Bob').closest('li')).toHaveTextContent(
+      'Bob died during the night. Their role was Citizen.',
+    )
+    expect(screen.getByText('Day discussion will be added in Phase 7.')).toBeVisible()
+    expect(screen.queryByText('Casey appears suspicious.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /enter day|start day/i })).toBeNull()
+    expect(screen.queryByText(/winner|victory/i)).toBeNull()
   })
 
   it('rejects blank names and confirms roster removal', () => {

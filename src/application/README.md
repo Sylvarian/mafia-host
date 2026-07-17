@@ -35,3 +35,13 @@ the authoritative game, canonical batch, and Doctor previous-target context thro
 revalidation, then returns structured success or failure. It keeps no global resolution cache and
 does not dispatch a command, apply deaths, advance the phase, or introduce presentation state, so
 identical calls are deterministic and idempotent.
+
+`night-presentation` owns Phase 6 coordination. Its explicit resolve operation consumes only a
+completed Phase 4 workflow, derives the Phase 5 resolution, revalidates it against the same completed
+batch before entering `night-resolution`, constructs the deterministic player-facing investigative
+result queue, and owns immutable acknowledgement and bounded navigation state. Private results are
+ordered by canonical physical role order and stable role-instance identity, never by source-array
+insertion order or player name. The prepare-Dawn operation is unavailable until every result is
+acknowledged, revalidates and applies the retained batch and resolution once through the domain, then
+drops all private resolution/action data from the completed Dawn workflow. It never advances to day
+discussion or evaluates a winner.

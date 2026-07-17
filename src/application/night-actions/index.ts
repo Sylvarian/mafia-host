@@ -17,6 +17,7 @@ export {
   editNightAction,
   finaliseNightActionCollection,
   previousNightActionCollection,
+  selectDoctorPreviousTargetsForNight,
   selectNightActionTarget,
 } from './night-action-workflow.ts'
 export type {

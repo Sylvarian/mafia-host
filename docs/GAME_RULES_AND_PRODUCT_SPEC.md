@@ -605,21 +605,40 @@ Recommended resolution pipeline:
 
 The pipeline should produce structured events and results, not directly mutate React UI state.
 
+The currently implemented Phase 5 result stops after structured provisional deaths and
+investigative results. Phase 6 applies those provisional deaths only after all private
+investigative results have been acknowledged. Conversion, personal-win, faction-win, and later
+pending-death stages remain outside Phase 6 and are not inferred while R-006 through R-012 remain
+unresolved.
+
 ---
 
 ## 13. Dawn
 
-After night resolution, the host presses **Enter Day**.
+After a completed Phase 5 resolution, the host explicitly resolves the night and the active game
+enters `night-resolution`. Before players open their eyes, the host receives one player-facing
+Sheriff, Investigator, Consigliere, or Detective result at a time in physical collection order.
+Blocked investigative actors receive no result. Every presented result must be acknowledged.
 
-The host screen shows:
+The host then deliberately selects **Prepare Dawn Announcement** and confirms that every player's
+eyes are open. At this boundary:
 
-- Every death.
-- Cause of death privately.
-- Actual role privately.
-- Public announcement text.
-- Investigator/Consigliere/Detective/Sheriff private results that must be communicated before eyes open, where applicable.
-- Any Executioner conversion.
-- Any personal Jester or Executioner win.
+- Provisional deaths are applied exactly once.
+- Every acting Doctor's submitted target is retained as the minimum next-night repeat-target
+  context, even if that Doctor was blocked or died.
+- Actual roles are made public only when `revealRoleOnDeath` is enabled or a legitimate public
+  reveal already existed.
+- The active game enters `dawn-announcement`.
+
+The public Dawn screen shows only:
+
+- The night number.
+- Every player who died, once, in participating-player order.
+- A publicly revealed role where permitted.
+- A no-death message when nobody died.
+
+It does not show causes, attackers, attacks, protections, frames, blocks, investigative results,
+hidden roles, neutral effects, or victory information.
 
 Public announcement examples:
 
@@ -642,6 +661,8 @@ It was a quiet night. Nobody died.
 The source text contained “quiet now”; this specification assumes “quiet night.”
 
 If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
+
+Phase 6 stops at `dawn-announcement`. Entering day discussion is Phase 7 work.
 
 ---
 
