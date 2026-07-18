@@ -8,7 +8,7 @@ import {
   createCollectedNightActions,
   isNightActionRequiredForPlayer,
 } from '../../src/domain/night-actions/night-action.ts'
-import { findRoleDefinition } from '../../src/domain/roles/role-registry.ts'
+import { ROLE_IDS, findRoleDefinition } from '../../src/domain/roles/role-registry.ts'
 import {
   resolveNight,
   type NightResolutionInput,
@@ -62,7 +62,16 @@ export function createResolutionFixture(
   }
 
   const previousTargets = options.previousTargets ?? []
-  const batchResult = createCollectedNightActions(fixture.game, actions, previousTargets)
+  const blockedPlayerIds = new Set(
+    actions
+      .filter((action) => action.actorRoleId === ROLE_IDS.consort)
+      .map((action) => action.targetPlayerId),
+  )
+  const confirmedActions = actions.filter(
+    (action) =>
+      action.actorRoleId === ROLE_IDS.consort || !blockedPlayerIds.has(action.actorPlayerId),
+  )
+  const batchResult = createCollectedNightActions(fixture.game, confirmedActions, previousTargets)
   if (!batchResult.ok) {
     throw new Error(`Resolution fixture batch was invalid: ${JSON.stringify(batchResult.error)}`)
   }
@@ -107,6 +116,9 @@ export function createCompleteNightWorkflow(
     participants,
     steps: sequenceResult.value,
     previousTargets: fixture.previousTargets,
+    currentStepIndex: sequenceResult.value.length,
+    completedSteps: Object.freeze([]),
+    currentOutcome: null,
     collectedActions: fixture.collectedActions,
   })
 }

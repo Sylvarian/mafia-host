@@ -16,6 +16,7 @@ export {
   confirmRoleDistribution,
   createRoleDistributionWorkflow,
   getRoleDistributionProgress,
+  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
   setCardDelivered,
 } from './role-distribution-workflow.ts'

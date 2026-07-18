@@ -149,8 +149,8 @@ describe('complete night-resolution pipeline scenarios', () => {
     )
 
     expect(result.investigationResults.map((entry) => entry.group.id)).toEqual([
-      INVESTIGATION_GROUP_IDS.groupA,
       INVESTIGATION_GROUP_IDS.groupD,
+      INVESTIGATION_GROUP_IDS.groupA,
     ])
   })
 
@@ -243,9 +243,15 @@ describe('complete night-resolution pipeline scenarios', () => {
       )
 
       expect(result.provisionalDeaths.map((death) => death.deadPlayerId)).toEqual(['player-2'])
-      expect(result.finalVisits).toContainEqual(
-        expect.objectContaining({ actorPlayerId: 'player-2', targetPlayerId: 'player-3' }),
-      )
+      if (actingRoleId === ROLE_IDS.detective) {
+        expect(result.finalVisits).not.toContainEqual(
+          expect.objectContaining({ actorPlayerId: 'player-2' }),
+        )
+      } else {
+        expect(result.finalVisits).toContainEqual(
+          expect.objectContaining({ actorPlayerId: 'player-2', targetPlayerId: 'player-3' }),
+        )
+      }
       expect(result[resultCollection]).toHaveLength(1)
     },
   )

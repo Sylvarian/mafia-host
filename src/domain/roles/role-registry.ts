@@ -33,7 +33,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     'Godfather',
     'mafia',
     'Leads the Mafia and selects a player to attack at night.',
-    nightAction('attack', 'mafia', 10, 'Choose the player the Godfather wants to attack.'),
+    nightAction('attack', 'mafia', 30, 'Choose the player the Godfather wants to attack.'),
   ),
   roleEntry(
     ROLE_IDS.framer,
@@ -46,8 +46,8 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     ROLE_IDS.consort,
     'Consort',
     'mafia',
-    'Selects a player they intend to role-block during later night resolution.',
-    nightAction('role-block', 'mafia', 30, 'Choose the player the Consort wants to role-block.'),
+    'Selects a player to role-block before later actors wake.',
+    nightAction('role-block', 'mafia', 10, 'Choose the player the Consort wants to role-block.'),
   ),
   roleEntry(
     ROLE_IDS.consigliere,
@@ -57,7 +57,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     nightAction(
       'investigate',
       'mafia',
-      40,
+      80,
       'Choose the player the Consigliere wants to investigate.',
     ),
   ),
@@ -69,7 +69,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     nightAction(
       'investigate',
       'individual',
-      70,
+      60,
       'Choose the player the Sheriff wants to investigate.',
     ),
   ),
@@ -88,7 +88,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     nightAction(
       'investigate',
       'individual',
-      80,
+      70,
       'Choose the player the Investigator wants to investigate.',
     ),
   ),
@@ -97,7 +97,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     'Doctor',
     'town',
     'Protects one player from applicable night attacks.',
-    nightAction('protect', 'individual', 60, 'Choose the player the Doctor wants to protect.'),
+    nightAction('protect', 'individual', 50, 'Choose the player the Doctor wants to protect.'),
   ),
   roleEntry(
     ROLE_IDS.mayor,
@@ -131,8 +131,8 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     ROLE_IDS.serialKiller,
     'Serial Killer',
     'neutral',
-    'A provisional killing role whose exact victory condition remains unresolved.',
-    nightAction('attack', 'individual', 50, 'Choose the player the Serial Killer wants to attack.'),
+    'A Neutral killing role that attacks one living player at night.',
+    nightAction('attack', 'individual', 40, 'Choose the player the Serial Killer wants to attack.'),
   ),
 ])
 

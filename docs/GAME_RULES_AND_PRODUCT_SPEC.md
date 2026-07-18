@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7A<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7A.1<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -31,9 +31,8 @@ The implemented product currently includes:
 - Setup.
 - Role assignment and physical distribution.
 - Executioner target eligibility, assignment, and private briefing.
-- First-night action collection.
+- Sequential first-night action confirmation and immediate private outcomes.
 - Deterministic ordinary night resolution.
-- Private result presentation.
 - The first public Dawn.
 - Browser-local refresh recovery through setup, Executioner briefing, and that first Dawn.
 
@@ -100,7 +99,7 @@ Not required initially:
 
 The authoritative cross-phase session lives in the application layer and is saved after successful
 authoritative transitions to browser `localStorage` under
-`mafia-host:active-session:v1`. Browser persistence remains outside the domain game model. Restored
+`mafia-host:active-session:v2`. Browser persistence remains outside the domain game model. Restored
 data is untrusted and must be schema-version checked, validated, canonicalised, and acknowledged by
 the host before private information is displayed.
 
@@ -110,13 +109,20 @@ reveals. It is crash and
 refresh recovery, not a backup or cloud sync. Clearing site data removes it, private browsing may
 not retain it, and one host tab is recommended because tabs are not synchronised.
 
-The Phase 7A compatible V1 extension requires `neutralStateVersion: 1`, Executioner targets, and
-briefing status together on every new persisted game. It recognizes deployed Phase 6.5 game shapes
-only when both obsolete player-level neutral fields are present and null. Briefing records are
-rebuilt from canonical target relationships; persisted authority is limited to the game, current
-index, and acknowledgement IDs. Missing or partially upgraded neutral fields remain invalid.
+Phase 7A.1 uses schema V2 because the sequential immediate-result workflow cannot safely share the
+old collect-all/private-replay semantics. V2 persists setup, distribution, Executioner briefing,
+the sequential current step and canonical completed records, the current narrow immediate outcome,
+explicit acknowledgement state, the final `night-resolution` boundary, and public Dawn. It never
+persists temporary target selection, focus, dialogs, operation guards, derived labels, display
+prose, colors, or an old private-result queue.
 
-Current V1 persistence supports recovery only through the first Dawn. Its Dawn representation
+Narrow V1 migration is permitted only for setup, distribution, Executioner briefing, and a valid
+first-Dawn save. Old in-progress night-action and private-result-replay saves are rejected with
+explicit incompatible-save errors because which private information was already communicated
+cannot be reconstructed safely. A rejected V1 save is not silently deleted. A safe migration writes
+V2 before removing V1 and preserves V1 if the V2 write fails.
+
+Current V2 persistence supports recovery only through the first Dawn. Its Dawn representation
 requires the public announcement to account for every currently dead player. Before supporting
 later days and nights, persistence must distinguish:
 
@@ -128,9 +134,8 @@ later days and nights, persistence must distinguish:
 - Current versus historical public announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
-reannounce earlier deaths. Phase 7 must update the persisted session contract deliberately. This
-may require a new schema version, or an explicit compatible V1 extension only when validation
-remains unambiguous. No migration system currently exists.
+reannounce earlier deaths. Phase 7E must update the persisted session contract deliberately. No
+generic migration framework exists.
 
 ---
 
@@ -303,8 +308,8 @@ On night two and later, Godfather and Serial Killer act normally regardless of t
 - Night ability: Select one living player to role-block.
 - May target any living player other than themselves, including Godfather, Serial Killer, Doctor, or another Consort.
 - Multiple Consorts may target the same eligible player.
-- Consort actions are collected and reviewed normally; collection does not calculate a blocking effect.
-- During future Phase 5 resolution, Consorts are immune to role-block effects. A Consort targeting another Consort still visits, but the target is not blocked and may perform their submitted action.
+- Consorts act before every other actionable role and establish block state as soon as their target is confirmed.
+- Consorts are immune to role-block effects. A Consort targeting another Consort still visits, but the target is not blocked and performs their action normally.
 - If two Consorts target one another, both visits occur and neither is blocked.
 - No other currently implemented role has role-block immunity.
 
@@ -328,7 +333,6 @@ On night two and later, Godfather and Serial Killer act normally regardless of t
 - Receives either:
   - Appears suspicious
   - Appears not suspicious
-  - No result
 - Serial Killer and non-Godfather Mafia appear suspicious.
 - An unframed Godfather's result follows `godfatherAppearsSuspiciousToSheriff`.
 - A player framed during the current night appears suspicious regardless of actual role or the Godfather setting.
@@ -339,7 +343,8 @@ On night two and later, Godfather and Serial Killer act normally regardless of t
 - Night ability: Track one living player.
 - Learns whom that player actually visited that night.
 - If the tracked player made no successful visit, the result is “visited nobody.”
-- Detective results are delivered only after all relevant actions and redirects have been resolved.
+- Acts after every non-Detective actionable role and receives the result immediately after confirming a target.
+- Detective investigation actions never count as visits for another Detective's tracking result.
 - The default game configuration may limit Detective to one copy, but the engine should not rely on that limitation.
 
 ### Investigator
@@ -539,6 +544,8 @@ When the host prepares, distributes, and confirms a game:
 7. Initialise night-history fields such as each Doctor's previous target.
 8. Display the private assignment list to the host.
 9. The host physically distributes the corresponding role cards.
+   - The host may mark all participating cards delivered in one reversible operation.
+   - Individual delivery controls remain available until confirmation.
 10. The host confirms that all cards have been distributed.
 11. Assign one eligible Town target to every Executioner from the final assignments.
 12. If Executioners exist, complete the private briefing one Executioner at a time.
@@ -607,76 +614,88 @@ The briefing model contains only stable Executioner/target identities and duplic
 It does not contain the target's role or faction. Games with no Executioner proceed directly to
 Night 1 without creating an empty briefing workflow.
 
-## 11.2 Mafia actions
+## 11.2 Canonical sequential wake order
 
-The app highlights all living Mafia players for the host.
+The authoritative physical order is:
 
-The host calls the Mafia to open their eyes. Mafia roles then act separately in a configured sequence:
+1. Mafia overview
+2. Consort copies
+3. Framer copies
+4. Godfather copies
+5. Serial Killer copies
+6. Doctor copies
+7. Sheriff copies
+8. Investigator copies
+9. Consigliere copies
+10. Detective copies
+11. Final night completion
 
-1. Godfather
-2. Framer
-3. Consort
-4. Consigliere
+The Mafia overview is private and is not an action. Within a role, copies are ordered by stable
+role-instance ordinal with participating roster order as the tie-breaker. Display name, caller
+array order, and randomness never affect wake order. Physical order remains distinct from final
+ordinary resolution priority.
 
-Duplicate copies are called by ordinal:
+When first-night killing is disabled, every living Godfather and Serial Killer step is omitted
+entirely on Night 1. Those players do not wake, choose a target, create an action, visit, or receive
+an immediate confirmation. Living Godfathers remain visible in the private Mafia overview.
 
-- Consort 1
-- Consort 2
+## 11.3 Sequential actor flow and blocking
 
-The host selects each target in the app.
+For each actor, the application privately shows the actor identity, role, and valid targets. Each
+target row shows a stable human-readable player label, assigned role, faction text, and
+alive/availability state. Duplicate names use roster positions such as `Alex (Player 1)` and never
+display raw technical IDs. Faction color is a secondary cue only.
 
-On night one, when `allowFirstNightKills` is disabled, every living Godfather is omitted from the actor-action sequence. The private Mafia overview still lists those living Godfathers, and the remaining living Mafia roles act in their normal order.
+Target selection is temporary React state. It does not commit, resolve, autosave, consume
+randomness, or affect later actors. **Confirm Target / Continue** atomically records the action and
+its immediate outcome. Confirmation is final once the outcome is acknowledged; earlier actors
+cannot be edited after later private information may depend on them.
 
-After all living Mafia actions have been collected, the host tells Mafia to close their eyes.
+Confirmed Consort actions establish block state before later actors wake. A blocked non-Consort
+still receives its normal wake step but sees:
 
-The exact physical procedure for multiple Mafia members is a host concern. The app must never reveal Mafia identities publicly.
+```text
+BLOCKED
 
-## 11.3 Other role actions
+Your action cannot be performed tonight.
+```
 
-The app proceeds through each living role instance that has a night action.
+A blocked actor creates no action, visit, frame, attack, protection, investigation, tracking
+result, or Doctor previous-target record. Consorts never receive this blocked outcome because they
+are immune. Multiple Consorts targeting one non-Consort create one blocked state; mutual
+Consort-on-Consort targeting produces two visits and both Consorts act.
 
-Recommended collection order:
+## 11.4 Immediate outcomes and Detective timing
 
-1. Serial Killer
-2. Doctor copies
-3. Sheriff copies
-4. Investigator copies
-5. Detective copies
+Only these immediate outcome categories exist:
 
-However, the rules engine must not assume that physical collection order equals resolution priority.
+- Blocked
+- Action recorded
+- Sheriff result
+- Investigator group result
+- Consigliere group result
+- Detective result
 
-On night one, when `allowFirstNightKills` is disabled, every living Serial Killer is omitted from this sequence. On later nights, or when the setting is enabled, living Serial Killers act normally.
+Consort, Framer, Godfather, Serial Killer, and Doctor receive only generic **Action recorded**
+confirmation. Attacks, protection success, immunity, collisions, and ordinary deaths are not
+revealed. Sheriff and permanent investigation groups use frames already confirmed earlier in the
+same sequence. The host shows one outcome at a time, acknowledges it, removes it from the rendered
+DOM, and explicitly continues. The current heading receives focus and the privacy warning remains
+visible.
 
-For each actor:
-
-- Show role name and ordinal.
-- Show actor/player name privately to host.
-- Display valid targets.
-- Disable invalid targets.
-- Allow a “No target” action only where permitted.
-- Require host confirmation.
-- Move to the next actor.
-
-## 11.4 Detective timing
-
-Detective selects a target during collection, but receives a result only after all actions have been resolved.
-
-A Detective sees the target's **final successful visit**.
-
-Default rules:
-
-- A role-blocked player visits nobody.
-- A redirected player is seen visiting the final redirected target.
-- A player whose action fails for another reason may still count as visiting, depending on the failure type.
-- A player killed that night still acts unless their action was blocked or another explicit priority rule prevents it.
-
-These defaults must be covered by tests.
+All Detectives act after every other actionable role. A Detective immediately sees the target's
+confirmed non-Detective visit, or “visited nobody.” Trackable visits include Consort, Framer,
+Godfather, Serial Killer, Doctor, Sheriff, Investigator, and Consigliere. They exclude every
+Detective action, blocked actors, skipped first-night killers, and actors without a confirmed
+action. Therefore two Detectives tracking one another both receive “visited nobody,” and no second
+wake pass is required.
 
 ---
 
 ## 12. Night resolution
 
-The app collects actions first and resolves them as one deterministic batch.
+The app incrementally confirms and seals actions, while final ordinary attack/protection/death
+resolution remains one deterministic batch after the actor sequence.
 
 ### 12.1 Ordinary night resolution
 
@@ -736,27 +755,28 @@ cleared, and no faction wins. If exactly one player survives ordinary night deat
 selected and dies from revenge, leaving no faction winner. Existing personal wins remain recorded
 in both cases.
 
-The currently implemented Phase 5 result stops after structured provisional deaths and
-investigative results. Phase 6 applies those provisional deaths only after all private
-investigative results have been acknowledged. The conversion, revenge, personal-win, faction-win,
-and later-Dawn stages above are finalized rules but remain outside the implemented Phase 6
+The current implementation stops after structured provisional deaths and the deliberate
+first-Dawn application. Immediate investigative outcomes are cross-checked against the same shared
+mechanics used by final resolution and are not replayed. The conversion, revenge, personal-win,
+faction-win, and later-Dawn stages above are finalized rules but remain outside the implemented
 boundary.
 
 ---
 
 ## 13. Dawn
 
-After a completed Phase 5 resolution, the host explicitly resolves the night and the active game
-enters `night-resolution`. Before players open their eyes, the host receives one player-facing
-Sheriff, Investigator, Consigliere, or Detective result at a time in physical collection order.
-Blocked investigative actors receive no result. Every presented result must be acknowledged.
+After the last sequential outcome is acknowledged, the application constructs and validates the
+canonical completed action batch, resolves ordinary attacks, protections, and provisional deaths,
+and enters `night-resolution`. Investigative results have already been communicated during each
+actor's wake step and are not presented again. Deaths remain unapplied and hidden.
 
 The host then deliberately selects **Prepare Dawn Announcement** and confirms that every player's
 eyes are open. At this boundary:
 
 - Provisional deaths are applied exactly once.
-- Every acting Doctor's submitted target is retained as the minimum next-night repeat-target
-  context, even if that Doctor was blocked or died.
+- Every unblocked Doctor's confirmed target is retained as the minimum next-night repeat-target
+  context, even if that Doctor died, the target died, or the protection was not needed. A blocked
+  Doctor submitted no target and records no new history.
 - Actual roles are made public only when `revealRoleOnDeath` is enabled or a legitimate public
   reveal already existed.
 - The active game enters `dawn-announcement`.
@@ -797,7 +817,7 @@ Phase 6 stops at the first `dawn-announcement`. Entering day discussion, resolvi
 checking victory, and reaching later Dawns are Phase 7-sequence work and are not currently
 available.
 
-The persisted V1 Dawn announcement is safe only at this first-Dawn boundary. Later-Dawn support
+The persisted V2 Dawn announcement is safe only at this first-Dawn boundary. Later-Dawn support
 must introduce an explicit current-announcement boundary so deaths from earlier nights or days are
 not announced again.
 
@@ -959,9 +979,12 @@ When nobody remains alive after all required ordinary and revenge deaths:
 
 ## 17. Host corrections and undo
 
-Minimum initial correction support:
+Minimum current correction support:
 
-- Before night resolution, the host can go back and change any submitted target.
+- Before confirmation, the current actor's temporary target may change freely.
+- After confirmation, the current immediate outcome is authoritative.
+- After acknowledgement, the actor step is sealed and cannot be edited.
+- A later actor cannot proceed until the earlier outcome is acknowledged and explicitly continued.
 - Before confirming execution, the host can cancel or change the selected player.
 - Before entering the next phase, the host receives a summary confirmation.
 
@@ -1095,12 +1118,16 @@ Minimum scenarios:
 - Doctor cannot self-protect when disabled.
 - Doctor cannot repeat their own previous target when enabled.
 - Doctor 1 and Doctor 2 track previous targets independently.
-- Consort targeting another Consort is collected normally; future resolution leaves the targeted Consort unblocked.
+- Bulk delivery marks only participating cards, is idempotent, and still permits individual undo.
+- Consort targeting another Consort visits normally and leaves the targeted Consort unblocked.
 - Blocked target visits nobody.
+- Every blocked actionable role creates no action and sees an explicit BLOCKED outcome.
 - Framed Town appears suspicious to Sheriff.
 - Framed target returns Group A for Investigator and Consigliere.
 - Consigliere and Investigator return the same group.
-- Detective sees final visit.
+- Detective immediately sees each supported non-Detective confirmed visit.
+- Detective actions never appear in the trackable visit ledger.
+- Detectives tracking one another both see “visited nobody.”
 - First-night Godfather and Serial Killer actors are omitted when configured.
 - Godfather and Serial mutual attack setting behaves correctly.
 - Mayor reveal remains public and reminds the host to count every vote as three.
@@ -1150,11 +1177,11 @@ gameplay is not implemented.
 
 ### R-002 — First-night killing disabled
 
-**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Godfather and Serial Killer actors are skipped entirely. They have no actor-action step, action, review row, visit, or attack attempt and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Other applicable roles continue acting. Killing roles act normally when the setting is enabled and on night two or later.
+**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Godfather and Serial Killer actors are skipped entirely. They have no actor-action step, action, immediate outcome, visit, or attack attempt and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Other applicable roles continue acting. Killing roles act normally when the setting is enabled and on night two or later.
 
 ### R-003 — Consort blocking
 
-**Status: Decided.** A Consort may target any living player other than themselves, including another Consort. Actions are collected normally. During future resolution, Consorts are immune to the role-block effect but are still visited. A targeted Consort may perform their submitted action. Two Consorts targeting one another both visit and neither is blocked. Multiple Consorts targeting the same non-Consort cause one blocked state. No other currently implemented role has role-block immunity. No retaliation, automatic death, mutual cancellation, or target rejection is added.
+**Status: Decided.** A Consort may target any living player other than themselves, including another Consort. Consorts act first and each confirmed action immediately contributes its visit and block state for later actors. Consorts are immune to the role-block effect but are still visited. A targeted Consort performs their action normally. Two Consorts targeting one another both visit and neither is blocked. Multiple Consorts targeting the same non-Consort cause one blocked state. A blocked actor still wakes but creates no action, visit, or result. No other currently implemented role has role-block immunity. No retaliation, automatic death, mutual cancellation, or target rejection is added.
 
 ### R-004 — Godfather Sheriff result
 

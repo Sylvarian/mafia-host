@@ -13,6 +13,9 @@ describe('Detective tracking results', () => {
     ['Doctor', ROLE_IDS.doctor],
     ['Framer', ROLE_IDS.framer],
     ['Consort', ROLE_IDS.consort],
+    ['Sheriff', ROLE_IDS.sheriff],
+    ['Investigator', ROLE_IDS.investigator],
+    ['Consigliere', ROLE_IDS.consigliere],
   ])('tracks a %s final visit', (_name, trackedRoleId) => {
     const result = resolveFixture(
       createResolutionFixture(
@@ -50,7 +53,7 @@ describe('Detective tracking results', () => {
     })
   })
 
-  it('counts a Detective tracking action as that Detective own visit', () => {
+  it('excludes every Detective action from the trackable visit ledger', () => {
     const result = resolveFixture(
       createResolutionFixture(
         [
@@ -66,8 +69,7 @@ describe('Detective tracking results', () => {
       expect.objectContaining({
         actorRoleInstanceId: 'role-instance-1',
         targetPlayerId: 'player-2',
-        status: 'visited-player',
-        visitedPlayerId: 'player-3',
+        status: 'visited-nobody',
       }),
       expect.objectContaining({
         actorRoleInstanceId: 'role-instance-2',

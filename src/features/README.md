@@ -1,45 +1,38 @@
 # Feature layer
 
-[AGENTS.md](../../AGENTS.md) is the architecture authority. Each user-facing workflow will own a
-slice here. A slice's internals stay private; any later cross-slice API must be exposed explicitly
-through that slice's `index` module.
+[AGENTS.md](../../AGENTS.md) is the architecture authority. Each user-facing workflow owns one
+slice here. Slice internals remain private; cross-slice APIs are exposed only through public
+`index` modules.
 
-Phase 2 adds `roster` and `game-setup`. `game-setup` owns the application reducer instance and
-passes the authoritative roster down to the public `roster` component.
+`game-setup` renders the application setup workflow. `role-distribution` is the private assignment
+and physical-card screen. Phase 7A.1 adds one reversible **Mark all cards delivered** control while
+retaining individual checkboxes and final confirmation. Components do not shuffle roles, construct
+game state, assign Executioner targets, or finalize distribution themselves.
 
-Phase 3 adds `role-distribution`, a private host screen for assignment details, faction and role
-descriptions, physical delivery controls, progress, reassignment, abandonment, and final
-readiness. Feature-local state is limited to unsubmitted text and confirmation dialogs. Components
-render application results; they do not shuffle roles, create identities, calculate ordinals,
-construct `GameState`, assign Executioner targets, or enter a night phase.
+`executioner-briefing` renders exactly one Phase 7A private briefing at a time. It exposes the
+Executioner identity and target player name but not the target role. Focus and confirmation state
+are local; targets and acknowledgement evidence remain domain/application authority.
 
-Phase 4 adds `night-runner`. It renders the application-owned opening, Mafia overview, actor,
-Mafia-closing, review, and completion states; translates structured errors; provides semantic
-target and navigation controls; and moves focus to each new step. The coordinating feature guards
-rapid repeated operations. React does not construct actions, validate target rules, maintain a
-second action list, dispatch `ADVANCE_PHASE`, resolve effects, or transition to `night-resolution`.
-First-night killing-role omissions and Consort target availability are rendered from application
-selectors backed by domain collection rules; the feature does not duplicate either rule.
+Phase 7A.1 replaces the original collect-all Night Runner. `night-runner` renders the Mafia
+overview, one actor target step, one immediate outcome, one acknowledged boundary, and final
+completion. Target selection is temporary React state and is discarded unless confirmed. Target
+rows always show the stable player label, assigned role, faction text, and alive/availability state
+with accessible faction, selected, focus, and disabled treatments. Duplicate names use roster
+positions, never raw technical IDs.
 
-Phase 6 adds `dawn`. Its private view renders one application-owned investigative result at a time,
-shows a clear host-only warning, supports acknowledged back/forward review, and never renders
-deaths or hidden resolution audit fields. Its focused confirmation dialog separates private
-communication from the public-safe Dawn view, supports Escape cancellation and focus restoration,
-and relies on the coordinating feature's repeated-operation guard. The public view renders only
-the application Dawn selector and deliberately offers no transition to day discussion.
+Blocked actors receive a strong text-labelled **BLOCKED** screen with no target controls. Only the
+current private outcome exists in the DOM. Its heading receives focus, the privacy warning remains
+visible, and acknowledgement removes the private content before explicit continuation. React does
+not construct actions, calculate blocks, frames, visits, investigations, attacks, or deaths. The
+coordinating app guards rapid repeated operations and saves each canonical transition once.
 
-Phase 6.5 makes `game-setup` a stage-specific controlled feature; it no longer owns distribution,
-night, presentation, or Dawn state. `session-persistence` owns the saved-session-found and safe
-recovery screens, local save status, host-facing persistence messages, and focused confirmation
-dialogs. Resume summaries contain only stage, counters, player count, and save time. Secret data is
-not rendered until the host continues. Dialog openness, operation guards, errors, and focus remain
-transient and are not persisted.
+Phase 7A.1 removes the old private-result replay from `dawn`. That slice now renders only the
+hidden-death `ready-for-dawn` boundary and public Dawn announcement. Its deliberate confirmation
+dialog supports Escape cancellation and focus restoration. The public view has no day-discussion
+transition.
 
-Phase 7A adds `executioner-briefing`, a dedicated host-only privacy screen. It renders exactly one
-application-owned briefing, exposes the Executioner identity and target player name but never the
-target role, distinguishes duplicate names and Executioner ordinals, moves focus with the current
-briefing, and shows acknowledgement progress. Night 1 remains disabled until all briefings are
-acknowledged and a deliberate Escape-cancellable confirmation is accepted. Dialog state, focus,
-and repeated-operation guards stay local; targets, acknowledgement evidence, and cross-phase
-authority stay in domain/application state. The slice imports no night-runner or private-result
-feature internals.
+`session-persistence` renders public-safe V2 recovery summaries and local-save status. Night
+summaries expose only the night number, general stage, player count, and save time. Current actor,
+role, target, blocked state, role composition, action progress, and results are absent from text,
+attributes, and accessible labels until the host explicitly continues. Errors, dialog openness,
+focus, save status, and operation guards remain transient.

@@ -4,14 +4,14 @@ import {
   createSessionStageSummary,
   type ClearFailureError,
   type LoadPersistedSessionError,
-  type RestoredSessionEnvelopeV1,
+  type RestoredSessionEnvelopeV2,
 } from '@/application/session-persistence/index.ts'
 
 import './SessionPersistence.css'
 
 type SavedSessionRecoveryProps = Readonly<{
   state: 'saved'
-  envelope: RestoredSessionEnvelopeV1
+  envelope: RestoredSessionEnvelopeV2
   clearError: ClearFailureError | null
   onContinue: () => void
   onClear: () => void
@@ -238,9 +238,14 @@ function ClearError({ error }: Readonly<{ error: ClearFailureError }>) {
 }
 
 function getRecoveryHeading(error: LoadPersistedSessionError): string {
-  return error.type === 'UNSUPPORTED_SCHEMA_VERSION'
-    ? 'This saved game was created by an incompatible version of the app.'
-    : 'The saved game could not be restored.'
+  switch (error.type) {
+    case 'UNSUPPORTED_SCHEMA_VERSION':
+    case 'LEGACY_IN_PROGRESS_NIGHT_INCOMPATIBLE':
+    case 'STALE_OLD_PRIVATE_RESULT_WORKFLOW':
+      return 'This saved game was created by an incompatible workflow version.'
+    default:
+      return 'The saved game could not be restored.'
+  }
 }
 
 function getRecoveryDescription(error: LoadPersistedSessionError): string {
@@ -251,17 +256,26 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
       return 'The browser did not allow Mafia Host to read its local save.'
     case 'UNSUPPORTED_SCHEMA_VERSION':
       return 'This version cannot safely interpret that save. Delete it before starting a new autosaved session.'
+    case 'LEGACY_IN_PROGRESS_NIGHT_INCOMPATIBLE':
+      return 'This older save was captured during night actions. It cannot be migrated without guessing which private results were already revealed.'
+    case 'STALE_OLD_PRIVATE_RESULT_WORKFLOW':
+      return 'This older save contains the removed end-of-night private-result replay and cannot be migrated safely.'
+    case 'V2_WRITE_FAILURE_AFTER_MIGRATION':
+      return 'The older save was valid, but the upgraded V2 save could not be written. The older save was not removed.'
+    case 'LEGACY_REMOVAL_FAILURE_AFTER_MIGRATION':
+      return 'The upgraded save could not safely replace the older save. No session was loaded.'
+    case 'MIGRATION_FAILURE':
+      return 'The older save could not be validated for safe migration.'
     case 'NO_SAVED_SESSION':
       return 'No saved session was found.'
     case 'INVALID_JSON':
     case 'INVALID_ENVELOPE':
-    case 'INVALID_TIMESTAMP':
     case 'UNKNOWN_PERSISTED_STAGE':
     case 'INVALID_SETUP_SESSION':
     case 'INVALID_ROLE_DISTRIBUTION_SESSION':
     case 'INVALID_EXECUTIONER_BRIEFING_SESSION':
-    case 'INVALID_NIGHT_ACTION_SESSION':
-    case 'INVALID_NIGHT_PRESENTATION_SESSION':
+    case 'INVALID_SEQUENTIAL_NIGHT_SESSION':
+    case 'INVALID_NIGHT_RESOLUTION_SESSION':
     case 'INVALID_DAWN_SESSION':
     case 'STAGE_PHASE_MISMATCH':
     case 'MULTIPLE_AUTHORITATIVE_GAMES':

@@ -86,6 +86,14 @@
   font-weight: 750;
 }
 
+.role-distribution__bulk-delivery {
+  margin-top: 1rem;
+}
+
+.role-distribution__bulk-delivery .button {
+  width: 100%;
+}
+
 .assignment-list {
   display: grid;
   gap: 0.9rem;

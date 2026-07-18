@@ -29,18 +29,18 @@ describe('final visits', () => {
     )
 
     expect(result.finalVisits.map((visit) => visit.actorRoleId)).toEqual([
-      ROLE_IDS.godfather,
+      ROLE_IDS.consort,
+      ROLE_IDS.consort,
       ROLE_IDS.framer,
-      ROLE_IDS.consort,
-      ROLE_IDS.consort,
-      ROLE_IDS.consigliere,
+      ROLE_IDS.godfather,
       ROLE_IDS.serialKiller,
       ROLE_IDS.doctor,
       ROLE_IDS.sheriff,
       ROLE_IDS.investigator,
-      ROLE_IDS.detective,
+      ROLE_IDS.consigliere,
     ])
-    expect(new Set(result.finalVisits.map((visit) => visit.actorRoleInstanceId)).size).toBe(10)
+    expect(new Set(result.finalVisits.map((visit) => visit.actorRoleInstanceId)).size).toBe(9)
+    expect(result.finalVisits.some((visit) => visit.actorRoleId === ROLE_IDS.detective)).toBe(false)
     expect(result.finalVisits.some((visit) => visit.actorPlayerId === 'player-11')).toBe(false)
   })
 
@@ -108,7 +108,6 @@ describe('final visits', () => {
       ROLE_IDS.godfather,
       ROLE_IDS.doctor,
       ROLE_IDS.doctor,
-      ROLE_IDS.detective,
     ])
     expect(
       normal.finalVisits.filter((visit) => visit.actorRoleId === ROLE_IDS.doctor),

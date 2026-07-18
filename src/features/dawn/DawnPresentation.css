@@ -1,4 +1,3 @@
-.private-results,
 .dawn-ready,
 .dawn-public {
   min-width: 0;
@@ -8,20 +7,6 @@
   box-shadow: var(--shadow-card);
 }
 
-.private-results {
-  border: 2px solid #69444f;
-  background: linear-gradient(145deg, #21191d, #322028);
-  color: #f9eef2;
-}
-
-.private-results__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.private-results__eyebrow,
 .dawn-ready__eyebrow,
 .dawn-public__eyebrow,
 .dawn-confirmation__eyebrow {
@@ -32,11 +17,6 @@
   text-transform: uppercase;
 }
 
-.private-results__eyebrow {
-  color: #f0a6b8;
-}
-
-.private-results h2,
 .dawn-ready h2,
 .dawn-public h2 {
   margin: 0;
@@ -45,51 +25,6 @@
   line-height: 1.05;
 }
 
-.private-results__progress {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid #855a66;
-  border-radius: 999px;
-  color: #f9dce4;
-  background: #412a32;
-  font-weight: 800;
-}
-
-.private-result-card {
-  display: grid;
-  gap: 0.85rem;
-  min-width: 0;
-  margin-top: 1.5rem;
-  padding: clamp(1rem, 4vw, 1.75rem);
-  border: 1px solid #855a66;
-  border-radius: var(--radius-medium);
-  background: #151012;
-}
-
-.private-result-card p {
-  margin: 0;
-}
-
-.private-result-card__actor,
-.private-result-card__target {
-  color: #d8bcc5;
-}
-
-.private-result-card__message,
-.private-result-card__instruction {
-  color: #fff8fa;
-  font-size: clamp(1.3rem, 4vw, 2rem);
-  font-weight: 850;
-}
-
-.private-result-card__group {
-  color: #f6ccd7;
-  font-size: clamp(1rem, 3vw, 1.35rem);
-  font-weight: 750;
-}
-
-.private-results__actions,
 .dawn-confirmation__actions {
   display: flex;
   flex-wrap: wrap;
@@ -97,7 +32,6 @@
   margin-top: 1.5rem;
 }
 
-.private-results .button,
 .dawn-ready .button,
 .dawn-confirmation .button {
   min-height: 2.75rem;
@@ -207,15 +141,6 @@
 }
 
 @media (max-width: 32rem) {
-  .private-results__header {
-    display: grid;
-  }
-
-  .private-results__progress {
-    justify-self: start;
-  }
-
-  .private-results__actions > .button,
   .dawn-confirmation__actions > .button {
     width: 100%;
   }

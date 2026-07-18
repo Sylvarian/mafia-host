@@ -15,6 +15,7 @@ import {
   confirmRoleDistribution,
   createRoleDistributionWorkflow,
   getRoleDistributionProgress,
+  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
   setCardDelivered,
   type DistributingRolesWorkflow,
@@ -64,6 +65,38 @@ describe('role-distribution workflow', () => {
       ok: false,
       error: { type: 'UNKNOWN_CARD_DELIVERY_PLAYER', playerId: 'unknown' },
     })
+  })
+
+  it('marks every participating card in one pure idempotent operation', () => {
+    const assigned = createDistributingWorkflow()
+    const firstPlayerId = assigned.game.players[0]?.playerId ?? missingPlayerId()
+    const partiallyDelivered = expectSuccess(setCardDelivered(assigned, firstPlayerId, true))
+    const snapshot = JSON.stringify(partiallyDelivered)
+    const allDelivered = expectSuccess(markAllParticipatingCardsDelivered(partiallyDelivered))
+    const repeated = expectSuccess(markAllParticipatingCardsDelivered(allDelivered))
+
+    expect(allDelivered.deliveredPlayerIds).toEqual(
+      assigned.game.players.map((player) => player.playerId),
+    )
+    expect(allDelivered.game).toBe(assigned.game)
+    expect(allDelivered.status).toBe('distributing')
+    expect(repeated).toBe(allDelivered)
+    expect(JSON.stringify(partiallyDelivered)).toBe(snapshot)
+  })
+
+  it('allows an individual delivery to be undone after bulk marking', () => {
+    const assigned = createDistributingWorkflow()
+    const allDelivered = expectSuccess(markAllParticipatingCardsDelivered(assigned))
+    const playerToUndo = assigned.game.players[1]?.playerId ?? missingPlayerId()
+    const undone = expectSuccess(setCardDelivered(allDelivered, playerToUndo, false))
+
+    expect(undone.deliveredPlayerIds).not.toContain(playerToUndo)
+    expect(getRoleDistributionProgress(undone)).toEqual({
+      deliveredCount: 2,
+      totalCount: 3,
+      isComplete: false,
+    })
+    expect(undone.status).toBe('distributing')
   })
 
   it('derives progress from unique participating delivery IDs and rejects unknown stored IDs', () => {
@@ -331,8 +364,10 @@ describe('role-distribution workflow', () => {
     })
     const firstPlayerId = frozenWorkflow.game.players[0]?.playerId ?? missingPlayerId()
     const delivered = setCardDelivered(frozenWorkflow, firstPlayerId, true)
+    const bulkDelivered = markAllParticipatingCardsDelivered(frozenWorkflow)
 
     expect(delivered.ok).toBe(true)
+    expect(bulkDelivered.ok).toBe(true)
     expect(frozenWorkflow.deliveredPlayerIds).toEqual([])
     expect(confirmRoleDistribution(frozenWorkflow).ok).toBe(false)
   })

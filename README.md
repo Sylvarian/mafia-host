@@ -6,21 +6,29 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7A — Neutral foundations, Executioner target assignment, and private briefing — is
-implemented on top of the completed Phase 6.5 local recovery boundary. Phase 4 guides the host
-through the physical
-wake sequence, allows corrections, and finalises one immutable `CollectedNightActions` batch.
-Phase 5 deterministically resolves that batch into one canonical `NightResolution` without applying
-it. Phase 6 then enters `night-resolution`, presents only Sheriff, Investigator, Consigliere, and
-Detective player-facing results in physical action order, and requires each result to be
-acknowledged before the host can cross the explicit public-Dawn privacy gate.
+Phase 7A.1 — sequential night resolution and host UX corrections — is implemented on top of the
+Phase 7A Executioner briefing. Physical card distribution includes one reversible **Mark all cards
+delivered** operation; individual delivery controls remain available until final confirmation.
+Night target rows show the host each player’s stable display label, assigned role, faction text,
+alive/availability state, and a subtle accessible faction treatment.
 
-At that boundary, the domain revalidates the canonical resolution against the completed action
-batch, applies provisional deaths once, preserves each acting Doctor's submitted target as minimal
-per-role-instance history, and applies the configured `revealRoleOnDeath` setting. It builds a
-public-safe Dawn model containing only the night number, dead player identities, and legitimately
-public role reveals. The active game ends Phase 6 in `dawn-announcement`; there is no Day button,
-victory evaluation, neutral conversion, or Jester effect.
+The first night is now one sealed canonical sequence: Mafia overview, Consorts, Framers,
+Godfathers, Serial Killers, Doctors, Sheriffs, Investigators, Consiglieres, and Detectives. Duplicate
+copies use role-instance ordinal and roster order. Disabled first-night killers have no step.
+Consorts establish blocks before later actors wake; blocked actors still wake but receive an
+explicit **BLOCKED** screen and create no action, visit, result, or Doctor target history.
+
+Confirming a target atomically records the action and produces only that actor’s immediate outcome.
+Sheriff, Investigator, Consigliere, and Detective information is shown while the actor is awake,
+acknowledged, removed from the DOM, and sealed before the next actor. Detective investigations do
+not enter the trackable visit ledger, so Detectives tracking one another see “visited nobody.” The
+obsolete end-of-night investigative replay has been removed.
+
+After the final acknowledgement, the application validates the sequential record, constructs the
+canonical action batch, calculates ordinary attacks, protections, and provisional deaths, and
+enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate **Prepare Dawn
+Announcement** boundary. Dawn applies deaths once, records only unblocked Doctors’ confirmed
+targets, honors `revealRoleOnDeath`, and exposes only public-safe announcement data.
 
 After final physical-card confirmation, every Executioner now receives one randomly selected
 participating Town target from the final assignments. The injected random source is called once per
@@ -30,21 +38,19 @@ instance, and target player. The host then sees one private briefing at a time a
 every briefing before the application creates the Night 1 action workflow. Games without an
 Executioner skip the briefing.
 
-One authoritative application session now spans setup, role distribution, Executioner briefing,
-night-action collection, private-result presentation, and public Dawn. Each successful
-authoritative transition is saved
-under the versioned browser key `mafia-host:active-session:v1`. On a later visit, the app validates
-and canonicalises that untrusted data, shows a public-safe summary, and waits for the host to choose
-**Continue saved game** before displaying private information. Invalid or incompatible saves never
-become authoritative and are not deleted automatically. Dawn saves deliberately discard collected
-actions, the full resolution, the private-result queue, and acknowledgement evidence.
+One authoritative application session spans setup, role distribution, Executioner briefing,
+sequential night, final night resolution, and public Dawn. Each successful authoritative transition
+is saved under `mafia-host:active-session:v2`. Restoration rebuilds the canonical actor sequence and
+immediate results from game authority and rejects forged order, actions, blocks, visits, outcomes,
+extra fields, and stage/phase combinations. Recovery shows only a public-safe summary until the host
+chooses **Continue saved game**.
 
-When first-night killing is disabled, living Godfathers and Serial Killers remain omitted from the
-Phase 4 batch, so Phase 5 creates no visit or attack for them. Consorts are immune to Consort blocks
-but still visit and perform their submitted action. Temporary frames affect Sheriff and the shared
-permanent Investigator/Consigliere group resolver without changing the target's actual role. One
-unblocked Doctor protection prevents every ordinary Godfather and Serial Killer attack against its
-target for that night.
+When first-night killing is disabled, living Godfathers and Serial Killers are omitted entirely, so
+they do not wake or create an action, outcome, visit, or attack. Consorts remain immune to Consort
+blocks but still visit and act. Confirmed temporary frames feed the shared Sheriff and permanent
+Investigator/Consigliere mechanics immediately and at final resolution. One unblocked Doctor
+protection prevents every ordinary Godfather and Serial Killer attack against its target that
+night.
 
 R-008 target eligibility, assignment, and private briefing are implemented. A setup with an
 Executioner requires at least one selected participating Town role. Targets do not exist before
@@ -75,23 +81,21 @@ recovery, not a backup:
 - Use one host tab. Tabs are not synchronised, merged, or locked.
 - There is no account, backend, database, cloud sync, export/import, or remote API.
 
-The V1 schema was extended compatibly for Phase 7A. New game payloads carry an explicit
-`neutralStateVersion: 1` marker plus canonical Executioner targets and briefing status; briefing
-saves retain only current index and acknowledgement IDs and rebuild private briefing records.
-Deployed Phase 6.5 V1 setup, distribution, no-Executioner night, private-result, and Dawn saves are
-recognized through their exact legacy player shape. Partially upgraded or malformed new payloads
-are rejected rather than defaulted.
+V2 is a deliberate semantic break from the former collect-all/replay workflow. Narrow V1 migration
+is supported for setup, distributing or confirmed role distribution, Executioner briefing, and a
+valid first-Dawn save. An old in-progress night-action or private-result-presentation save is
+rejected with a clear incompatible-save message because safely restoring it would require guessing
+which information players already saw. Such a V1 save is not silently deleted. On safe migration,
+V2 is written before the legacy key is removed; a failed V2 write preserves V1.
 
-V1 supports recovery through the first Dawn and deliberately requires that Dawn announcement to
-account for every currently dead player. Before later days and nights can be persisted, the session
-contract must distinguish deaths newly announced at the current Dawn from deaths on earlier nights
-or days, pending Jester revenge obligations, permanent Jester and Executioner personal wins,
-Executioner conversions, and current versus historical public announcements.
+V2 recovery remains intentionally limited to the first Dawn. Before later days and nights can be
+persisted, the session contract must distinguish deaths newly announced at the current Dawn from
+earlier deaths, pending Jester revenge obligations, permanent personal wins, Executioner
+conversions, and current versus historical announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
-announce earlier deaths again. The Phase 7 delivery sequence must update the persisted session
-contract deliberately. That may require a new schema version, or an explicit compatible V1
-extension only if validation remains unambiguous. No migration system currently exists.
+announce earlier deaths again. Phase 7E must update the contract deliberately. There is no generic
+migration framework.
 
 The production Vite base remains `/mafia-host/` for GitHub Pages. The application has no nested
 client-side routes or refresh-fallback dependency: every workflow stage renders from that project
@@ -176,17 +180,14 @@ its deliberately invalid fixtures are excluded from normal production analysis.
 ESLint separately rejects browser globals and global randomness in domain/application modules
 because those dependencies do not appear in an import graph.
 
-The layer-specific README files point back to the architecture authority. Phase 4 adds immutable
-domain action values and structural validation, while application code owns the physical sequence,
-begin-night use case, draft collection, correction, review, and final batch coordination. Phase 5
-adds permanent investigation data and pure, separately testable resolution stages in the domain;
-the application only accepts a completed Phase 4 workflow and returns the structured domain result.
-Phase 6 adds pure death/history/reveal application and a public-safe Dawn model in the domain. The
-application owns the private-result queue, acknowledgements, navigation, phase coordination, and
-single-application guard. Phase 6.5 moves cross-phase ownership into one discriminated application
-session, owns the V1 serialisable schema and runtime restoration, and gives infrastructure only the
-JSON/localStorage transport boundary. React renders stage-specific application models and keeps
-only errors, interaction guards, dialog state, save status, and focus state locally.
+The layer-specific README files point back to the architecture authority. Phase 4 introduced
+immutable domain action values and structural validation. Phase 7A.1 now coordinates those actions
+sequentially and seals each actor after immediate acknowledgement. Phase 5 adds permanent
+investigation data and pure, separately testable resolution stages in the domain; the application
+uses those same mechanics for immediate outcomes and final resolution.
+Phase 6 adds pure death/history/reveal application and a public-safe Dawn model in the domain.
+Phase 6.5 moves cross-phase ownership into one discriminated application session and gives
+infrastructure only JSON/localStorage transport.
 
 Phase 7A adds an explicit domain-owned Executioner-target model and invariant module. A focused
 application briefing workflow owns deterministic tuple IDs, canonical ordering, acknowledgement
@@ -194,6 +195,13 @@ evidence, navigation, and completion. The application session transition atomica
 distribution, assigns targets, and selects either briefing or Night 1; briefing completion
 atomically creates the night-action workflow. The dedicated feature renders only the current
 sanitized briefing and never owns target authority.
+
+Phase 7A.1 replaces collect-all/replay coordination with one application-owned sequential workflow.
+It records immutable actor steps, narrow immediate outcomes, explicit acknowledgements, and a
+bounded canonical position while deriving blocks, frames, visits, and investigation data through
+shared domain mechanics. `night-completion` owns the final resolution and deliberate Dawn boundary.
+Session persistence owns schema V2, narrow V1 migration, and canonical reconstruction. React owns
+only temporary unconfirmed target selection, focus, errors, dialogs, and repeated-operation guards.
 
 ## Project authorities
 

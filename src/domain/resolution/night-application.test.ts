@@ -140,7 +140,7 @@ describe('night resolution application', () => {
     })
   })
 
-  it('records submitted Doctor targets even when blocked and killed that night', () => {
+  it('does not record a Doctor target when the Doctor is blocked and killed that night', () => {
     const fixture = createResolutionFixture(
       [
         { roleId: ROLE_IDS.godfather },
@@ -159,15 +159,8 @@ describe('night resolution application', () => {
     const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
     if (!applied.ok) throw new Error('Expected night application.')
 
-    expect(applied.value.game.doctorPreviousTargets).toEqual([
-      {
-        doctorRoleInstanceId: fixture.game.players[2]?.role.instanceId,
-        targetPlayerId: playerId('player-4'),
-        nightNumber: fixture.game.nightNumber,
-      },
-    ])
+    expect(applied.value.game.doctorPreviousTargets).toEqual([])
     expect(Object.isFrozen(applied.value.game.doctorPreviousTargets)).toBe(true)
-    expect(Object.isFrozen(applied.value.game.doctorPreviousTargets[0])).toBe(true)
   })
 
   it('records duplicate Doctors independently in participating-player order', () => {
@@ -243,7 +236,7 @@ describe('night resolution application', () => {
     ])
   })
 
-  it('retains a blocked Doctor submission when that Doctor’s target dies', () => {
+  it('does not record a blocked Doctor target when that target dies', () => {
     const fixture = createResolutionFixture(
       [
         { roleId: ROLE_IDS.godfather },
@@ -263,13 +256,7 @@ describe('night resolution application', () => {
     const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
     if (!applied.ok) throw new Error('Expected night application.')
 
-    expect(applied.value.game.doctorPreviousTargets).toEqual([
-      {
-        doctorRoleInstanceId: fixture.game.players[2]?.role.instanceId,
-        targetPlayerId: playerId('player-4'),
-        nightNumber: fixture.game.nightNumber,
-      },
-    ])
+    expect(applied.value.game.doctorPreviousTargets).toEqual([])
   })
 
   it('rejects stale, duplicate, unknown, already-dead, and role-mismatched deaths', () => {

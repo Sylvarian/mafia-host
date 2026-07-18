@@ -1,34 +1,40 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { useEffect, useRef, useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
-  beginFirstNight,
+  acknowledgeImmediateNightOutcome,
+  confirmNightActionTarget,
   continueNightActionCollection,
-  createNightActionCollectionWorkflow,
-  editNightAction,
-  finaliseNightActionCollection,
-  previousNightActionCollection,
-  selectNightActionTarget,
+  createNightActionCollectionForStartedNight,
   type ActiveNightActionCollectionWorkflow,
   type NightActionCollectionError,
   type PlayerId,
-  type RoleInstanceId,
   ROLE_IDS,
 } from '@/application/night-actions/index.ts'
 import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import { NightRunner } from './NightRunner.tsx'
 
-type NightFixture = ReturnType<typeof createNightFixture>
-
-function startFixture(fixture: NightFixture): ActiveNightActionCollectionWorkflow {
-  const result = beginFirstNight(createNightActionCollectionWorkflow(fixture.distribution))
-  if (!result.ok) throw new Error(`Expected fixture to begin: ${result.error.type}`)
+function startedWorkflow(
+  roles: Parameters<typeof createNightFixture>[0],
+): ActiveNightActionCollectionWorkflow {
+  const fixture = createNightFixture(roles, {
+    phase: 'night-action-collection',
+    nightNumber: 2,
+    settings: { allowFirstNightKills: true, doctorCanSelfProtect: true },
+  })
+  const result = createNightActionCollectionForStartedNight(fixture.game, fixture.participants)
+  if (!result.ok) throw new Error(`Could not start night: ${result.error.type}`)
   return result.value
 }
 
-function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
-  const [workflow, setWorkflow] = useState(() => startFixture(fixture))
+function NightHarness({
+  initialWorkflow,
+}: Readonly<{ initialWorkflow: ActiveNightActionCollectionWorkflow }>) {
+  const [workflow, setWorkflow] = useState(initialWorkflow)
   const [error, setError] = useState<NightActionCollectionError | null>(null)
   const operationPendingRef = useRef(false)
 
@@ -36,7 +42,7 @@ function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
     operationPendingRef.current = false
   }, [workflow, error])
 
-  function applyOperation(
+  function apply(
     operation: () =>
       | Readonly<{ ok: true; value: ActiveNightActionCollectionWorkflow }>
       | Readonly<{ ok: false; error: NightActionCollectionError }>,
@@ -48,6 +54,7 @@ function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
       setWorkflow(result.value)
       setError(null)
     } else {
+      operationPendingRef.current = false
       setError(result.error)
     }
   }
@@ -56,270 +63,230 @@ function NightHarness({ fixture }: Readonly<{ fixture: NightFixture }>) {
     <NightRunner
       workflow={workflow}
       error={error}
-      onConfirmTarget={(targetPlayerId: PlayerId) => {
-        applyOperation(() => {
-          const selectionResult = selectNightActionTarget(workflow, targetPlayerId)
-          return selectionResult.ok
-            ? continueNightActionCollection(selectionResult.value)
-            : selectionResult
-        })
+      onConfirmTarget={(targetPlayerId) => {
+        apply(() => confirmNightActionTarget(workflow, targetPlayerId))
+      }}
+      onAcknowledgeOutcome={() => {
+        apply(() => acknowledgeImmediateNightOutcome(workflow))
       }}
       onContinue={() => {
-        applyOperation(() => continueNightActionCollection(workflow))
+        apply(() => continueNightActionCollection(workflow))
       }}
-      onPrevious={() => {
-        applyOperation(() => previousNightActionCollection(workflow))
-      }}
-      onEditAction={(actorRoleInstanceId: RoleInstanceId) => {
-        applyOperation(() => editNightAction(workflow, actorRoleInstanceId))
-      }}
-      onFinalise={() => {
-        applyOperation(() => finaliseNightActionCollection(workflow))
-      }}
-      onResolveNight={() => undefined}
-      resolutionErrorMessage={null}
     />
   )
 }
 
-function selectFirstAvailableTarget(roleDisplayName: string): void {
-  const group = screen.getByRole('group', { name: `Targets for ${roleDisplayName}` })
-  const target = within(group)
-    .getAllByRole('button')
-    .find((button) => !button.hasAttribute('disabled'))
-  if (target === undefined) throw new Error(`No target available for ${roleDisplayName}.`)
-  fireEvent.click(target)
+function actorWorkflow(
+  workflow: ActiveNightActionCollectionWorkflow,
+  roleId: string,
+): ActiveNightActionCollectionWorkflow {
+  const index = workflow.steps.findIndex((step) => {
+    if (step.type !== 'actor-action') return false
+    return workflow.game.players.some(
+      (player) =>
+        player.role.instanceId === step.actorRoleInstanceId && player.role.roleId === roleId,
+    )
+  })
+  if (index < 0 || workflow.status !== 'collecting') {
+    throw new Error(`Could not find actor step for ${roleId}.`)
+  }
+  return { ...workflow, currentStepIndex: index }
 }
 
-function confirmTarget(): void {
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
-}
-
-describe('night runner host UI', () => {
-  it('guides the full private sequence, corrects actions, reviews, edits, and stops before resolution', () => {
-    const fixture = createNightFixture(
-      [
+describe('sequential Night Runner UI', () => {
+  it('shows host-safe player, role, faction, availability, and faction treatments', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.doctor, name: 'Host Doctor' },
         { roleId: ROLE_IDS.godfather, name: 'Alex' },
-        { roleId: ROLE_IDS.framer, name: 'Alex' },
-        { roleId: ROLE_IDS.consort, name: 'Casey' },
-        { roleId: ROLE_IDS.consigliere, name: 'Dana' },
-        { roleId: ROLE_IDS.serialKiller, name: 'Eli' },
-        { roleId: ROLE_IDS.doctor, name: 'Fran' },
-        { roleId: ROLE_IDS.doctor, name: 'Gale' },
-        { roleId: ROLE_IDS.sheriff, name: 'Harper' },
-        { roleId: ROLE_IDS.investigator, name: 'Indigo' },
-        { roleId: ROLE_IDS.detective, name: 'Jules' },
-      ],
-      { settings: { doctorCanSelfProtect: true, allowFirstNightKills: true } },
+        { roleId: ROLE_IDS.citizen, name: 'Alex' },
+        { roleId: ROLE_IDS.serialKiller, name: 'Neutral target' },
+      ]),
+      ROLE_IDS.doctor,
     )
-    render(<NightHarness fixture={fixture} />)
+    render(
+      <NightRunner
+        workflow={workflow}
+        error={null}
+        onConfirmTarget={() => undefined}
+        onContinue={() => undefined}
+        onAcknowledgeOutcome={() => undefined}
+      />,
+    )
 
-    expect(screen.getByRole('heading', { name: 'Begin the night deliberately' })).toHaveFocus()
-    expect(screen.getByText('Everyone, close your eyes.')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toHaveFocus()
-    const mafiaOverview = screen.getByRole('list', { name: 'Living Mafia overview' })
-    expect(within(mafiaOverview).getAllByRole('listitem')).toHaveLength(4)
-    expect(within(mafiaOverview).getByText('ID player-1')).toBeVisible()
-    expect(within(mafiaOverview).getByText('ID player-2')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    selectFirstAvailableTarget('Godfather')
-    const godfatherContinue = screen.getByRole('button', { name: 'Confirm Target / Continue' })
-    act(() => {
-      godfatherContinue.click()
-      godfatherContinue.click()
+    const group = screen.getByRole('group', { name: 'Targets for Doctor' })
+    const mafia = within(group).getByRole('button', {
+      name: /Alex \(Player 2\), Godfather, Mafia, alive, available/,
     })
-    expect(screen.getByText('Framer')).toBeVisible()
-    expect(
-      screen.getByRole('heading', { name: 'Collect Framer action for Alex (player-2)' }),
-    ).toHaveFocus()
-
-    for (const role of ['Framer', 'Consort', 'Consigliere']) {
-      selectFirstAvailableTarget(role)
-      confirmTarget()
-    }
-    expect(screen.getByText('Ask the Mafia to close their eyes.')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    selectFirstAvailableTarget('Serial Killer')
-    confirmTarget()
-    selectFirstAvailableTarget('Doctor 1')
-    confirmTarget()
-    expect(screen.getByText('Doctor 2')).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
-    expect(screen.getByText('Doctor 1')).toBeVisible()
-    expect(screen.getByText(/Previously confirmed target restored/)).toBeVisible()
-    const doctorOneGroup = screen.getByRole('group', { name: 'Targets for Doctor 1' })
-    const alternative = within(doctorOneGroup)
-      .getAllByRole('button')
-      .find(
-        (button) =>
-          !button.hasAttribute('disabled') && button.getAttribute('aria-pressed') === 'false',
-      )
-    if (alternative === undefined) throw new Error('Expected an alternative Doctor target.')
-    fireEvent.click(alternative)
-    expect(within(alternative).getByText(/Selected target/)).toBeVisible()
-    confirmTarget()
-
-    for (const role of ['Doctor 2', 'Sheriff', 'Investigator', 'Detective']) {
-      selectFirstAvailableTarget(role)
-      confirmTarget()
-    }
-
-    expect(screen.getByRole('heading', { name: 'Review collected night actions' })).toHaveFocus()
-    expect(screen.getAllByRole('listitem')).toHaveLength(10)
-    expect(screen.getByText('No effects or outcomes have been calculated.')).toBeVisible()
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Edit Godfather action for Alex (player-1)' }),
-    )
-    expect(screen.getByText('Godfather')).toBeVisible()
-    expect(
-      screen.getByRole('heading', { name: 'Collect Godfather action for Alex (player-1)' }),
-    ).toHaveFocus()
-    const godfatherGroup = screen.getByRole('group', { name: 'Targets for Godfather' })
-    const newGodfatherTarget = within(godfatherGroup)
-      .getAllByRole('button')
-      .find(
-        (button) =>
-          !button.hasAttribute('disabled') && button.getAttribute('aria-pressed') === 'false',
-      )
-    if (newGodfatherTarget === undefined) throw new Error('Expected an alternative target.')
-    fireEvent.click(newGodfatherTarget)
-    confirmTarget()
-    expect(screen.getByRole('heading', { name: 'Review collected night actions' })).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Finish Collecting Night Actions' }))
-    expect(screen.getByRole('heading', { name: 'Night actions collected' })).toHaveFocus()
-    expect(screen.getByText('Ready to resolve night results')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Resolve Night' })).toBeVisible()
-    expect(screen.getByText(/game remains in night-action-collection/i)).toBeVisible()
-    expect(screen.queryByText(/was killed|appears suspicious|investigation result/i)).toBeNull()
-  })
-
-  it('makes Doctor self-target availability follow the central setting', () => {
-    const roles = [
-      { roleId: ROLE_IDS.godfather },
-      { roleId: ROLE_IDS.doctor },
-      { roleId: ROLE_IDS.citizen },
-    ]
-    const disabledView = render(
-      <NightHarness
-        fixture={createNightFixture(roles, {
-          settings: { doctorCanSelfProtect: false, allowFirstNightKills: true },
-        })}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    selectFirstAvailableTarget('Godfather')
-    confirmTarget()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByRole('button', { name: /Player 2, alive, unavailable/ })).toBeDisabled()
-    disabledView.unmount()
-
-    render(
-      <NightHarness
-        fixture={createNightFixture(roles, {
-          settings: { doctorCanSelfProtect: true, allowFirstNightKills: true },
-        })}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    selectFirstAvailableTarget('Godfather')
-    confirmTarget()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByRole('button', { name: 'Player 2, alive' })).toBeEnabled()
-  })
-
-  it('skips Mafia instructions when no living Mafia are present', () => {
-    render(
-      <NightHarness
-        fixture={createNightFixture([
-          { roleId: ROLE_IDS.doctor, name: 'Dana' },
-          { roleId: ROLE_IDS.citizen, name: 'Chris' },
-        ])}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(screen.queryByRole('heading', { name: 'Living Mafia overview' })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'Collect Doctor action for Dana' })).toHaveFocus()
-  })
-
-  it('reviews and completes a night containing no acting roles', () => {
-    render(
-      <NightHarness
-        fixture={createNightFixture([{ roleId: ROLE_IDS.citizen }, { roleId: ROLE_IDS.mayor }])}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByRole('heading', { name: 'Review collected night actions' })).toHaveFocus()
-    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Finish Collecting Night Actions' }))
-    expect(screen.getByRole('heading', { name: 'Night actions collected' })).toHaveFocus()
-    expect(screen.getByText(/0 actions recorded as intent/i)).toBeVisible()
-  })
-
-  it('skips first-night killing controls while retaining the private Godfather overview', () => {
-    render(
-      <NightHarness
-        fixture={createNightFixture([
-          { roleId: ROLE_IDS.godfather, name: 'Gina' },
-          { roleId: ROLE_IDS.serialKiller, name: 'Sam' },
-          { roleId: ROLE_IDS.sheriff, name: 'Shae' },
-        ])}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    const mafiaOverview = screen.getByRole('list', { name: 'Living Mafia overview' })
-    expect(within(mafiaOverview).getByText('Gina')).toBeVisible()
-    expect(within(mafiaOverview).getByText('Godfather')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(screen.getByText('Ask the Mafia to close their eyes.')).toBeVisible()
-    expect(screen.queryByRole('group', { name: 'Targets for Godfather' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(screen.getByRole('heading', { name: 'Collect Sheriff action for Shae' })).toBeVisible()
-    expect(screen.queryByRole('group', { name: 'Targets for Serial Killer' })).toBeNull()
-  })
-
-  it('keeps another Consort enabled as a target without claiming a block was resolved', () => {
-    render(
-      <NightHarness
-        fixture={createNightFixture([
-          { roleId: ROLE_IDS.godfather },
-          { roleId: ROLE_IDS.consort, name: 'Connie' },
-          { roleId: ROLE_IDS.consort, name: 'Cora' },
-          { roleId: ROLE_IDS.doctor },
-        ])}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(
-      screen.getByRole('heading', { name: 'Collect Consort 1 action for Connie' }),
-    ).toBeVisible()
-
-    const consortOneTargets = screen.getByRole('group', { name: 'Targets for Consort 1' })
-    const consortTwoTarget = within(consortOneTargets).getByRole('button', {
-      name: 'Cora, alive',
+    const town = within(group).getByRole('button', {
+      name: /Alex \(Player 3\), Citizen, Town, alive, available/,
     })
-    expect(consortTwoTarget).toBeEnabled()
-    fireEvent.click(consortTwoTarget)
-    confirmTarget()
+    const neutral = within(group).getByRole('button', {
+      name: /Neutral target, Serial Killer, Neutral, alive, available/,
+    })
 
-    const consortTwoTargets = screen.getByRole('group', { name: 'Targets for Consort 2' })
-    expect(within(consortTwoTargets).getByRole('button', { name: 'Connie, alive' })).toBeEnabled()
-    expect(screen.queryByText(/has been blocked|was blocked/i)).toBeNull()
+    expect(mafia).toHaveClass('target-button--mafia')
+    expect(town).toHaveClass('target-button--town')
+    expect(neutral).toHaveClass('target-button--neutral')
+    expect(within(mafia).getByText('Godfather · Mafia')).toBeVisible()
+    expect(within(town).getByText('Citizen · Town')).toBeVisible()
+    expect(within(neutral).getByText('Serial Killer · Neutral')).toBeVisible()
+    expect(screen.queryByText(/role-instance-|night-fixture-game/)).toBeNull()
+
+    fireEvent.click(town)
+    expect(town).toHaveClass('is-selected')
+    expect(town).toHaveAttribute('aria-pressed', 'true')
+    expect(within(town).getByText('Alive — selected')).toBeVisible()
+  })
+
+  it('keeps target rows responsive at 320px and 390px with 44px-plus touch controls', () => {
+    const css = readFileSync(resolve('src/features/night-runner/NightRunner.css'), 'utf8')
+
+    expect(css).toMatch(
+      /\.target-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*12rem\),\s*1fr\)\)/,
+    )
+    expect(css).toMatch(/\.target-button\s*\{[\s\S]*?min-height:\s*4\.5rem;/)
+    expect(4.5 * 16).toBeGreaterThanOrEqual(44)
+    expect(css).toMatch(/@media \(max-width:\s*24\.5rem\)/)
+    expect(320).toBeLessThanOrEqual(24.5 * 16)
+    expect(390).toBeLessThanOrEqual(24.5 * 16)
+  })
+
+  it('keeps unavailable targets visible with their role and faction', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+        { roleId: ROLE_IDS.citizen, name: 'Dead target', alive: false },
+        { roleId: ROLE_IDS.citizen, name: 'Living target' },
+      ]),
+      ROLE_IDS.doctor,
+    )
+    render(
+      <NightRunner
+        workflow={workflow}
+        error={null}
+        onConfirmTarget={() => undefined}
+        onContinue={() => undefined}
+        onAcknowledgeOutcome={() => undefined}
+      />,
+    )
+
+    const unavailable = screen.getByRole('button', {
+      name: /Dead target, Citizen 1, Town, dead, unavailable/,
+    })
+    expect(unavailable).toBeDisabled()
+    expect(unavailable).toHaveClass('target-button--town')
+    expect(within(unavailable).getByText('Citizen 1 · Town')).toBeVisible()
+    expect(within(unavailable).getByText('Dead — unavailable')).toBeVisible()
+  })
+
+  it('keeps target selection temporary until explicit confirmation', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+      ]),
+      ROLE_IDS.sheriff,
+    )
+    const onConfirmTarget = vi.fn<(targetPlayerId: PlayerId) => void>()
+    render(
+      <NightRunner
+        workflow={workflow}
+        error={null}
+        onConfirmTarget={onConfirmTarget}
+        onContinue={() => undefined}
+        onAcknowledgeOutcome={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen, Town/ }))
+    expect(onConfirmTarget).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    expect(onConfirmTarget).toHaveBeenCalledTimes(1)
+    expect(onConfirmTarget).toHaveBeenCalledWith('player-2')
+  })
+
+  it('shows only the current immediate result, focuses it, and removes it after acknowledgement', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+        { roleId: ROLE_IDS.serialKiller, name: 'Target' },
+      ]),
+      ROLE_IDS.sheriff,
+    )
+    render(<NightHarness initialWorkflow={workflow} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Target, Serial Killer, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+
+    const resultHeading = screen.getByRole('heading', { name: 'Sheriff result' })
+    expect(resultHeading).toHaveFocus()
+    expect(screen.getByText('Suspicious')).toBeVisible()
+    expect(screen.getByText(/Private screen/)).toBeVisible()
+    expect(screen.queryByText('Action recorded')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge result' }))
+    expect(screen.getByRole('heading', { name: 'Outcome acknowledged' })).toHaveFocus()
+    expect(screen.queryByText('Suspicious')).toBeNull()
+    expect(screen.queryByText('Target: Target')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Complete Night Actions' })).toBeVisible()
+  })
+
+  it('shows the immediate four-role Group D card without revealing the actual role', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.investigator, name: 'Investigator' },
+        { roleId: ROLE_IDS.jester, name: 'Target' },
+      ]),
+      ROLE_IDS.investigator,
+    )
+    render(<NightHarness initialWorkflow={workflow} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+
+    expect(screen.getByRole('heading', { name: 'Investigator result' })).toHaveFocus()
+    expect(screen.getByText('Group D')).toBeVisible()
+    expect(screen.getByText('Consigliere · Serial Killer · Jester · Citizen')).toBeVisible()
+    expect(screen.queryByText(/actual role|framed/i)).toBeNull()
+  })
+
+  it('renders a strong BLOCKED screen without target or result controls', () => {
+    let workflow = startedWorkflow([
+      { roleId: ROLE_IDS.consort, name: 'Consort' },
+      { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+      { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+    ])
+    const overview = continueNightActionCollection(workflow)
+    if (!overview.ok || overview.value.status !== 'collecting') {
+      throw new Error('Could not pass overview.')
+    }
+    const doctor = overview.value.game.players[1]
+    if (doctor === undefined) throw new Error('Expected blocked Doctor.')
+    const consort = confirmNightActionTarget(overview.value, doctor.playerId)
+    if (!consort.ok) throw new Error('Could not confirm Consort.')
+    const acknowledged = acknowledgeImmediateNightOutcome(consort.value)
+    if (!acknowledged.ok) throw new Error('Could not acknowledge Consort.')
+    const blocked = continueNightActionCollection(acknowledged.value)
+    if (!blocked.ok || blocked.value.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Could not reach blocked Doctor.')
+    }
+    workflow = blocked.value
+
+    render(
+      <NightRunner
+        workflow={workflow}
+        error={null}
+        onConfirmTarget={() => undefined}
+        onContinue={() => undefined}
+        onAcknowledgeOutcome={() => undefined}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'BLOCKED' })).toHaveFocus()
+    expect(screen.getByText('Your action cannot be performed tonight.')).toBeVisible()
+    expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
+    expect(screen.queryByText(/No result/i)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Acknowledge result' })).toBeVisible()
   })
 })

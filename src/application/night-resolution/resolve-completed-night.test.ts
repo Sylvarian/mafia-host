@@ -61,7 +61,7 @@ describe('resolveCompletedNightWorkflow', () => {
     })
   })
 
-  it.each(['collecting', 'reviewing'] as const)(
+  it.each(['collecting', 'outcome-acknowledged'] as const)(
     'rejects a runtime %s workflow even when a collected batch is injected',
     (status) => {
       const fixture = createResolutionFixture(
@@ -69,26 +69,16 @@ describe('resolveCompletedNightWorkflow', () => {
         [1, null],
       )
       const complete = toCompleteWorkflow(fixture)
-      const incomplete: NightActionCollectionWorkflow =
-        status === 'collecting'
-          ? {
-              status,
-              game: complete.game,
-              participants: complete.participants,
-              steps: complete.steps,
-              previousTargets: complete.previousTargets,
-              currentStepIndex: 0,
-              submittedActions: complete.collectedActions.actions,
-              returnToReviewAfterActor: false,
-            }
-          : {
-              status,
-              game: complete.game,
-              participants: complete.participants,
-              steps: complete.steps,
-              previousTargets: complete.previousTargets,
-              submittedActions: complete.collectedActions.actions,
-            }
+      const incomplete: NightActionCollectionWorkflow = {
+        status,
+        game: complete.game,
+        participants: complete.participants,
+        steps: complete.steps,
+        previousTargets: complete.previousTargets,
+        currentStepIndex: 0,
+        completedSteps: Object.freeze([]),
+        currentOutcome: null,
+      }
 
       Object.defineProperty(incomplete, 'collectedActions', {
         value: complete.collectedActions,
@@ -128,6 +118,9 @@ function toCompleteWorkflow(fixture: ResolutionFixture): CompleteNightActionsWor
     participants,
     steps: sequenceResult.value,
     previousTargets: fixture.previousTargets,
+    currentStepIndex: sequenceResult.value.length,
+    completedSteps: Object.freeze([]),
+    currentOutcome: null,
     collectedActions: fixture.collectedActions,
   })
 }

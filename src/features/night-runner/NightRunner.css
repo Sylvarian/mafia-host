@@ -67,6 +67,16 @@
   font-weight: 750;
 }
 
+.night-runner__privacy {
+  margin: 1rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-small);
+  color: var(--warning-strong);
+  background: var(--warning-soft);
+  font-weight: 800;
+}
+
 .night-instruction,
 .actor-action {
   margin-top: 1.5rem;
@@ -91,8 +101,7 @@
   border-left-color: var(--mafia);
 }
 
-.night-instruction ul,
-.night-review__list {
+.night-instruction ul {
   display: grid;
   gap: 0.65rem;
   margin: 1rem 0 0;
@@ -100,8 +109,7 @@
   list-style: none;
 }
 
-.night-instruction li,
-.night-review__list li {
+.night-instruction li {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -147,9 +155,14 @@
 }
 
 .actor-action__identity p,
-.actor-action__prompt,
-.actor-action__selection {
+.actor-action__prompt {
   margin: 0.25rem 0 0;
+}
+
+.actor-action__finality {
+  margin: 0.85rem 0 0;
+  color: var(--warning-strong);
+  font-weight: 750;
 }
 
 .actor-action__prompt {
@@ -157,11 +170,6 @@
   color: var(--text-strong);
   font-size: 1.05rem;
   font-weight: 800;
-}
-
-.actor-action__selection {
-  color: var(--success-strong);
-  font-weight: 750;
 }
 
 .target-grid {
@@ -189,13 +197,29 @@
   cursor: pointer;
 }
 
+.target-button--mafia {
+  background: var(--faction-mafia-soft);
+}
+
+.target-button--town {
+  background: var(--faction-town-soft);
+}
+
+.target-button--neutral {
+  background: var(--faction-neutral-soft);
+}
+
 .target-button:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
 .target-button.is-selected {
-  border-color: var(--success);
-  background: var(--success-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.target-button:disabled {
+  opacity: 0.66;
 }
 
 .target-button span,
@@ -203,6 +227,11 @@
 .target-option__reason {
   color: var(--text-muted);
   font-size: 0.72rem;
+}
+
+.target-button__role {
+  color: var(--text-strong);
+  font-weight: 750;
 }
 
 .target-option__reason {
@@ -221,18 +250,8 @@
   border-top: 1px solid var(--border);
 }
 
-.night-review > p:not(.night-runner__eyebrow, .night-runner__error) {
-  color: var(--text-muted);
-}
-
-.night-review__list li > div {
-  display: grid;
-  min-width: 0;
-}
-
-.night-review__list span {
-  overflow-wrap: anywhere;
-  color: var(--text-muted);
+.night-runner__actions--end {
+  justify-content: flex-end;
 }
 
 .night-complete {
@@ -245,18 +264,85 @@
   font-weight: 900;
 }
 
+.immediate-outcome {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: clamp(1.25rem, 5vw, 2.5rem);
+  border: 2px solid #69444f;
+  border-radius: var(--radius-large);
+  color: #f9eef2;
+  background: linear-gradient(145deg, #21191d, #322028);
+  box-shadow: var(--shadow-card);
+}
+
+.immediate-outcome h2 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(2.2rem, 9vw, 4.5rem);
+  line-height: 1;
+}
+
+.immediate-outcome h2:focus {
+  outline: none;
+}
+
+.immediate-outcome .night-runner__privacy {
+  margin: 0;
+}
+
+.immediate-outcome--blocked {
+  border-color: #e04444;
+  background: linear-gradient(145deg, #310f13, #5b171d);
+}
+
+.immediate-outcome__actor,
+.immediate-outcome__message,
+.immediate-outcome__result,
+.immediate-outcome__group,
+.immediate-outcome__target {
+  margin: 0;
+}
+
+.immediate-outcome__actor,
+.immediate-outcome__target {
+  color: #dcc5cb;
+}
+
+.immediate-outcome__message,
+.immediate-outcome__result {
+  font-size: clamp(1.35rem, 5vw, 2.5rem);
+  font-weight: 900;
+}
+
+.immediate-outcome__group {
+  font-size: clamp(1rem, 4vw, 1.5rem);
+  font-weight: 750;
+}
+
+.immediate-outcome .button {
+  min-height: 3rem;
+  justify-self: start;
+}
+
+.outcome-acknowledged {
+  border-top-color: var(--success);
+}
+
+.outcome-acknowledged > p:not(.night-runner__eyebrow, .night-runner__error) {
+  color: var(--text-muted);
+}
+
 @media (max-width: 42rem) {
   .night-runner__header,
   .night-runner__actions,
-  .night-instruction li,
-  .night-review__list li {
+  .night-instruction li {
     align-items: stretch;
     flex-direction: column;
   }
 
   .night-runner__progress,
-  .night-runner__actions .button,
-  .night-review__list .button {
+  .night-runner__actions .button {
     width: 100%;
   }
 }

@@ -2,6 +2,7 @@ import { fail, succeed, type DomainResult } from '../game/domain-result.ts'
 import type { GameState } from '../game/game-state.ts'
 import type { GameId, PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
+import { selectBlockedRoleInstanceIds } from '../resolution/role-block-status.ts'
 import type { NightActionKind } from './night-action-kind.ts'
 
 export type SubmittedNightAction = Readonly<{
@@ -77,6 +78,11 @@ export type NightActionBatchError =
     }>
   | Readonly<{
       type: 'MISSING_REQUIRED_ACTION'
+      actorPlayerId: PlayerId
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'BLOCKED_ACTOR_SUBMITTED_ACTION'
       actorPlayerId: PlayerId
       actorRoleInstanceId: RoleInstanceId
     }>
@@ -286,9 +292,11 @@ export function createCollectedNightActions(
     copiedActions.push(actionResult.value)
   }
 
+  const blockedRoleInstanceIds = selectBlockedRoleInstanceIds(game, copiedActions)
   for (const player of game.players) {
     if (
       isNightActionRequiredForPlayer(game, player.playerId) &&
+      !blockedRoleInstanceIds.has(player.role.instanceId) &&
       !actorRoleInstanceIds.has(player.role.instanceId)
     ) {
       return fail({
@@ -297,6 +305,17 @@ export function createCollectedNightActions(
         actorRoleInstanceId: player.role.instanceId,
       })
     }
+  }
+
+  const blockedAction = copiedActions.find((action) =>
+    blockedRoleInstanceIds.has(action.actorRoleInstanceId),
+  )
+  if (blockedAction !== undefined) {
+    return fail({
+      type: 'BLOCKED_ACTOR_SUBMITTED_ACTION',
+      actorPlayerId: blockedAction.actorPlayerId,
+      actorRoleInstanceId: blockedAction.actorRoleInstanceId,
+    })
   }
 
   return succeed(

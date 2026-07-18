@@ -32,7 +32,7 @@ Phase 6 adds one canonical `DoctorPreviousTarget` array to `GameState`, with run
 per-role-instance uniqueness, participating-player ordering, and immutable canonical copies. The
 night-application boundary explicitly enters `night-resolution`, revalidates the resolution against
 the completed action batch, applies provisional deaths and configured public role reveals once,
-records every acting Doctor's submitted target even if blocked or killed, builds a public-safe Dawn
+records every Doctor's submitted target even if the Doctor or target is killed, builds a public-safe Dawn
 model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, and
 Executioner targets and performs no neutral or faction outcome calculation.
 
@@ -44,3 +44,12 @@ role instances, cross-game records, unknown identities, non-Town targets, non-ca
 and later phases whose briefing status is incomplete. Target selection and briefing completion
 preserve role assignments, settings, counters, and target identities. No personal win, role
 conversion, Jester revenge, victory, or later-night behavior exists in this phase.
+
+Phase 7A.1 makes sequential blocking explicit without moving workflow state into the domain.
+Canonical Consort actions determine blocked role-instance identities before later actors act, and
+complete action batches accept no action for a blocked non-Consort while rejecting a fabricated
+one. Shared frame, Sheriff, investigation-group, visit, and Detective functions serve both
+immediate application outcomes and final resolution. Detective actions are deliberately excluded
+from the trackable visit ledger; blocked actors and first-night-skipped killers likewise have no
+visit. Dawn history records an unblocked Doctor's confirmed target even if the Doctor or target
+dies, but records nothing for a blocked Doctor.

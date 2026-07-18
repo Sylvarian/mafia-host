@@ -3,7 +3,8 @@ import type { GameCommandError } from '@/domain/game/game-errors.ts'
 import { validateGameState } from '@/domain/game/game-invariants.ts'
 import { handleGameCommand } from '@/domain/game/game-reducer.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
-import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
+import type { PlayerId, RoleId, RoleInstanceId } from '@/domain/identifiers.ts'
+import type { InvestigationGroup } from '@/domain/investigation/investigation-groups.ts'
 import {
   createCollectedNightActions,
   createSubmittedNightAction,
@@ -16,20 +17,84 @@ import {
 } from '@/domain/night-actions/night-action.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { resolveDetectiveResults } from '@/domain/resolution/detective-results.ts'
+import { resolveFrames } from '@/domain/resolution/frames.ts'
+import { resolveInvestigationResults } from '@/domain/resolution/investigation-results.ts'
+import type { DetectiveResult, SheriffResult } from '@/domain/resolution/night-resolution-models.ts'
+import { isActorBlockedByConfirmedConsortActions } from '@/domain/resolution/role-blocks.ts'
+import { resolveSheriffResults } from '@/domain/resolution/sheriff-results.ts'
+import { buildFinalVisits } from '@/domain/resolution/visits.ts'
 
 import type { RoleDistributionWorkflow } from '../role-assignment/role-distribution-workflow.ts'
 import {
   buildNightActionSequence,
-  orderNightActionsBySequence,
   type NightSequenceError,
   type NightSequenceStep,
 } from './night-sequence.ts'
 
-type ActiveNightWorkflowFields = Readonly<{
+type ImmediateOutcomeBase = Readonly<{
+  actorPlayerId: PlayerId
+  actorRoleId: RoleId
+  actorRoleInstanceId: RoleInstanceId
+}>
+
+export type ImmediateNightOutcome =
+  | (ImmediateOutcomeBase & Readonly<{ kind: 'blocked' }>)
+  | (ImmediateOutcomeBase &
+      Readonly<{
+        kind: 'action-recorded'
+        targetPlayerId: PlayerId
+      }>)
+  | (ImmediateOutcomeBase &
+      Readonly<{
+        kind: 'sheriff-result'
+        targetPlayerId: PlayerId
+        status: SheriffResult['status']
+      }>)
+  | (ImmediateOutcomeBase &
+      Readonly<{
+        kind: 'investigation-result'
+        targetPlayerId: PlayerId
+        investigationRole: 'investigator' | 'consigliere'
+        group: InvestigationGroup
+      }>)
+  | (ImmediateOutcomeBase &
+      Readonly<{
+        kind: 'detective-result'
+        targetPlayerId: PlayerId
+        result:
+          | Readonly<{ status: 'visited-nobody' }>
+          | Readonly<{ status: 'visited-player'; visitedPlayerId: PlayerId }>
+      }>)
+
+export type SequentialNightStepRecord =
+  | Readonly<{
+      stepIndex: number
+      status: 'blocked'
+      actorPlayerId: PlayerId
+      actorRoleId: RoleId
+      actorRoleInstanceId: RoleInstanceId
+      outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>
+      acknowledged: boolean
+    }>
+  | Readonly<{
+      stepIndex: number
+      status: 'action-confirmed'
+      actorPlayerId: PlayerId
+      actorRoleId: RoleId
+      actorRoleInstanceId: RoleInstanceId
+      action: SubmittedNightAction
+      outcome: Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>
+      acknowledged: boolean
+    }>
+
+type ActiveSequentialNightFields = Readonly<{
   game: GameState
   participants: readonly Player[]
   steps: readonly NightSequenceStep[]
   previousTargets: readonly PreviousNightTarget[]
+  currentStepIndex: number
+  completedSteps: readonly SequentialNightStepRecord[]
 }>
 
 export type NightActionCollectionWorkflow =
@@ -37,21 +102,26 @@ export type NightActionCollectionWorkflow =
       status: 'not-started'
       distribution: RoleDistributionWorkflow
     }>
-  | (ActiveNightWorkflowFields &
+  | (ActiveSequentialNightFields &
       Readonly<{
         status: 'collecting'
-        currentStepIndex: number
-        submittedActions: readonly SubmittedNightAction[]
-        returnToReviewAfterActor: boolean
+        currentOutcome: null
       }>)
-  | (ActiveNightWorkflowFields &
+  | (ActiveSequentialNightFields &
       Readonly<{
-        status: 'reviewing'
-        submittedActions: readonly SubmittedNightAction[]
+        status: 'awaiting-outcome-acknowledgement'
+        currentOutcome: ImmediateNightOutcome
       }>)
-  | (ActiveNightWorkflowFields &
+  | (ActiveSequentialNightFields &
+      Readonly<{
+        status: 'outcome-acknowledged'
+        currentOutcome: null
+      }>)
+  | (Omit<ActiveSequentialNightFields, 'currentStepIndex'> &
       Readonly<{
         status: 'complete'
+        currentStepIndex: number
+        currentOutcome: null
         collectedActions: CollectedNightActions
       }>)
 
@@ -60,14 +130,19 @@ export type CollectingNightActionsWorkflow = Extract<
   Readonly<{ status: 'collecting' }>
 >
 
-export type ReviewingNightActionsWorkflow = Extract<
+export type AwaitingNightOutcomeWorkflow = Extract<
   NightActionCollectionWorkflow,
-  Readonly<{ status: 'reviewing' }>
+  Readonly<{ status: 'awaiting-outcome-acknowledgement' }>
 >
 
 export type CompleteNightActionsWorkflow = Extract<
   NightActionCollectionWorkflow,
   Readonly<{ status: 'complete' }>
+>
+
+export type AcknowledgedNightOutcomeWorkflow = Extract<
+  NightActionCollectionWorkflow,
+  Readonly<{ status: 'outcome-acknowledged' }>
 >
 
 export type ActiveNightActionCollectionWorkflow = Exclude<
@@ -76,7 +151,7 @@ export type ActiveNightActionCollectionWorkflow = Exclude<
 >
 
 export type NightActionCollectionOperation =
-  'begin-first-night' | 'select-target' | 'continue' | 'previous' | 'edit-action' | 'finalise'
+  'begin-first-night' | 'confirm-target' | 'continue' | 'acknowledge-outcome'
 
 export type NightActionCollectionError =
   | NightSequenceError
@@ -102,21 +177,50 @@ export type NightActionCollectionError =
       actorPlayerId: PlayerId
       actorRoleInstanceId: RoleInstanceId
     }>
+  | Readonly<{ type: 'SEQUENCE_BOUNDARY'; direction: 'next' }>
   | Readonly<{
-      type: 'TARGET_REQUIRED'
+      type: 'ACTOR_ALREADY_COMPLETED'
       actorRoleInstanceId: RoleInstanceId
     }>
-  | Readonly<{ type: 'SEQUENCE_BOUNDARY'; direction: 'previous' | 'next' }>
-  | Readonly<{ type: 'ACTION_NOT_FOUND'; actorRoleInstanceId: RoleInstanceId }>
   | Readonly<{
-      type: 'INCOMPLETE_ACTION_BATCH'
-      missingRoleInstanceIds: readonly RoleInstanceId[]
+      type: 'ACTOR_NOT_CURRENT'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'ACTOR_BLOCKED'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'MISSING_BLOCK_STATE'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'INVALID_CURRENT_OUTCOME'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'OUTCOME_ACTOR_MISMATCH'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{
+      type: 'OUTCOME_RESULT_MISMATCH'
+      actorRoleInstanceId: RoleInstanceId
+    }>
+  | Readonly<{ type: 'OUTCOME_NOT_ACKNOWLEDGED' }>
+  | Readonly<{ type: 'OUTCOME_ALREADY_ACKNOWLEDGED' }>
+  | Readonly<{ type: 'INVALID_VISIT_LEDGER' }>
+  | Readonly<{ type: 'DETECTIVE_ACTION_RECORDED_AS_VISIT' }>
+  | Readonly<{ type: 'IMMEDIATE_RESULT_DISAGREEMENT' }>
+  | Readonly<{ type: 'PREVIOUS_STEP_SEALED' }>
+  | Readonly<{
+      type: 'INVALID_IMMEDIATE_OUTCOME_ROLE'
+      actorRoleId: RoleId
     }>
 
 export function createNightActionCollectionWorkflow(
   distribution: RoleDistributionWorkflow,
 ): NightActionCollectionWorkflow {
-  return { status: 'not-started', distribution }
+  return Object.freeze({ status: 'not-started', distribution })
 }
 
 export function beginFirstNight(
@@ -125,23 +229,18 @@ export function beginFirstNight(
   if (workflow.status !== 'not-started') {
     return invalidWorkflowState('begin-first-night', workflow.status)
   }
-
   if (workflow.distribution.status !== 'confirmed') {
     return fail({ type: 'DISTRIBUTION_NOT_CONFIRMED' })
   }
 
   const startingGame = workflow.distribution.game
-
   if (startingGame.phase !== 'role-distribution') {
     return fail({ type: 'INVALID_STARTING_PHASE', currentPhase: startingGame.phase })
   }
-
   const executionerRequiringBriefing = startingGame.players.find(
     (player) => player.role.roleId === ROLE_IDS.executioner,
   )
-
   if (executionerRequiringBriefing !== undefined) {
-    // Phase 4 does not implement or silently skip the required private briefing.
     return fail({
       type: 'EXECUTIONER_BRIEFING_REQUIRED',
       actorPlayerId: executionerRequiringBriefing.playerId,
@@ -152,7 +251,6 @@ export function beginFirstNight(
     type: 'ADVANCE_PHASE',
     targetPhase: 'night-action-collection',
   })
-
   if (!gameResult.ok) {
     return fail({ type: 'ACTIVE_GAME_REJECTED', error: gameResult.error })
   }
@@ -175,40 +273,31 @@ export function createNightActionCollectionForStartedNight(
   if (!gameResult.ok) {
     return fail({ type: 'ACTIVE_GAME_REJECTED', error: gameResult.error })
   }
-  const validatedGame = gameResult.value
-
-  const sequenceResult = buildNightActionSequence(validatedGame)
-
+  const sequenceResult = buildNightActionSequence(gameResult.value)
   if (!sequenceResult.ok) {
     return sequenceResult
   }
-
   const previousTargetsResult = validatePreviousNightTargets(
-    validatedGame,
-    selectDoctorPreviousTargetsForNight(validatedGame),
+    gameResult.value,
+    selectDoctorPreviousTargetsForNight(gameResult.value),
   )
-
   if (!previousTargetsResult.ok) {
     return previousTargetsResult
   }
-
-  const previousTargetsCopy = previousTargetsResult.value
 
   for (const step of sequenceResult.value) {
     if (step.type !== 'actor-action') {
       continue
     }
-
-    const hasValidTarget = validatedGame.players.some(
+    const hasValidTarget = gameResult.value.players.some(
       (target) =>
         createActionForStep(
-          validatedGame,
+          gameResult.value,
           step,
           target.playerId,
-          findPreviousTarget(previousTargetsCopy, step.actorRoleInstanceId),
+          findPreviousTarget(previousTargetsResult.value, step.actorRoleInstanceId),
         ).ok,
     )
-
     if (!hasValidTarget) {
       return fail({
         type: 'NO_VALID_TARGETS',
@@ -218,16 +307,18 @@ export function createNightActionCollectionForStartedNight(
     }
   }
 
-  return succeed({
-    status: 'collecting',
-    game: validatedGame,
-    participants: Object.freeze(participants.map((player) => Object.freeze({ ...player }))),
-    steps: sequenceResult.value,
-    currentStepIndex: 0,
-    submittedActions: Object.freeze([]),
-    previousTargets: previousTargetsCopy,
-    returnToReviewAfterActor: false,
-  })
+  return succeed(
+    deepFreeze({
+      status: 'collecting',
+      game: gameResult.value,
+      participants: participants.map((player) => ({ ...player })),
+      steps: sequenceResult.value,
+      previousTargets: previousTargetsResult.value,
+      currentStepIndex: 0,
+      completedSteps: [],
+      currentOutcome: null,
+    }),
+  )
 }
 
 export function selectDoctorPreviousTargetsForNight(
@@ -243,22 +334,73 @@ export function selectDoctorPreviousTargetsForNight(
   )
 }
 
-export function selectNightActionTarget(
+export function continueNightActionCollection(
+  workflow: NightActionCollectionWorkflow,
+): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
+  if (workflow.status === 'awaiting-outcome-acknowledgement') {
+    return fail({ type: 'OUTCOME_NOT_ACKNOWLEDGED' })
+  }
+  if (workflow.status === 'outcome-acknowledged') {
+    return advanceAfterAcknowledgedOutcome(workflow)
+  }
+  if (workflow.status !== 'collecting') {
+    return invalidWorkflowState('continue', workflow.status)
+  }
+
+  const currentStep = getCurrentStep(workflow)
+  if (currentStep.type !== 'mafia-overview') {
+    return fail({
+      type: 'INVALID_SEQUENCE_STEP',
+      operation: 'continue',
+      stepType: currentStep.type,
+    })
+  }
+
+  const nextIndex = workflow.currentStepIndex + 1
+  return nextIndex >= workflow.steps.length
+    ? completeNightActionCollection(workflow)
+    : advanceToStep(workflow, nextIndex)
+}
+
+export function confirmNightActionTarget(
   workflow: NightActionCollectionWorkflow,
   targetPlayerId: PlayerId,
-): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
+): DomainResult<AwaitingNightOutcomeWorkflow, NightActionCollectionError> {
+  if (workflow.status === 'awaiting-outcome-acknowledgement') {
+    return fail({ type: 'OUTCOME_NOT_ACKNOWLEDGED' })
+  }
   if (workflow.status !== 'collecting') {
-    return invalidWorkflowState('select-target', workflow.status)
+    return invalidWorkflowState('confirm-target', workflow.status)
   }
 
   const step = getCurrentStep(workflow)
-
   if (step.type !== 'actor-action') {
     return fail({
       type: 'INVALID_SEQUENCE_STEP',
-      operation: 'select-target',
+      operation: 'confirm-target',
       stepType: step.type,
     })
+  }
+  if (
+    workflow.completedSteps.some(
+      (record) => record.actorRoleInstanceId === step.actorRoleInstanceId,
+    )
+  ) {
+    return fail({
+      type: 'ACTOR_ALREADY_COMPLETED',
+      actorRoleInstanceId: step.actorRoleInstanceId,
+    })
+  }
+
+  const confirmedActions = selectConfirmedActions(workflow.completedSteps)
+  if (
+    isActorBlockedByConfirmedConsortActions(
+      workflow.game,
+      step.actorRoleInstanceId,
+      confirmedActions,
+    )
+  ) {
+    return fail({ type: 'ACTOR_BLOCKED', actorRoleInstanceId: step.actorRoleInstanceId })
   }
 
   const actionResult = createActionForStep(
@@ -267,197 +409,293 @@ export function selectNightActionTarget(
     targetPlayerId,
     findPreviousTarget(workflow.previousTargets, step.actorRoleInstanceId),
   )
-
   if (!actionResult.ok) {
     return actionResult
   }
 
-  const existingIndex = workflow.submittedActions.findIndex(
-    (action) => action.actorRoleInstanceId === step.actorRoleInstanceId,
+  const immediateOutcomeResult = resolveImmediateOutcome(
+    workflow.game,
+    [...confirmedActions, actionResult.value],
+    actionResult.value,
   )
-  const actions = [...workflow.submittedActions]
-
-  if (existingIndex === -1) {
-    actions.push(actionResult.value)
-  } else {
-    actions[existingIndex] = actionResult.value
+  if (!immediateOutcomeResult.ok) {
+    return immediateOutcomeResult
   }
-
-  return succeed({
-    ...workflow,
-    submittedActions: orderNightActionsBySequence(workflow.steps, actions),
+  const record: SequentialNightStepRecord = deepFreeze({
+    stepIndex: workflow.currentStepIndex,
+    status: 'action-confirmed',
+    actorPlayerId: actionResult.value.actorPlayerId,
+    actorRoleId: actionResult.value.actorRoleId,
+    actorRoleInstanceId: actionResult.value.actorRoleInstanceId,
+    action: actionResult.value,
+    outcome: immediateOutcomeResult.value,
+    acknowledged: false,
   })
+
+  return succeed(
+    deepFreeze({
+      ...workflow,
+      status: 'awaiting-outcome-acknowledgement',
+      completedSteps: [...workflow.completedSteps, record],
+      currentOutcome: immediateOutcomeResult.value,
+    }),
+  )
 }
 
-export function continueNightActionCollection(
+export function acknowledgeImmediateNightOutcome(
   workflow: NightActionCollectionWorkflow,
 ): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
-  if (workflow.status !== 'collecting') {
-    return invalidWorkflowState('continue', workflow.status)
+  if (workflow.status !== 'awaiting-outcome-acknowledgement') {
+    return workflow.status === 'collecting'
+      ? fail({ type: 'OUTCOME_ALREADY_ACKNOWLEDGED' })
+      : invalidWorkflowState('acknowledge-outcome', workflow.status)
   }
 
-  const step = getCurrentStep(workflow)
-
-  if (step.type === 'review') {
-    return fail({ type: 'INVALID_SEQUENCE_STEP', operation: 'continue', stepType: step.type })
+  const currentStep = getCurrentStep(workflow)
+  if (
+    currentStep.type !== 'actor-action' ||
+    currentStep.actorRoleInstanceId !== workflow.currentOutcome.actorRoleInstanceId
+  ) {
+    return fail({
+      type: 'OUTCOME_ACTOR_MISMATCH',
+      actorRoleInstanceId: workflow.currentOutcome.actorRoleInstanceId,
+    })
   }
 
-  if (step.type === 'actor-action') {
-    const existingAction = workflow.submittedActions.find(
-      (action) => action.actorRoleInstanceId === step.actorRoleInstanceId,
-    )
-
-    if (existingAction === undefined) {
-      return fail({ type: 'TARGET_REQUIRED', actorRoleInstanceId: step.actorRoleInstanceId })
-    }
-
-    const actionResult = createSubmittedNightAction(
-      workflow.game,
-      existingAction,
-      findPreviousTarget(workflow.previousTargets, step.actorRoleInstanceId),
-    )
-
-    if (!actionResult.ok) {
-      return actionResult
-    }
-
-    if (workflow.returnToReviewAfterActor) {
-      return succeed(toReviewing(workflow))
-    }
+  const currentRecord = workflow.completedSteps.at(-1)
+  if (
+    currentRecord === undefined ||
+    currentRecord.actorRoleInstanceId !== workflow.currentOutcome.actorRoleInstanceId ||
+    currentRecord.acknowledged
+  ) {
+    return fail({
+      type: 'INVALID_CURRENT_OUTCOME',
+      actorRoleInstanceId: workflow.currentOutcome.actorRoleInstanceId,
+    })
   }
 
-  const nextStep = workflow.steps[workflow.currentStepIndex + 1]
+  const acknowledgedRecord = deepFreeze({ ...currentRecord, acknowledged: true })
+  const acknowledgedSteps = Object.freeze([
+    ...workflow.completedSteps.slice(0, -1),
+    acknowledgedRecord,
+  ])
+  return succeed(
+    deepFreeze({
+      ...workflow,
+      status: 'outcome-acknowledged',
+      completedSteps: acknowledgedSteps,
+      currentOutcome: null,
+    }),
+  )
+}
 
+function advanceAfterAcknowledgedOutcome(
+  workflow: AcknowledgedNightOutcomeWorkflow,
+): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
+  const nextIndex = workflow.currentStepIndex + 1
+  if (nextIndex >= workflow.steps.length) {
+    return completeNightActionCollection(workflow)
+  }
+
+  return advanceToStep(
+    deepFreeze({
+      ...workflow,
+      status: 'collecting',
+      currentOutcome: null,
+    }),
+    nextIndex,
+  )
+}
+
+function completeNightActionCollection(
+  workflow: CollectingNightActionsWorkflow | AcknowledgedNightOutcomeWorkflow,
+): DomainResult<CompleteNightActionsWorkflow, NightActionCollectionError> {
+  const collectedResult = createCollectedNightActions(
+    workflow.game,
+    selectConfirmedActions(workflow.completedSteps),
+    workflow.previousTargets,
+  )
+  if (!collectedResult.ok) {
+    return collectedResult
+  }
+
+  return succeed(
+    deepFreeze({
+      ...workflow,
+      status: 'complete',
+      currentStepIndex: workflow.steps.length,
+      currentOutcome: null,
+      collectedActions: collectedResult.value,
+    }),
+  )
+}
+
+function advanceToStep(
+  workflow: CollectingNightActionsWorkflow,
+  nextIndex: number,
+): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
+  const nextStep = workflow.steps[nextIndex]
   if (nextStep === undefined) {
     return fail({ type: 'SEQUENCE_BOUNDARY', direction: 'next' })
   }
 
-  return nextStep.type === 'review'
-    ? succeed(toReviewing(workflow))
-    : succeed({ ...workflow, currentStepIndex: workflow.currentStepIndex + 1 })
-}
+  const collecting = deepFreeze({ ...workflow, currentStepIndex: nextIndex })
+  if (nextStep.type !== 'actor-action') {
+    return succeed(collecting)
+  }
 
-export function previousNightActionCollection(
-  workflow: NightActionCollectionWorkflow,
-): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
-  if (workflow.status === 'reviewing') {
-    const previousIndex = workflow.steps.length - 2
-
-    if (previousIndex < 0) {
-      return fail({ type: 'SEQUENCE_BOUNDARY', direction: 'previous' })
-    }
-
-    return succeed({
-      ...workflow,
-      status: 'collecting',
-      currentStepIndex: previousIndex,
-      returnToReviewAfterActor: false,
+  const actor = workflow.game.players.find(
+    (player) => player.role.instanceId === nextStep.actorRoleInstanceId,
+  )
+  if (actor === undefined) {
+    return fail({
+      type: 'MISSING_BLOCK_STATE',
+      actorRoleInstanceId: nextStep.actorRoleInstanceId,
     })
   }
-
-  if (workflow.status !== 'collecting') {
-    return invalidWorkflowState('previous', workflow.status)
-  }
-
-  if (workflow.returnToReviewAfterActor) {
-    return succeed(toReviewing(workflow))
-  }
-
-  if (workflow.currentStepIndex === 0) {
-    return fail({ type: 'SEQUENCE_BOUNDARY', direction: 'previous' })
-  }
-
-  return succeed({ ...workflow, currentStepIndex: workflow.currentStepIndex - 1 })
-}
-
-export function editNightAction(
-  workflow: NightActionCollectionWorkflow,
-  actorRoleInstanceId: RoleInstanceId,
-): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
-  if (workflow.status !== 'reviewing') {
-    return invalidWorkflowState('edit-action', workflow.status)
-  }
-
+  const confirmedActions = selectConfirmedActions(workflow.completedSteps)
   if (
-    !workflow.submittedActions.some((action) => action.actorRoleInstanceId === actorRoleInstanceId)
+    !isActorBlockedByConfirmedConsortActions(
+      workflow.game,
+      nextStep.actorRoleInstanceId,
+      confirmedActions,
+    )
   ) {
-    return fail({ type: 'ACTION_NOT_FOUND', actorRoleInstanceId })
+    return succeed(collecting)
   }
 
-  const currentStepIndex = findActorStepIndex(workflow.steps, actorRoleInstanceId)
-
-  if (currentStepIndex === -1) {
-    throw new Error(`Submitted action ${actorRoleInstanceId} has no actor step.`)
-  }
-
-  return succeed({
-    ...workflow,
-    status: 'collecting',
-    currentStepIndex,
-    returnToReviewAfterActor: true,
+  const outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>> = Object.freeze({
+    kind: 'blocked',
+    actorPlayerId: actor.playerId,
+    actorRoleId: actor.role.roleId,
+    actorRoleInstanceId: actor.role.instanceId,
   })
+  const record: SequentialNightStepRecord = deepFreeze({
+    stepIndex: nextIndex,
+    status: 'blocked',
+    actorPlayerId: actor.playerId,
+    actorRoleId: actor.role.roleId,
+    actorRoleInstanceId: actor.role.instanceId,
+    outcome,
+    acknowledged: false,
+  })
+
+  return succeed(
+    deepFreeze({
+      ...collecting,
+      status: 'awaiting-outcome-acknowledgement',
+      completedSteps: [...collecting.completedSteps, record],
+      currentOutcome: outcome,
+    }),
+  )
 }
 
-export function finaliseNightActionCollection(
-  workflow: NightActionCollectionWorkflow,
-): DomainResult<CompleteNightActionsWorkflow, NightActionCollectionError> {
-  if (workflow.status !== 'reviewing') {
-    return invalidWorkflowState('finalise', workflow.status)
-  }
+function resolveImmediateOutcome(
+  game: GameState,
+  confirmedActions: readonly SubmittedNightAction[],
+  currentAction: SubmittedNightAction,
+): DomainResult<
+  Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+  NightActionCollectionError
+> {
+  const base = Object.freeze({
+    actorPlayerId: currentAction.actorPlayerId,
+    actorRoleId: currentAction.actorRoleId,
+    actorRoleInstanceId: currentAction.actorRoleInstanceId,
+  })
 
-  const requiredActorSteps = workflow.steps.filter(
-    (step): step is Extract<NightSequenceStep, Readonly<{ type: 'actor-action' }>> =>
-      step.type === 'actor-action',
-  )
-  const requiredRoleInstanceIds = new Set(
-    requiredActorSteps.map((step) => step.actorRoleInstanceId),
-  )
-  const unexpectedAction = workflow.submittedActions.find(
-    (action) => !requiredRoleInstanceIds.has(action.actorRoleInstanceId),
-  )
-
-  if (unexpectedAction !== undefined) {
-    return fail({
-      type: 'UNEXPECTED_ACTION',
-      actorPlayerId: unexpectedAction.actorPlayerId,
-      actorRoleInstanceId: unexpectedAction.actorRoleInstanceId,
-    })
-  }
-
-  const missingRoleInstanceIds = requiredActorSteps
-    .filter(
-      (step) =>
-        !workflow.submittedActions.some(
-          (action) => action.actorRoleInstanceId === step.actorRoleInstanceId,
-        ),
-    )
-    .map((step) => step.actorRoleInstanceId)
-
-  if (missingRoleInstanceIds.length > 0) {
-    return fail({
-      type: 'INCOMPLETE_ACTION_BATCH',
-      missingRoleInstanceIds: Object.freeze(missingRoleInstanceIds),
-    })
-  }
-
-  const batchResult = createCollectedNightActions(
-    workflow.game,
-    orderNightActionsBySequence(workflow.steps, workflow.submittedActions),
-    workflow.previousTargets,
-  )
-
-  return batchResult.ok
-    ? succeed(
+  switch (currentAction.actorRoleId) {
+    case ROLE_IDS.consort:
+    case ROLE_IDS.framer:
+    case ROLE_IDS.godfather:
+    case ROLE_IDS.serialKiller:
+    case ROLE_IDS.doctor:
+      return succeed(
         Object.freeze({
-          status: 'complete',
-          game: workflow.game,
-          participants: workflow.participants,
-          steps: workflow.steps,
-          previousTargets: workflow.previousTargets,
-          collectedActions: batchResult.value,
+          ...base,
+          kind: 'action-recorded',
+          targetPlayerId: currentAction.targetPlayerId,
         }),
       )
-    : batchResult
+    case ROLE_IDS.sheriff: {
+      const frames = resolveFrames(game, confirmedActions)
+      const result = resolveSheriffResults(game, confirmedActions, frames)
+      if (!result.ok) {
+        return fail({ type: 'IMMEDIATE_RESULT_DISAGREEMENT' })
+      }
+      const currentResult = result.value.find(
+        (entry) => entry.actorRoleInstanceId === currentAction.actorRoleInstanceId,
+      )
+      return currentResult === undefined
+        ? fail({ type: 'IMMEDIATE_RESULT_DISAGREEMENT' })
+        : succeed(
+            Object.freeze({
+              ...base,
+              kind: 'sheriff-result',
+              targetPlayerId: currentResult.targetPlayerId,
+              status: currentResult.status,
+            }),
+          )
+    }
+    case ROLE_IDS.investigator:
+    case ROLE_IDS.consigliere: {
+      const frames = resolveFrames(game, confirmedActions)
+      const result = resolveInvestigationResults(game, confirmedActions, frames)
+      if (!result.ok) {
+        return fail({ type: 'IMMEDIATE_RESULT_DISAGREEMENT' })
+      }
+      const currentResult = result.value.find(
+        (entry) => entry.actorRoleInstanceId === currentAction.actorRoleInstanceId,
+      )
+      if (currentResult === undefined) {
+        return fail({ type: 'IMMEDIATE_RESULT_DISAGREEMENT' })
+      }
+      return succeed(
+        Object.freeze({
+          ...base,
+          kind: 'investigation-result',
+          targetPlayerId: currentResult.targetPlayerId,
+          investigationRole:
+            currentAction.actorRoleId === ROLE_IDS.investigator ? 'investigator' : 'consigliere',
+          group: currentResult.group,
+        }),
+      )
+    }
+    case ROLE_IDS.detective: {
+      const visits = buildFinalVisits(confirmedActions)
+      if (visits.some((visit) => visit.actorRoleId === ROLE_IDS.detective)) {
+        return fail({ type: 'DETECTIVE_ACTION_RECORDED_AS_VISIT' })
+      }
+      const result = resolveDetectiveResults([currentAction], visits).at(0)
+      if (result === undefined) {
+        return fail({ type: 'IMMEDIATE_RESULT_DISAGREEMENT' })
+      }
+      return succeed(
+        Object.freeze({
+          ...base,
+          kind: 'detective-result',
+          targetPlayerId: result.targetPlayerId,
+          result: toImmediateDetectiveResult(result),
+        }),
+      )
+    }
+    default:
+      return fail({
+        type: 'INVALID_IMMEDIATE_OUTCOME_ROLE',
+        actorRoleId: currentAction.actorRoleId,
+      })
+  }
+}
+
+function toImmediateDetectiveResult(
+  result: DetectiveResult,
+): Extract<ImmediateNightOutcome, Readonly<{ kind: 'detective-result' }>>['result'] {
+  return result.status === 'visited-nobody'
+    ? Object.freeze({ status: 'visited-nobody' })
+    : Object.freeze({
+        status: 'visited-player',
+        visitedPlayerId: result.visitedPlayerId,
+      })
 }
 
 function createActionForStep(
@@ -467,13 +705,10 @@ function createActionForStep(
   previousTargetId: PlayerId | null,
 ): DomainResult<SubmittedNightAction, NightActionValidationError> {
   const actor = game.players.find((player) => player.playerId === step.actorPlayerId)
-
   if (actor === undefined) {
     return fail({ type: 'UNKNOWN_ACTOR', actorPlayerId: step.actorPlayerId })
   }
-
   const role = findRoleDefinition(actor.role.roleId)
-
   if (role === undefined || !role.nightAction.hasNightAction) {
     return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: actor.role.roleId })
   }
@@ -491,22 +726,23 @@ function createActionForStep(
   )
 }
 
-function getCurrentStep(workflow: CollectingNightActionsWorkflow): NightSequenceStep {
+function getCurrentStep(
+  workflow: CollectingNightActionsWorkflow | AwaitingNightOutcomeWorkflow,
+): NightSequenceStep {
   const step = workflow.steps[workflow.currentStepIndex]
-
   if (step === undefined) {
     throw new Error(`Night sequence index ${String(workflow.currentStepIndex)} is out of bounds.`)
   }
-
   return step
 }
 
-function findActorStepIndex(
-  steps: readonly NightSequenceStep[],
-  actorRoleInstanceId: RoleInstanceId,
-): number {
-  return steps.findIndex(
-    (step) => step.type === 'actor-action' && step.actorRoleInstanceId === actorRoleInstanceId,
+function selectConfirmedActions(
+  completedSteps: readonly SequentialNightStepRecord[],
+): readonly SubmittedNightAction[] {
+  return Object.freeze(
+    completedSteps.flatMap((record): readonly SubmittedNightAction[] =>
+      record.status === 'action-confirmed' ? [record.action] : [],
+    ),
   )
 }
 
@@ -520,20 +756,24 @@ function findPreviousTarget(
   )
 }
 
-function toReviewing(workflow: CollectingNightActionsWorkflow): ReviewingNightActionsWorkflow {
-  return {
-    status: 'reviewing',
-    game: workflow.game,
-    participants: workflow.participants,
-    steps: workflow.steps,
-    submittedActions: workflow.submittedActions,
-    previousTargets: workflow.previousTargets,
-  }
-}
-
 function invalidWorkflowState<Value>(
   operation: NightActionCollectionOperation,
   status: NightActionCollectionWorkflow['status'],
 ): DomainResult<Value, NightActionCollectionError> {
   return fail({ type: 'INVALID_WORKFLOW_STATE', operation, status })
+}
+
+function deepFreeze<Value>(value: Value): Value {
+  freezeRecursively(value)
+  return value
+}
+
+function freezeRecursively(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return
+  }
+  for (const child of Object.values(value)) {
+    freezeRecursively(child)
+  }
+  Object.freeze(value)
 }

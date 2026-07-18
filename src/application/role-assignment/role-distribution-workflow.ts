@@ -96,6 +96,34 @@ export function setCardDelivered(
   })
 }
 
+export function markAllParticipatingCardsDelivered(
+  workflow: RoleDistributionWorkflow,
+): DomainResult<DistributingRolesWorkflow, RoleDistributionError> {
+  if (workflow.status !== 'distributing') {
+    return fail({
+      type: 'INVALID_ROLE_DISTRIBUTION_STATE',
+      operation: 'set-card-delivery',
+      status: workflow.status,
+    })
+  }
+
+  const deliveredPlayerIds = Object.freeze(workflow.game.players.map((player) => player.playerId))
+
+  if (
+    deliveredPlayerIds.length === workflow.deliveredPlayerIds.length &&
+    deliveredPlayerIds.every((playerId, index) => playerId === workflow.deliveredPlayerIds[index])
+  ) {
+    return succeed(workflow)
+  }
+
+  return succeed(
+    Object.freeze({
+      ...workflow,
+      deliveredPlayerIds,
+    }),
+  )
+}
+
 export function confirmRoleDistribution(
   workflow: RoleDistributionWorkflow,
 ): DomainResult<ConfirmedRoleDistributionWorkflow, RoleDistributionError> {

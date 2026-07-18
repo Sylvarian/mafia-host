@@ -1,2 +1,2 @@
 export { DawnPresentation } from './DawnPresentation.tsx'
-export { getNightPresentationErrorMessage } from './dawn-error.ts'
+export { getNightCompletionErrorMessage } from './dawn-error.ts'

@@ -3,32 +3,22 @@
 [AGENTS.md](../../AGENTS.md) is the architecture authority. This directory contains narrow
 browser-specific adapters for application/domain contracts and is composed only at `main.tsx`.
 
-Phase 3 provides a Web Crypto `RandomSource` and a role-assignment identity source. Random values
-come from unsigned 32-bit Web Crypto values and satisfy the domain's `[0, 1)` contract. Game and
-role-instance IDs combine one browser-created session UUID with independent monotonic sequences,
-making them collision-safe within the source's browser session. The branded ID types provide
-compile-time separation only; they do not perform runtime string validation.
+The Web Crypto `RandomSource` and role-assignment identity source remain the only production
+randomness/identity adapters. Random values satisfy the domain `[0, 1)` contract. Game and
+role-instance IDs combine a browser session UUID with monotonic sequences. Phase 7A reuses the
+injected random source exactly once per Executioner target; Phase 7A.1 bulk delivery, target
+selection, sequential outcomes, restoration, and migration consume no randomness.
 
-The application deliberately retains the `RandomSource.next(): number` contract for deterministic
-tests and simple Fisher–Yates orchestration. Because the browser adapter has exactly `2 ** 32`
-possible outputs, `Math.floor(randomValue * maxExclusive)` gives some buckets one additional source
-integer whenever `maxExclusive` does not divide `2 ** 32`. That finite-source bias is negligible
-for an in-person roster but is not described as mathematically unbiased.
+`BrowserGameSessionStore` and the browser clock implement the Phase 6.5 transport contracts. Phase
+7A.1 makes `mafia-host:active-session:v2` the only current authority while retaining the V1 key
+solely for narrow application-owned migration. The adapter reads V2 first. If absent, it passes
+untrusted V1 JSON to the injected migrator, validates the returned V2 through the injected
+restorer, writes V2, and only then removes V1. A failed migration or V2 write leaves V1 untouched.
+A failed legacy-key removal fails the load and attempts to remove the just-written V2 so the keys
+cannot compete. Explicit clear removes both keys.
 
-Phase 7A reuses this same adapter for post-distribution Executioner target selection. The domain
-validates every returned value as finite and within `[0, 1)` and requests exactly one value per
-Executioner. Infrastructure does not know the eligible players, assignments, targets, or briefing
-workflow.
-
-The identity adapter requires browser Web Crypto with `randomUUID()`. It fails explicitly during
-composition when that API is unavailable or returns an empty token; no UUID package or retry loop
-is used.
-
-Phase 6.5 adds a narrow `BrowserGameSessionStore` and browser clock. The Phase 7A compatible V1
-extension changes only the application-owned serialized value; the store still reads, writes, or
-removes only `mafia-host:active-session:v1`, and only when its corresponding method is called. It
-owns localStorage access, JSON text transport, unavailable/read/write/quota/clear failures, and no
-console logging. The composition root injects the application restorer, so parsed JSON crosses that
-narrow contract as untrusted input without an infrastructure-to-application-implementation import.
-The adapter does not validate game rules or import feature code. The clock supplies canonical
-timestamps without putting wall-clock time into domain mechanics.
+Infrastructure owns only localStorage access, JSON transport, migration write ordering,
+unavailable/read/write/quota/clear failures, browser time, and no console logging. It does not
+validate game rules, rebuild workflows, import application implementations, or import feature
+code. Parsed JSON crosses a narrow contract as untrusted input; canonical validation and migration
+semantics remain in the application layer.

@@ -2,15 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 
 import {
   selectCurrentNightStepView,
-  selectNightActionReview,
+  selectImmediateNightOutcomeView,
   type ActiveNightActionCollectionWorkflow,
   type CollectingNightActionsWorkflow,
-  type CompleteNightActionsWorkflow,
-  type CurrentNightStepView,
+  type ImmediateNightOutcomeView,
   type NightActionCollectionError,
   type PlayerId,
-  type ReviewingNightActionsWorkflow,
-  type RoleInstanceId,
 } from '@/application/night-actions/index.ts'
 
 import { getNightActionCollectionErrorMessage } from './night-action-error.ts'
@@ -22,11 +19,7 @@ type NightRunnerProps = Readonly<{
   error: NightActionCollectionError | null
   onConfirmTarget: (targetPlayerId: PlayerId) => void
   onContinue: () => void
-  onPrevious: () => void
-  onEditAction: (actorRoleInstanceId: RoleInstanceId) => void
-  onFinalise: () => void
-  onResolveNight: () => void
-  resolutionErrorMessage: string | null
+  onAcknowledgeOutcome: () => void
 }>
 
 export function NightRunner({
@@ -34,43 +27,46 @@ export function NightRunner({
   error,
   onConfirmTarget,
   onContinue,
-  onPrevious,
-  onEditAction,
-  onFinalise,
-  onResolveNight,
-  resolutionErrorMessage,
+  onAcknowledgeOutcome,
 }: NightRunnerProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const focusKey =
-    workflow.status === 'collecting'
-      ? `${workflow.status}-${String(workflow.currentStepIndex)}`
-      : workflow.status
+  const focusKey = `${workflow.status}-${String(workflow.currentStepIndex)}`
 
   useEffect(() => {
     headingRef.current?.focus()
   }, [focusKey])
 
-  if (workflow.status === 'complete') {
+  if (workflow.status === 'awaiting-outcome-acknowledgement') {
     return (
-      <CollectionComplete
-        workflow={workflow}
+      <ImmediateOutcome
+        view={selectImmediateNightOutcomeView(workflow)}
+        error={error}
         headingRef={headingRef}
-        resolutionErrorMessage={resolutionErrorMessage}
-        onResolveNight={onResolveNight}
+        onAcknowledge={onAcknowledgeOutcome}
       />
     )
   }
 
-  if (workflow.status === 'reviewing') {
+  if (workflow.status === 'outcome-acknowledged') {
     return (
-      <ActionReview
-        workflow={workflow}
+      <OutcomeAcknowledged
+        nightNumber={workflow.game.nightNumber}
+        finalActor={workflow.currentStepIndex === workflow.steps.length - 1}
         error={error}
         headingRef={headingRef}
-        onPrevious={onPrevious}
-        onEditAction={onEditAction}
-        onFinalise={onFinalise}
+        onContinue={onContinue}
       />
+    )
+  }
+
+  if (workflow.status === 'complete') {
+    return (
+      <section className="night-runner night-complete" aria-labelledby="night-complete-heading">
+        <p className="night-runner__eyebrow">Night {workflow.game.nightNumber}</p>
+        <h2 id="night-complete-heading" ref={headingRef} tabIndex={-1}>
+          Final night resolution prepared
+        </h2>
+      </section>
     )
   }
 
@@ -82,7 +78,6 @@ export function NightRunner({
       headingRef={headingRef}
       onConfirmTarget={onConfirmTarget}
       onContinue={onContinue}
-      onPrevious={onPrevious}
     />
   )
 }
@@ -95,19 +90,15 @@ function CollectionStep({
   headingRef,
   onConfirmTarget,
   onContinue,
-  onPrevious,
 }: Readonly<{
   workflow: CollectingNightActionsWorkflow
   error: NightActionCollectionError | null
   headingRef: HeadingRef
   onConfirmTarget: (targetPlayerId: PlayerId) => void
   onContinue: () => void
-  onPrevious: () => void
 }>) {
   const step = selectCurrentNightStepView(workflow)
-  const [selectedTargetId, setSelectedTargetId] = useState<PlayerId | null>(() =>
-    step.type === 'actor-action' ? step.selectedTargetId : null,
-  )
+  const [selectedTargetId, setSelectedTargetId] = useState<PlayerId | null>(null)
 
   return (
     <section className="night-runner" aria-labelledby="night-runner-heading">
@@ -115,67 +106,47 @@ function CollectionStep({
         <div>
           <p className="night-runner__eyebrow">Private host view · Night {step.nightNumber}</p>
           <h2 id="night-runner-heading" ref={headingRef} tabIndex={-1}>
-            {getStepHeading(step)}
+            {step.type === 'mafia-overview'
+              ? 'Living Mafia overview'
+              : `Wake ${step.roleDisplayName} — ${step.actorDisplayLabel}`}
           </h2>
         </div>
         <div className="night-runner__progress" aria-live="polite">
           <strong>
             {step.position} of {step.totalSteps}
           </strong>
-          <span>sequence steps</span>
+          <span>wake steps</span>
         </div>
       </header>
 
+      <PrivacyWarning />
       {error === null ? null : <NightError error={error} />}
 
-      {step.type === 'night-opening' ? (
-        <div className="night-instruction">
-          <strong>Everyone, close your eyes.</strong>
-          <p>The host remains responsible for speaking this instruction to the room.</p>
-        </div>
-      ) : null}
-
-      {step.type === 'mafia-opening' ? (
+      {step.type === 'mafia-overview' ? (
         <div className="night-instruction night-instruction--mafia">
           <strong>Ask the Mafia to open their eyes.</strong>
-          <p>These identities are private to the host.</p>
+          <p>Review the participating Mafia team. This is an overview, not an action.</p>
           <ul aria-label="Living Mafia overview">
             {step.mafiaMembers.map((member) => (
               <li key={member.playerId}>
-                <span>
-                  {member.playerName}
-                  {member.showStableId ? <small> ID {member.playerId}</small> : null}
-                </span>
+                <span>{member.playerDisplayLabel}</span>
                 <strong>{member.roleDisplayName}</strong>
               </li>
             ))}
           </ul>
         </div>
-      ) : null}
-
-      {step.type === 'mafia-closing' ? (
-        <div className="night-instruction night-instruction--mafia">
-          <strong>Ask the Mafia to close their eyes.</strong>
-          <p>Continue with each individual living role instance.</p>
-        </div>
-      ) : null}
-
-      {step.type === 'actor-action' ? (
+      ) : (
         <div className={`actor-action actor-action--${step.faction}`}>
           <div className="actor-action__identity">
-            <span>{formatFaction(step.faction)}</span>
+            <span>{step.factionLabel}</span>
             <strong>{step.roleDisplayName}</strong>
-            <p>
-              {step.actorPlayerName}
-              {step.showActorStableId ? <small> ID {step.actorPlayerId}</small> : null}
-            </p>
+            <p>{step.actorDisplayLabel}</p>
           </div>
           <p className="actor-action__prompt">{step.hostPrompt}</p>
-          {step.selectedTargetId === null ? null : (
-            <p className="actor-action__selection" aria-live="polite">
-              Previously confirmed target restored. Choose another target to replace it.
-            </p>
-          )}
+          <p className="actor-action__finality">
+            Confirming this target finalizes the action. Earlier actions cannot be changed after
+            their result is acknowledged.
+          </p>
           <div
             className="target-grid"
             role="group"
@@ -188,28 +159,27 @@ function CollectionStep({
                 target.disabledReason === null
                   ? null
                   : getNightActionCollectionErrorMessage(target.disabledReason)
-              const playerLabel = target.showStableId
-                ? `${target.playerName} (${target.playerId})`
-                : target.playerName
 
               return (
                 <div className="target-option" key={target.playerId}>
                   <button
                     type="button"
-                    className={selected ? 'target-button is-selected' : 'target-button'}
+                    className={`target-button target-button--${target.faction}${selected ? ' is-selected' : ''}`}
                     disabled={!target.enabled}
                     aria-pressed={selected}
                     aria-describedby={reason === null ? undefined : reasonId}
-                    aria-label={`${playerLabel}, ${target.alive ? 'alive' : 'dead'}${reason === null ? '' : `, unavailable: ${reason}`}`}
+                    aria-label={`${target.playerDisplayLabel}, ${target.roleDisplayName}, ${target.factionLabel}, ${target.alive ? 'alive' : 'dead'}, ${selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}`}
                     onClick={() => {
                       setSelectedTargetId(target.playerId)
                     }}
                   >
-                    <strong>{target.playerName}</strong>
-                    {target.showStableId ? <small>ID {target.playerId}</small> : null}
+                    <strong>{target.playerDisplayLabel}</strong>
+                    <span className="target-button__role">
+                      {target.roleDisplayName} · {target.factionLabel}
+                    </span>
                     <span>
-                      {target.alive ? 'Alive' : 'Dead'} ·{' '}
-                      {selected ? 'Selected target' : target.enabled ? 'Available' : 'Unavailable'}
+                      {target.alive ? 'Alive' : 'Dead'} —{' '}
+                      {selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}
                     </span>
                   </button>
                   {reason === null ? null : (
@@ -222,17 +192,9 @@ function CollectionStep({
             })}
           </div>
         </div>
-      ) : null}
+      )}
 
-      <div className="night-runner__actions">
-        <button
-          type="button"
-          className="button button--secondary"
-          disabled={workflow.currentStepIndex === 0}
-          onClick={onPrevious}
-        >
-          Previous
-        </button>
+      <div className="night-runner__actions night-runner__actions--end">
         <button
           type="button"
           className="button button--prepare"
@@ -242,10 +204,9 @@ function CollectionStep({
               if (selectedTargetId !== null) {
                 onConfirmTarget(selectedTargetId)
               }
-              return
+            } else {
+              onContinue()
             }
-
-            onContinue()
           }}
         >
           {step.type === 'actor-action' ? 'Confirm Target / Continue' : 'Continue'}
@@ -255,104 +216,113 @@ function CollectionStep({
   )
 }
 
-function ActionReview({
-  workflow,
+function ImmediateOutcome({
+  view,
   error,
   headingRef,
-  onPrevious,
-  onEditAction,
-  onFinalise,
+  onAcknowledge,
 }: Readonly<{
-  workflow: ReviewingNightActionsWorkflow
+  view: ImmediateNightOutcomeView
   error: NightActionCollectionError | null
   headingRef: HeadingRef
-  onPrevious: () => void
-  onEditAction: (actorRoleInstanceId: RoleInstanceId) => void
-  onFinalise: () => void
+  onAcknowledge: () => void
 }>) {
-  const rows = selectNightActionReview(workflow)
-
   return (
-    <section className="night-runner night-review" aria-labelledby="night-review-heading">
-      <p className="night-runner__eyebrow">
-        Private host review · Night {workflow.game.nightNumber}
+    <section
+      className={`immediate-outcome${view.kind === 'blocked' ? ' immediate-outcome--blocked' : ''}`}
+      aria-labelledby="immediate-outcome-heading"
+    >
+      <PrivacyWarning />
+      <p className="immediate-outcome__actor">
+        {view.roleDisplayName} · {view.actorDisplayLabel}
       </p>
-      <h2 id="night-review-heading" ref={headingRef} tabIndex={-1}>
-        Review collected night actions
+      <h2 id="immediate-outcome-heading" ref={headingRef} tabIndex={-1}>
+        {getOutcomeHeading(view)}
       </h2>
-      <p>No effects or outcomes have been calculated.</p>
+      <ImmediateOutcomeContent view={view} />
       {error === null ? null : <NightError error={error} />}
-      <ol className="night-review__list">
-        {rows.map((row) => (
-          <li key={row.actorRoleInstanceId}>
-            <div>
-              <strong>{row.roleDisplayName}</strong>
-              <span>
-                {row.actorPlayerName}
-                {row.showActorStableId ? ` (${row.actorPlayerId})` : ''} → {row.actionDescription}{' '}
-                {row.targetPlayerName}
-                {row.showTargetStableId ? ` (${row.targetPlayerId})` : ''}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={() => {
-                onEditAction(row.actorRoleInstanceId)
-              }}
-            >
-              Edit {row.roleDisplayName} action for {row.actorPlayerName}
-              {row.showActorStableId ? ` (${row.actorPlayerId})` : ''}
-            </button>
-          </li>
-        ))}
-      </ol>
-      <div className="night-runner__actions">
-        <button type="button" className="button button--secondary" onClick={onPrevious}>
-          Previous
-        </button>
-        <button type="button" className="button button--prepare" onClick={onFinalise}>
-          Finish Collecting Night Actions
-        </button>
-      </div>
+      <button type="button" className="button button--prepare" onClick={onAcknowledge}>
+        Acknowledge result
+      </button>
     </section>
   )
 }
 
-function CollectionComplete({
-  workflow,
+function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcomeView }>) {
+  switch (view.kind) {
+    case 'blocked':
+      return <p className="immediate-outcome__message">Your action cannot be performed tonight.</p>
+    case 'action-recorded':
+      return (
+        <>
+          <p className="immediate-outcome__message">Your target has been confirmed.</p>
+          <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
+        </>
+      )
+    case 'sheriff-result':
+      return (
+        <>
+          <p className="immediate-outcome__result">
+            {view.status === 'suspicious' ? 'Suspicious' : 'Not suspicious'}
+          </p>
+          <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
+        </>
+      )
+    case 'investigation-result':
+      return (
+        <>
+          <p className="immediate-outcome__result">{view.groupLabel}</p>
+          <p className="immediate-outcome__group">{view.groupRoleDisplayNames.join(' · ')}</p>
+          <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
+        </>
+      )
+    case 'detective-result':
+      return (
+        <>
+          <p className="immediate-outcome__result">
+            {view.result.status === 'visited-nobody'
+              ? `${view.targetDisplayLabel} visited nobody`
+              : `${view.targetDisplayLabel} visited ${view.result.visitedPlayerDisplayLabel}`}
+          </p>
+          <p className="immediate-outcome__target">Tracked: {view.targetDisplayLabel}</p>
+        </>
+      )
+  }
+}
+
+function OutcomeAcknowledged({
+  nightNumber,
+  finalActor,
+  error,
   headingRef,
-  resolutionErrorMessage,
-  onResolveNight,
+  onContinue,
 }: Readonly<{
-  workflow: CompleteNightActionsWorkflow
+  nightNumber: number
+  finalActor: boolean
+  error: NightActionCollectionError | null
   headingRef: HeadingRef
-  resolutionErrorMessage: string | null
-  onResolveNight: () => void
+  onContinue: () => void
 }>) {
   return (
-    <section className="night-runner night-complete" aria-labelledby="night-complete-heading">
-      <p className="night-runner__eyebrow">
-        Night {workflow.game.nightNumber} · Collection complete
-      </p>
-      <h2 id="night-complete-heading" ref={headingRef} tabIndex={-1}>
-        Night actions collected
+    <section className="night-runner outcome-acknowledged" aria-labelledby="outcome-acknowledged">
+      <p className="night-runner__eyebrow">Night {nightNumber}</p>
+      <h2 id="outcome-acknowledged" ref={headingRef} tabIndex={-1}>
+        Outcome acknowledged
       </h2>
-      <p className="night-complete__lead">Ready to resolve night results</p>
-      <p>
-        {workflow.collectedActions.actions.length} action
-        {workflow.collectedActions.actions.length === 1 ? '' : 's'} recorded as intent. The game
-        remains in night-action-collection.
-      </p>
-      {resolutionErrorMessage === null ? null : (
-        <p className="night-runner__error" role="alert">
-          {resolutionErrorMessage}
-        </p>
-      )}
-      <button type="button" className="button button--prepare" onClick={onResolveNight}>
-        Resolve Night
+      <p>The private outcome is sealed and is no longer displayed.</p>
+      {error === null ? null : <NightError error={error} />}
+      <button type="button" className="button button--prepare" onClick={onContinue}>
+        {finalActor ? 'Complete Night Actions' : 'Continue to next actor'}
       </button>
     </section>
+  )
+}
+
+function PrivacyWarning() {
+  return (
+    <p className="night-runner__privacy">
+      Private screen — make sure only the current player can see this information.
+    </p>
   )
 }
 
@@ -364,26 +334,17 @@ function NightError({ error }: Readonly<{ error: NightActionCollectionError }>) 
   )
 }
 
-function getStepHeading(step: CurrentNightStepView): string {
-  switch (step.type) {
-    case 'night-opening':
-      return 'Begin the night deliberately'
-    case 'mafia-opening':
-      return 'Living Mafia overview'
-    case 'actor-action':
-      return `Collect ${step.roleDisplayName} action for ${step.actorPlayerName}${step.showActorStableId ? ` (${step.actorPlayerId})` : ''}`
-    case 'mafia-closing':
-      return 'Close the Mafia wake window'
-  }
-}
-
-function formatFaction(faction: 'mafia' | 'town' | 'neutral'): string {
-  switch (faction) {
-    case 'mafia':
-      return 'Mafia'
-    case 'town':
-      return 'Town'
-    case 'neutral':
-      return 'Neutral'
+function getOutcomeHeading(view: ImmediateNightOutcomeView): string {
+  switch (view.kind) {
+    case 'blocked':
+      return 'BLOCKED'
+    case 'action-recorded':
+      return 'Action recorded'
+    case 'sheriff-result':
+      return 'Sheriff result'
+    case 'investigation-result':
+      return `${view.investigationRole === 'investigator' ? 'Investigator' : 'Consigliere'} result`
+    case 'detective-result':
+      return 'Detective result'
   }
 }

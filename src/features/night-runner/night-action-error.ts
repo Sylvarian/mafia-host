@@ -5,11 +5,11 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
     case 'DISTRIBUTION_NOT_CONFIRMED':
       return 'Confirm every physical role card has been distributed before beginning the first night.'
     case 'EXECUTIONER_BRIEFING_REQUIRED':
-      return 'Complete the private Executioner briefing before collecting Night 1 actions.'
+      return 'Complete the private Executioner briefing before beginning Night 1.'
     case 'INVALID_STARTING_PHASE':
       return `The first night can begin only from role distribution. The game is currently in ${error.currentPhase}.`
     case 'INVALID_STARTED_NIGHT_PHASE':
-      return `Night action collection cannot be created while the game is in ${error.currentPhase}.`
+      return `The night sequence cannot be created while the game is in ${error.currentPhase}.`
     case 'UNKNOWN_ACTOR':
       return 'The acting player is not part of this game.'
     case 'DEAD_ACTOR':
@@ -21,9 +21,9 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
     case 'ACTOR_ROLE_MISMATCH':
       return 'The submitted role does not match the actor’s assigned role.'
     case 'ROLE_HAS_NO_NIGHT_ACTION':
-      return 'This role has no ordinary night action to collect.'
+      return 'This role has no ordinary night action.'
     case 'WRONG_ACTION_KIND':
-      return 'The submitted action kind does not match this role’s collection metadata.'
+      return 'The submitted action kind does not match this role.'
     case 'UNKNOWN_TARGET':
       return 'That target is not part of this game.'
     case 'DEAD_TARGET':
@@ -33,42 +33,59 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
     case 'DOCTOR_REPEATED_PREVIOUS_TARGET':
       return 'This Doctor cannot select the same target they personally selected on the previous night.'
     case 'DUPLICATE_ACTOR_ACTION':
-      return 'This role instance has more than one submitted action for the night.'
+    case 'ACTOR_ALREADY_COMPLETED':
+      return 'This role instance has already completed its action for the night.'
+    case 'BLOCKED_ACTOR_SUBMITTED_ACTION':
+      return 'A blocked actor cannot submit an action.'
     case 'UNEXPECTED_ACTION':
       return 'This role instance is not expected to act in the current night sequence.'
     case 'MISSING_REQUIRED_ACTION':
-      return 'A living acting role is missing its required night action.'
+      return 'An unblocked living actor is missing a required action.'
     case 'DUPLICATE_PREVIOUS_TARGET_CONTEXT':
       return 'Previous-night target context was supplied more than once for one role instance.'
     case 'UNKNOWN_PREVIOUS_TARGET_ROLE_INSTANCE':
-      return 'Previous-night target context references a role instance that is not part of this game.'
+      return 'Previous-night target context references a role instance outside this game.'
     case 'PREVIOUS_TARGET_ROLE_NOT_DOCTOR':
-      return 'Previous-night target context may be supplied only for an assigned Doctor role instance.'
+      return 'Previous-night target context may be supplied only for a Doctor.'
     case 'UNKNOWN_PREVIOUS_TARGET':
       return 'A Doctor’s previous target is not part of this game.'
     case 'ACTION_BATCH_GAME_MISMATCH':
-      return 'The collected action batch does not belong to this game and night.'
+      return 'The completed action batch does not belong to this game and night.'
     case 'INVALID_ACTION_BATCH':
-      return 'The collected night-action batch is malformed and cannot be used.'
+      return 'The completed night-action batch is malformed.'
     case 'UNKNOWN_SEQUENCE_ROLE':
-      return 'A living player has a role that is missing from the collection registry.'
+      return 'A living player has a role missing from the night registry.'
     case 'ACTIVE_GAME_REJECTED':
-      return 'The active game failed domain validation and the first night was not started.'
+      return 'The active game failed domain validation and Night 1 was not started.'
     case 'INVALID_WORKFLOW_STATE':
-      return `That action is not available while night collection is ${error.status}.`
+      return `That action is not available while the night workflow is ${error.status}.`
     case 'INVALID_SEQUENCE_STEP':
-      return 'That control is not valid for the current night instruction.'
+      return 'That control is not valid for the current night step.'
     case 'NO_VALID_TARGETS':
-      return 'This actor has no structurally valid living target. Correct the game state before collecting actions.'
-    case 'TARGET_REQUIRED':
-      return 'Select a valid target before continuing.'
+      return 'This actor has no valid living target. Correct the game state before continuing.'
     case 'SEQUENCE_BOUNDARY':
-      return error.direction === 'previous'
-        ? 'You are already at the first night instruction.'
-        : 'You are already at the end of the collection sequence.'
-    case 'ACTION_NOT_FOUND':
-      return 'The selected review action no longer exists.'
-    case 'INCOMPLETE_ACTION_BATCH':
-      return 'Every living acting role must have one valid target before collection can be finalised.'
+      return 'The night sequence is already at its final step.'
+    case 'ACTOR_NOT_CURRENT':
+      return 'Only the currently awake actor may act.'
+    case 'ACTOR_BLOCKED':
+      return 'This actor is blocked and cannot select a target.'
+    case 'MISSING_BLOCK_STATE':
+      return 'The current role-block state could not be established safely.'
+    case 'INVALID_CURRENT_OUTCOME':
+    case 'OUTCOME_ACTOR_MISMATCH':
+    case 'OUTCOME_RESULT_MISMATCH':
+    case 'IMMEDIATE_RESULT_DISAGREEMENT':
+      return 'The private outcome does not match the confirmed sequential-night state.'
+    case 'OUTCOME_NOT_ACKNOWLEDGED':
+      return 'Acknowledge the current private outcome before continuing.'
+    case 'OUTCOME_ALREADY_ACKNOWLEDGED':
+      return 'There is no unacknowledged private outcome on screen.'
+    case 'INVALID_VISIT_LEDGER':
+    case 'DETECTIVE_ACTION_RECORDED_AS_VISIT':
+      return 'The Detective visit ledger is invalid and the result was not shown.'
+    case 'PREVIOUS_STEP_SEALED':
+      return 'That earlier action is sealed and cannot be changed.'
+    case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
+      return 'The current role has no supported immediate-outcome rule.'
   }
 }

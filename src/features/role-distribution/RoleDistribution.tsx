@@ -20,6 +20,7 @@ type RoleDistributionProps = Readonly<{
   error: RoleDistributionError | null
   beginNightErrorMessage: string | null
   onCardDeliveryChange: (playerId: PlayerId, delivered: boolean) => void
+  onMarkAllCardsDelivered: () => void
   onConfirmDistribution: () => void
   onReassignRoles: () => void
   onBeginFirstNight: () => void
@@ -32,6 +33,7 @@ export function RoleDistribution({
   error,
   beginNightErrorMessage,
   onCardDeliveryChange,
+  onMarkAllCardsDelivered,
   onConfirmDistribution,
   onReassignRoles,
   onBeginFirstNight,
@@ -113,6 +115,19 @@ export function RoleDistribution({
           {beginNightErrorMessage}
         </p>
       )}
+
+      <div className="role-distribution__bulk-delivery">
+        <button
+          type="button"
+          className="button button--secondary"
+          disabled={progress.isComplete || confirmation !== 'none'}
+          onClick={onMarkAllCardsDelivered}
+        >
+          {progress.isComplete
+            ? 'All participating players have received their cards.'
+            : 'Mark all cards delivered'}
+        </button>
+      </div>
 
       <ul className="assignment-list" aria-label="Private role assignments">
         {rows.map((row) => {

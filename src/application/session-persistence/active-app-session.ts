@@ -1,14 +1,14 @@
-import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
-import type { GameState } from '@/domain/game/game-state.ts'
-import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
-import type { Player } from '@/domain/players/player.ts'
-import type { RandomSource } from '@/domain/randomness/random-source.ts'
 import {
   completeExecutionerBriefingPhase,
   finalizeRoleDistributionForFirstNight,
   type CompleteExecutionerBriefingPhaseError,
   type FinalizeRoleDistributionError,
 } from '@/domain/executioner/executioner-target.ts'
+import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
+import type { GameState } from '@/domain/game/game-state.ts'
+import type { PlayerId } from '@/domain/identifiers.ts'
+import type { Player } from '@/domain/players/player.ts'
+import type { RandomSource } from '@/domain/randomness/random-source.ts'
 
 import {
   acknowledgeExecutionerBriefing,
@@ -28,29 +28,25 @@ import {
   type GameSetupWorkflowState,
 } from '../game-setup/index.ts'
 import {
-  createNightActionCollectionForStartedNight,
+  beginFinalNightResolution,
+  prepareDawnAnnouncement,
+  type DawnWorkflow,
+  type NightCompletionError,
+  type ReadyForDawnWorkflow,
+} from '../night-completion/index.ts'
+import {
+  acknowledgeImmediateNightOutcome,
+  confirmNightActionTarget,
   continueNightActionCollection,
-  editNightAction,
-  finaliseNightActionCollection,
-  previousNightActionCollection,
-  selectNightActionTarget,
+  createNightActionCollectionForStartedNight,
   type ActiveNightActionCollectionWorkflow,
   type NightActionCollectionError,
 } from '../night-actions/index.ts'
 import {
-  acknowledgePrivateNightResult,
-  beginNightResultPresentation,
-  nextPrivateNightResult,
-  prepareDawnAnnouncement,
-  previousPrivateNightResult,
-  type NightPresentationError,
-  type NightPresentationWorkflow,
-  type PrivateNightResultId,
-} from '../night-presentation/index.ts'
-import {
   assignRoleDistribution,
   confirmRoleDistribution,
   createRoleDistributionWorkflow,
+  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
   setCardDelivered,
   type ConfirmedRoleDistributionWorkflow,
@@ -76,27 +72,27 @@ export type ExecutionerBriefingAppSession = Readonly<{
   workflow: ActiveExecutionerBriefingWorkflow
 }>
 
-export type NightActionAppSession = Readonly<{
-  stage: 'night-action'
-  workflow: ActiveNightActionCollectionWorkflow
+export type SequentialNightAppSession = Readonly<{
+  stage: 'sequential-night'
+  workflow: Exclude<ActiveNightActionCollectionWorkflow, Readonly<{ status: 'complete' }>>
 }>
 
-export type NightPresentationAppSession = Readonly<{
-  stage: 'night-presentation'
-  workflow: Exclude<NightPresentationWorkflow, Readonly<{ status: 'dawn' }>>
+export type NightResolutionAppSession = Readonly<{
+  stage: 'night-resolution'
+  workflow: ReadyForDawnWorkflow
 }>
 
 export type DawnAppSession = Readonly<{
   stage: 'dawn'
-  workflow: Extract<NightPresentationWorkflow, Readonly<{ status: 'dawn' }>>
+  workflow: DawnWorkflow
 }>
 
 export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
   | ExecutionerBriefingAppSession
-  | NightActionAppSession
-  | NightPresentationAppSession
+  | SequentialNightAppSession
+  | NightResolutionAppSession
   | DawnAppSession
 
 export type ActiveAppSessionStage = ActiveAppSession['stage']
@@ -105,6 +101,7 @@ export type ActiveAppSessionOperation =
   | 'update-setup'
   | 'assign-roles'
   | 'set-card-delivery'
+  | 'mark-all-cards-delivered'
   | 'confirm-distribution'
   | 'reassign-roles'
   | 'begin-first-night'
@@ -113,14 +110,8 @@ export type ActiveAppSessionOperation =
   | 'next-executioner-briefing'
   | 'complete-executioner-briefings'
   | 'confirm-night-target'
+  | 'acknowledge-night-outcome'
   | 'continue-night'
-  | 'previous-night'
-  | 'edit-night-action'
-  | 'finalise-night-actions'
-  | 'resolve-night'
-  | 'acknowledge-private-result'
-  | 'previous-private-result'
-  | 'next-private-result'
   | 'prepare-dawn'
 
 export type InvalidActiveAppSessionStageError = Readonly<{
@@ -136,7 +127,7 @@ export type ActiveAppSessionError =
   | ExecutionerBriefingError
   | CompleteExecutionerBriefingPhaseError
   | NightActionCollectionError
-  | NightPresentationError
+  | NightCompletionError
   | InvalidActiveAppSessionStageError
 
 export function createActiveAppSession(): SetupAppSession {
@@ -153,12 +144,10 @@ export function updateSetupSession(
   if (session.stage !== 'setup') {
     return invalidStage('update-setup', session.stage)
   }
-
   const nextWorkflow = reduceGameSetupWorkflow(session.workflow, command)
   if (nextWorkflow.status === 'editing' && nextWorkflow.editError !== null) {
     return fail(nextWorkflow.editError)
   }
-
   return nextWorkflow === session.workflow
     ? succeed(session)
     : succeed(Object.freeze({ stage: 'setup', workflow: nextWorkflow }))
@@ -171,18 +160,13 @@ export function assignSessionRoles(
   RoleDistributionAppSession,
   RoleDistributionError | InvalidActiveAppSessionStageError
 > {
-  if (session.stage !== 'setup') {
+  if (session.stage !== 'setup' || session.workflow.status !== 'ready') {
     return invalidStage('assign-roles', session.stage)
   }
-  if (session.workflow.status !== 'ready') {
-    return invalidStage('assign-roles', session.stage)
-  }
-
   const result = assignRoleDistribution(
     createRoleDistributionWorkflow(session.workflow.validatedSetup),
     dependencies,
   )
-
   return result.ok
     ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
     : result
@@ -199,8 +183,22 @@ export function setSessionCardDelivered(
   if (session.stage !== 'role-distribution') {
     return invalidStage('set-card-delivery', session.stage)
   }
-
   const result = setCardDelivered(session.workflow, playerId, delivered)
+  return result.ok
+    ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
+    : result
+}
+
+export function markAllSessionCardsDelivered(
+  session: ActiveAppSession,
+): DomainResult<
+  RoleDistributionAppSession,
+  RoleDistributionError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'role-distribution') {
+    return invalidStage('mark-all-cards-delivered', session.stage)
+  }
+  const result = markAllParticipatingCardsDelivered(session.workflow)
   return result.ok
     ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
     : result
@@ -210,7 +208,7 @@ export function confirmSessionRoleDistribution(
   session: ActiveAppSession,
   randomSource: RandomSource,
 ): DomainResult<
-  ExecutionerBriefingAppSession | NightActionAppSession,
+  ExecutionerBriefingAppSession | SequentialNightAppSession,
   | RoleDistributionError
   | FinalizeRoleDistributionError
   | ExecutionerBriefingError
@@ -220,7 +218,6 @@ export function confirmSessionRoleDistribution(
   if (session.stage !== 'role-distribution') {
     return invalidStage('confirm-distribution', session.stage)
   }
-
   const result = confirmRoleDistribution(session.workflow)
   return result.ok ? startFirstNightStage(result.value, randomSource) : result
 }
@@ -235,7 +232,6 @@ export function reassignSessionRoles(
   if (session.stage !== 'role-distribution') {
     return invalidStage('reassign-roles', session.stage)
   }
-
   const result = reassignRoleDistribution(session.workflow, dependencies, true)
   return result.ok
     ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
@@ -246,7 +242,7 @@ export function beginSessionFirstNight(
   session: ActiveAppSession,
   randomSource: RandomSource,
 ): DomainResult<
-  ExecutionerBriefingAppSession | NightActionAppSession,
+  ExecutionerBriefingAppSession | SequentialNightAppSession,
   | FinalizeRoleDistributionError
   | ExecutionerBriefingError
   | NightActionCollectionError
@@ -255,11 +251,9 @@ export function beginSessionFirstNight(
   if (session.stage !== 'role-distribution') {
     return invalidStage('begin-first-night', session.stage)
   }
-
   if (session.workflow.status !== 'confirmed') {
     return fail({ type: 'DISTRIBUTION_NOT_CONFIRMED' })
   }
-
   return startFirstNightStage(session.workflow, randomSource)
 }
 
@@ -306,7 +300,7 @@ export function nextSessionExecutionerBriefing(
 export function completeSessionExecutionerBriefings(
   session: ActiveAppSession,
 ): DomainResult<
-  NightActionAppSession,
+  SequentialNightAppSession,
   | ExecutionerBriefingError
   | CompleteExecutionerBriefingPhaseError
   | NightActionCollectionError
@@ -315,7 +309,6 @@ export function completeSessionExecutionerBriefings(
   if (session.stage !== 'executioner-briefing') {
     return invalidStage('complete-executioner-briefings', session.stage)
   }
-
   const readinessResult = validateExecutionerBriefingsReadyForCompletion(
     session.game,
     session.workflow,
@@ -323,18 +316,16 @@ export function completeSessionExecutionerBriefings(
   if (!readinessResult.ok) {
     return readinessResult
   }
-
   const phaseResult = completeExecutionerBriefingPhase(session.game)
   if (!phaseResult.ok) {
     return phaseResult
   }
-
   const nightResult = createNightActionCollectionForStartedNight(
     phaseResult.value,
     session.participants,
   )
   return nightResult.ok
-    ? succeed(Object.freeze({ stage: 'night-action', workflow: nightResult.value }))
+    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: nightResult.value }))
     : nightResult
 }
 
@@ -342,158 +333,80 @@ export function confirmSessionNightTarget(
   session: ActiveAppSession,
   targetPlayerId: PlayerId,
 ): DomainResult<
-  NightActionAppSession,
+  SequentialNightAppSession,
   NightActionCollectionError | InvalidActiveAppSessionStageError
 > {
-  return updateNightSession(session, 'confirm-night-target', (workflow) => {
-    const selectionResult = selectNightActionTarget(workflow, targetPlayerId)
+  if (session.stage !== 'sequential-night') {
+    return invalidStage('confirm-night-target', session.stage)
+  }
+  const result = confirmNightActionTarget(session.workflow, targetPlayerId)
+  return result.ok
+    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
+    : result
+}
 
-    return selectionResult.ok
-      ? continueNightActionCollection(selectionResult.value)
-      : selectionResult
-  })
+export function acknowledgeSessionNightOutcome(
+  session: ActiveAppSession,
+): DomainResult<
+  SequentialNightAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'sequential-night') {
+    return invalidStage('acknowledge-night-outcome', session.stage)
+  }
+  const result = acknowledgeImmediateNightOutcome(session.workflow)
+  if (!result.ok) {
+    return result
+  }
+  if (result.value.status === 'complete') {
+    throw new Error('Acknowledging an outcome cannot complete the night before Continue.')
+  }
+  return succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
 }
 
 export function continueSessionNight(
   session: ActiveAppSession,
 ): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
+  SequentialNightAppSession | NightResolutionAppSession,
+  NightActionCollectionError | NightCompletionError | InvalidActiveAppSessionStageError
 > {
-  return updateNightSession(session, 'continue-night', continueNightActionCollection)
-}
-
-export function previousSessionNight(
-  session: ActiveAppSession,
-): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
-> {
-  return updateNightSession(session, 'previous-night', previousNightActionCollection)
-}
-
-export function editSessionNightAction(
-  session: ActiveAppSession,
-  actorRoleInstanceId: RoleInstanceId,
-): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
-> {
-  return updateNightSession(session, 'edit-night-action', (workflow) =>
-    editNightAction(workflow, actorRoleInstanceId),
-  )
-}
-
-export function finaliseSessionNightActions(
-  session: ActiveAppSession,
-): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
-> {
-  return updateNightSession(session, 'finalise-night-actions', finaliseNightActionCollection)
-}
-
-export function resolveSessionNight(
-  session: ActiveAppSession,
-): DomainResult<
-  NightPresentationAppSession,
-  NightPresentationError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'night-action') {
-    return invalidStage('resolve-night', session.stage)
+  if (session.stage !== 'sequential-night') {
+    return invalidStage('continue-night', session.stage)
   }
-
-  const result = beginNightResultPresentation(session.workflow)
+  const result = continueNightActionCollection(session.workflow)
   if (!result.ok) {
     return result
   }
-  if (result.value.status === 'dawn') {
-    throw new Error('Beginning private night-result presentation cannot apply Dawn.')
+  if (result.value.status !== 'complete') {
+    return succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
   }
-
-  return succeed(Object.freeze({ stage: 'night-presentation', workflow: result.value }))
-}
-
-export function acknowledgeSessionPrivateResult(
-  session: ActiveAppSession,
-  resultId: PrivateNightResultId,
-): DomainResult<
-  NightPresentationAppSession,
-  NightPresentationError | InvalidActiveAppSessionStageError
-> {
-  return updatePresentationSession(session, 'acknowledge-private-result', (workflow) =>
-    acknowledgePrivateNightResult(workflow, resultId),
-  )
-}
-
-export function previousSessionPrivateResult(
-  session: ActiveAppSession,
-): DomainResult<
-  NightPresentationAppSession,
-  NightPresentationError | InvalidActiveAppSessionStageError
-> {
-  return updatePresentationSession(session, 'previous-private-result', previousPrivateNightResult)
-}
-
-export function nextSessionPrivateResult(
-  session: ActiveAppSession,
-): DomainResult<
-  NightPresentationAppSession,
-  NightPresentationError | InvalidActiveAppSessionStageError
-> {
-  return updatePresentationSession(session, 'next-private-result', nextPrivateNightResult)
+  const resolutionResult = beginFinalNightResolution(result.value)
+  return resolutionResult.ok
+    ? succeed(Object.freeze({ stage: 'night-resolution', workflow: resolutionResult.value }))
+    : resolutionResult
 }
 
 export function prepareSessionDawn(
   session: ActiveAppSession,
-): DomainResult<DawnAppSession, NightPresentationError | InvalidActiveAppSessionStageError> {
-  if (session.stage !== 'night-presentation') {
+): DomainResult<DawnAppSession, NightCompletionError | InvalidActiveAppSessionStageError> {
+  if (session.stage !== 'night-resolution') {
     return invalidStage('prepare-dawn', session.stage)
   }
-
   const result = prepareDawnAnnouncement(session.workflow)
-  if (!result.ok) {
-    return result
-  }
-  if (result.value.status !== 'dawn') {
-    throw new Error('Preparing Dawn did not produce the terminal Phase 6 Dawn workflow.')
-  }
-
-  return succeed(Object.freeze({ stage: 'dawn', workflow: result.value }))
-}
-
-function updateNightSession(
-  session: ActiveAppSession,
-  operation: ActiveAppSessionOperation,
-  update: (
-    workflow: ActiveNightActionCollectionWorkflow,
-  ) => DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError>,
-): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'night-action') {
-    return invalidStage(operation, session.stage)
-  }
-
-  const result = update(session.workflow)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'night-action', workflow: result.value }))
-    : result
+  return result.ok ? succeed(Object.freeze({ stage: 'dawn', workflow: result.value })) : result
 }
 
 function startFirstNightStage(
   distribution: ConfirmedRoleDistributionWorkflow,
   randomSource: RandomSource,
 ): DomainResult<
-  ExecutionerBriefingAppSession | NightActionAppSession,
+  ExecutionerBriefingAppSession | SequentialNightAppSession,
   FinalizeRoleDistributionError | ExecutionerBriefingError | NightActionCollectionError
 > {
   const gameResult = finalizeRoleDistributionForFirstNight(distribution.game, true, randomSource)
   if (!gameResult.ok) {
     return gameResult
   }
-
   const participants = Object.freeze(
     distribution.setup.participatingPlayers.map((player) => Object.freeze({ ...player })),
   )
@@ -510,10 +423,9 @@ function startFirstNightStage(
         )
       : workflowResult
   }
-
   const nightResult = createNightActionCollectionForStartedNight(gameResult.value, participants)
   return nightResult.ok
-    ? succeed(Object.freeze({ stage: 'night-action', workflow: nightResult.value }))
+    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: nightResult.value }))
     : nightResult
 }
 
@@ -531,34 +443,8 @@ function updateExecutionerBriefingSession(
   if (session.stage !== 'executioner-briefing') {
     return invalidStage(operation, session.stage)
   }
-
   const result = update(session.game, session.workflow)
   return result.ok ? succeed(Object.freeze({ ...session, workflow: result.value })) : result
-}
-
-function updatePresentationSession(
-  session: ActiveAppSession,
-  operation: ActiveAppSessionOperation,
-  update: (
-    workflow: Exclude<NightPresentationWorkflow, Readonly<{ status: 'dawn' }>>,
-  ) => DomainResult<NightPresentationWorkflow, NightPresentationError>,
-): DomainResult<
-  NightPresentationAppSession,
-  NightPresentationError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'night-presentation') {
-    return invalidStage(operation, session.stage)
-  }
-
-  const result = update(session.workflow)
-  if (!result.ok) {
-    return result
-  }
-  if (result.value.status === 'dawn') {
-    throw new Error(`${operation} cannot apply Dawn.`)
-  }
-
-  return succeed(Object.freeze({ stage: 'night-presentation', workflow: result.value }))
 }
 
 function invalidStage<Value>(

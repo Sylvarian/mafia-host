@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save implemented in Phase 6.5 and compatibly extended in Phase 7A<br>
+**Persistence:** One versioned local active-session save; Phase 7A.1 introduces schema V2 with narrow V1 migration<br>
 **Backend:** None
 
 ---
@@ -218,6 +218,8 @@ Randomly assign selected fixed roles to participating players.
   them only after final physical distribution confirmation.
 - Build host-only assignment screen.
 - Add “Card given” confirmation per player.
+- Add one pure, idempotent **Mark all cards delivered** operation for participating players while
+  retaining individual undo before final confirmation.
 - Require all cards confirmed before Enter Night is enabled.
 - Add restart assignment before the game begins.
 
@@ -237,6 +239,9 @@ Randomly assign selected fixed roles to participating players.
 ---
 
 ## Phase 4 — Night action collection framework
+
+**Status: Original collect-all/review coordination superseded by Phase 7A.1. Domain action
+contracts and target validation remain authoritative.**
 
 ### Goal
 
@@ -270,9 +275,8 @@ Build `features/night-runner`:
 - Sheriff action
 - Investigator action
 - Detective action
-- Previous/next navigation before final resolution
-- Summary of all submitted actions
-- Confirm Resolve Night
+- Temporary target selection before confirmation
+- One confirmed action per actor
 
 Implement target validation:
 
@@ -288,7 +292,7 @@ Implement target validation:
 - Dead roles are omitted.
 - Duplicate roles appear as separate numbered steps.
 - Invalid targets are disabled/rejected.
-- Host can revise an earlier target before resolving.
+- Host can revise the current target before confirmation.
 
 ### Required rule decisions
 
@@ -297,7 +301,8 @@ Implement target validation:
 
 ### Acceptance criteria
 
-- A complete night's actions can be collected and reviewed with no mechanics resolved in React.
+- A complete night's actions can be represented by one validated canonical batch with no mechanics
+  resolved in React.
 
 ---
 
@@ -332,7 +337,7 @@ Implement first set of interactions:
 - Sheriff result
 - Investigator result group
 - Consigliere result group
-- Detective final visit
+- Detective final visit from the non-Detective visit ledger
 
 Implement permanent investigation-group data.
 
@@ -378,7 +383,7 @@ At minimum:
 - Doctor stops applicable attack.
 - Doctor repeat restriction is per Doctor.
 - Investigator and Consigliere share group logic.
-- Detective sees final successful target.
+- Detective sees the confirmed non-Detective visit; Detective actions are not trackable visits.
 - Disabled first-night Godfather and Serial Killer roles produce no action, visit, or attack attempt.
 - Multiple simultaneous actions resolve independently of collection order.
 
@@ -394,7 +399,8 @@ At minimum:
 
 ## Phase 6 — Dawn and private-result communication
 
-**Status: Implemented for the scoped private-result, resolution-application, and Dawn boundary.**
+**Status: Dawn application and public boundary remain implemented. The end-of-night private-result
+queue was superseded and removed by Phase 7A.1.**
 
 ### Goal
 
@@ -404,12 +410,6 @@ Help the host communicate night outcomes using physical cards/paper.
 
 Build `features/dawn`:
 
-- Private result queue before public wake-up
-- Sheriff result
-- Investigator card/group
-- Consigliere card/group
-- Detective tracked visit
-- Explicit acknowledgement of every private result
 - Deliberate host-only privacy confirmation before Dawn
 - Immutable provisional-death application
 - Minimal per-Doctor submitted-target history
@@ -426,16 +426,15 @@ For Investigator/Consigliere:
 ### Tests
 
 - Public output excludes hidden roles when setting is off.
-- Private output contains only actual player-facing investigative results.
-- Deaths are not applied before private results are complete.
-- Doctor history records submitted selections even when blocked or killed.
+- Deaths are not applied before the sequential actor workflow is complete.
+- Doctor history records unblocked submitted selections even if the Doctor or target dies.
+- A blocked Doctor records no new target.
 - Quiet-night announcement appears when no deaths.
-- Result queue contains only living actors whose actions produced results.
 - No hidden attack, block, frame, or protection data reaches Dawn.
 
 ### Acceptance criteria
 
-- Host can conduct all private result reveals without consulting handwritten notes.
+- Host can cross a deliberate public-Dawn boundary after all immediate outcomes are sealed.
 - The active game finishes in `dawn-announcement`.
 - Day controls, neutral outcomes beyond target assignment/briefing, and victory evaluation remain
   outside Phase 6 and are still not implemented.
@@ -465,7 +464,7 @@ refresh, tab/browser restart, or return to the deployed GitHub Pages site.
 - Discard action, resolution, private-result, and acknowledgement material from Dawn saves.
 - Document unencrypted local privacy, one-tab operation, and the lack of backend/cloud sync.
 
-Phase 7A extends this same V1 contract unambiguously:
+Phase 7A extended this V1 contract for Executioner state:
 
 - New game saves require `neutralStateVersion: 1`, canonical Executioner targets, and briefing
   status together.
@@ -475,9 +474,20 @@ Phase 7A extends this same V1 contract unambiguously:
 - Partially upgraded payloads, forged targets, forged acknowledgements, and unbriefed later-phase
   Executioners are rejected.
 
-### Current V1 boundary
+Phase 7A.1 replaces current-night authority with schema V2:
 
-V1 recovery is implemented through the first Dawn only. The current Dawn representation requires
+- Persist setup, distribution, Executioner briefing, sequential night, current immediate outcome,
+  explicit acknowledgement, final `night-resolution`, and public Dawn.
+- Rebuild canonical sequence, actions, blocks, frames, visits, and immediate outcomes during
+  restoration without randomness.
+- Reject old V1 in-progress night-action and private-result stages rather than guessing which
+  information was communicated.
+- Migrate only safe V1 setup, distribution, Executioner briefing, and first-Dawn saves.
+- Write V2 before removing a migrated V1 key; preserve V1 when migration or V2 writing fails.
+
+### Current V2 boundary
+
+V2 recovery is implemented through the first Dawn only. The current Dawn representation requires
 the public announcement to cover every dead player and must not be reused unchanged for later
 Dawns, where that assumption could reannounce deaths from earlier nights or days.
 
@@ -490,18 +500,16 @@ Before later-day or later-night persistence is implemented, the session contract
 - Executioner conversions.
 - Current versus historical public announcements.
 
-The Phase 7 delivery sequence must update the persisted contract deliberately. It may introduce a
-new schema version, or an explicit compatible V1 extension only if validation remains unambiguous.
-No migration system currently exists.
+Phase 7E must update the persisted contract deliberately. No generic migration framework exists.
 
 ### Tests
 
 - Envelope version, timestamp, shape, extra-field, immutability, and canonical ownership tests.
 - Browser adapter success and unavailable/read/write/quota/clear failure tests.
-- Round trips for every Phase 2–6 authoritative workflow status.
+- Round trips for every current authoritative workflow status.
 - Forged acknowledgement, cross-game, stage/phase, and private-Dawn rejection tests.
-- React refresh/remount coverage at setup, partial distribution, mid-night collection, private
-  presentation, and Dawn.
+- React refresh/remount coverage at setup, partial distribution, immediate outcomes,
+  acknowledgement, final night resolution, and Dawn.
 - Strict Mode deduplication, save failure/retry, delete/cancel, invalid/incompatible recovery, and
   privacy regressions.
 
@@ -517,7 +525,7 @@ No migration system currently exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7A implemented; Phase 7B and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7A.1 implemented; Phase 7B and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -585,6 +593,54 @@ recovery only.**
 - Games without an Executioner skip the empty briefing and enter Night 1.
 - Exact targets and briefing progress survive refresh behind the public-safe recovery gate.
 - The domain retains only the narrow target state needed by this phase.
+
+### Phase 7A.1 — Sequential night resolution and host UX corrections
+
+**Status: Implemented.**
+
+#### Work
+
+- Add pure bulk card delivery without automatic distribution confirmation.
+- Show target display label, role, faction text, alive/availability state, and subtle faction
+  treatment through a narrow application view model.
+- Replace collect-all/review/private-replay coordination with the canonical sequence: Mafia
+  overview, Consorts, Framers, Godfathers, Serial Killers, Doctors, Sheriffs, Investigators,
+  Consiglieres, Detectives, final completion.
+- Establish Consort block state before later actors; blocked actors still wake and receive an
+  explicit BLOCKED outcome but create no action, visit, result, or Doctor history.
+- Keep unconfirmed target selection in React only. Confirmation atomically records an action and
+  narrow immediate outcome; acknowledgement seals the actor before explicit continuation.
+- Reuse shared domain frame, Sheriff, investigation-group, visit, block, and Detective mechanics for
+  immediate and final results.
+- Exclude every Detective action from the trackable visit ledger.
+- Resolve ordinary attacks, protections, and provisional deaths only after the final actor, enter
+  `night-resolution`, and apply deaths only at the deliberate Dawn boundary.
+- Remove the old end-of-night private-result workflow and production code.
+- Introduce persistence V2 and narrow explicit V1 migration as described in Phase 6.5.
+- Do not add Phase 7B behavior.
+
+#### Tests
+
+- Partial, complete, idempotent, frozen-input, undo, Strict Mode, and rapid-click bulk delivery.
+- Faction-labelled target rows, duplicate-name labels, unavailable states, local selection, and
+  public-safe recovery.
+- Canonical order, duplicate ordinals, first-night skipping, every blocked actionable role,
+  Consort immunity/mutual targeting, immediate results, acknowledgement, and sealing.
+- Detective tracking for every visit-producing role, blocked/skipped actors, and multiple
+  Detectives; no Detective visit appears in final visits.
+- V2 round trips, forged order/outcome/extra-field rejection, safe V1 migrations, incompatible V1
+  rejection, migration write ordering, save failure/retry, and public-only Dawn.
+
+#### Acceptance criteria
+
+- No investigative role wakes twice.
+- Immediate results agree with final canonical resolution.
+- Previous outcomes disappear after acknowledgement and cannot be edited.
+- Ordinary deaths remain hidden and unapplied until Dawn.
+- Recovery reveals no current actor, role, target, result, blocked state, or role composition before
+  host continuation.
+- Phase 7B, personal wins, conversions, revenge, victory, later nights, and backend behavior remain
+  unimplemented.
 
 ### Phase 7B — Day controls and Mayor reveal
 
@@ -694,7 +750,7 @@ evaluateGameOutcome(gameState): GameOutcome
 - Keep current public announcements separate from historical announcements.
 - Extend persistence for pending revenge, permanent personal wins, Executioner targets and
   conversions, later-night workflow state, and announcement boundaries.
-- Deliberately choose a new schema version or an explicit compatible V1 extension only when
+- Deliberately choose a new schema version or an explicit compatible V2 extension only when
   validation remains unambiguous.
 - Do not claim or invent a migration system.
 - Retain browser-local, device/profile-specific, unencrypted, single-tab-oriented recovery with no
@@ -914,7 +970,7 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7A are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7A.1 are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
 When further Phase 7 work is explicitly requested, begin with Phase 7B. Do not start later

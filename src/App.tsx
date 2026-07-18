@@ -12,18 +12,15 @@ import type {
   GameSetupWorkflowCommand,
 } from '@/application/game-setup/index.ts'
 import type { NightActionCollectionError } from '@/application/night-actions/index.ts'
-import type {
-  NightPresentationError,
-  PrivateNightResultId,
-} from '@/application/night-presentation/index.ts'
-import { selectNightPresentationView } from '@/application/night-presentation/index.ts'
+import type { NightCompletionError } from '@/application/night-completion/index.ts'
+import { selectNightCompletionView } from '@/application/night-completion/index.ts'
 import type {
   PlayerId,
   RoleAssignmentDependencies,
   RoleDistributionError,
 } from '@/application/role-assignment/index.ts'
 import {
-  acknowledgeSessionPrivateResult,
+  acknowledgeSessionNightOutcome,
   acknowledgeSessionExecutionerBriefing,
   assignSessionRoles,
   beginSessionFirstNight,
@@ -32,19 +29,14 @@ import {
   confirmSessionRoleDistribution,
   continueSessionNight,
   createActiveAppSession,
-  createPersistedSessionEnvelopeV1,
-  editSessionNightAction,
-  finaliseSessionNightActions,
-  nextSessionPrivateResult,
+  createPersistedSessionEnvelopeV2,
+  markAllSessionCardsDelivered,
   nextSessionExecutionerBriefing,
   prepareSessionDawn,
-  previousSessionNight,
   previousSessionExecutionerBriefing,
-  previousSessionPrivateResult,
   reassignSessionRoles,
-  resolveSessionNight,
   setSessionCardDelivered,
-  toPersistedAppSessionV1,
+  toPersistedAppSessionV2,
   updateSetupSession,
   type ActiveAppSession,
   type ClearFailureError,
@@ -52,10 +44,10 @@ import {
   type InvalidActiveAppSessionStageError,
   type LoadPersistedSessionError,
   type LoadPersistedSessionResult,
-  type RestoredSessionEnvelopeV1,
+  type RestoredSessionEnvelopeV2,
   type SessionClock,
 } from '@/application/session-persistence/index.ts'
-import { DawnPresentation, getNightPresentationErrorMessage } from '@/features/dawn/index.ts'
+import { DawnPresentation } from '@/features/dawn/index.ts'
 import {
   ExecutionerBriefing,
   getExecutionerBriefingErrorMessage,
@@ -84,7 +76,7 @@ export type AppProps = Readonly<{
 type AppState =
   | Readonly<{
       mode: 'saved-session-found'
-      envelope: RestoredSessionEnvelopeV1
+      envelope: RestoredSessionEnvelopeV2
       clearError: ClearFailureError | null
     }>
   | Readonly<{
@@ -116,7 +108,7 @@ export default function App({
   const [setupError, setSetupError] = useState<GameSetupEditError | null>(null)
   const [distributionError, setDistributionError] = useState<RoleDistributionError | null>(null)
   const [nightError, setNightError] = useState<NightActionCollectionError | null>(null)
-  const [presentationError, setPresentationError] = useState<NightPresentationError | null>(null)
+  const [completionError, setCompletionError] = useState<NightCompletionError | null>(null)
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
@@ -124,7 +116,7 @@ export default function App({
   const identityOperationPendingRef = useRef(false)
   const nightOperationPendingRef = useRef(false)
   const briefingOperationPendingRef = useRef(false)
-  const presentationOperationPendingRef = useRef(false)
+  const completionOperationPendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
   const activeSession = appState.mode === 'active' ? appState.session : null
 
@@ -132,7 +124,7 @@ export default function App({
     identityOperationPendingRef.current = false
     nightOperationPendingRef.current = false
     briefingOperationPendingRef.current = false
-    presentationOperationPendingRef.current = false
+    completionOperationPendingRef.current = false
   }, [activeSession])
 
   function setActiveSession(session: ActiveAppSession): void {
@@ -146,7 +138,7 @@ export default function App({
       return
     }
 
-    const envelope = createPersistedSessionEnvelopeV1(session, sessionClock.now())
+    const envelope = createPersistedSessionEnvelopeV2(session, sessionClock.now())
     const saveResult = sessionStore.save(envelope)
     if (saveResult.ok) {
       persistedFingerprintRef.current = fingerprint
@@ -166,7 +158,7 @@ export default function App({
     setSetupError(null)
     setDistributionError(null)
     setNightError(null)
-    setPresentationError(null)
+    setCompletionError(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
   }
@@ -210,7 +202,7 @@ export default function App({
     if (appState.mode !== 'active') {
       return
     }
-    const envelope = createPersistedSessionEnvelopeV1(appState.session, sessionClock.now())
+    const envelope = createPersistedSessionEnvelopeV2(appState.session, sessionClock.now())
     const saveResult = sessionStore.save(envelope)
     if (saveResult.ok) {
       persistedFingerprintRef.current = createSessionFingerprint(appState.session)
@@ -289,6 +281,21 @@ export default function App({
               }
               setDistributionError(null)
               setActiveSession(result.value)
+            }}
+            onMarkAllCardsDelivered={() => {
+              runIdentityOperation(() => {
+                const result = markAllSessionCardsDelivered(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setDistributionError(result.error)
+                  return false
+                }
+                setDistributionError(null)
+                setActiveSession(result.value)
+                return true
+              })
             }}
             onConfirmDistribution={() => {
               runIdentityOperation(() => {
@@ -394,7 +401,7 @@ export default function App({
             }}
           />
         )
-      case 'night-action':
+      case 'sequential-night':
         return (
           <NightRunner
             workflow={session.workflow}
@@ -407,75 +414,31 @@ export default function App({
             onContinue={() => {
               runNightOperation(() => applyNightResult(continueSessionNight(session)))
             }}
-            onPrevious={() => {
-              applyNightResult(previousSessionNight(session))
-            }}
-            onEditAction={(actorRoleInstanceId) => {
-              applyNightResult(editSessionNightAction(session, actorRoleInstanceId))
-            }}
-            onFinalise={() => {
-              applyNightResult(finaliseSessionNightActions(session))
-            }}
-            resolutionErrorMessage={
-              presentationError === null
-                ? null
-                : getNightPresentationErrorMessage(presentationError)
-            }
-            onResolveNight={() => {
-              runPresentationOperation(() => {
-                const result = resolveSessionNight(session)
-                if (!result.ok) {
-                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                    handleInvalidStage(result.error)
-                  }
-                  setPresentationError(result.error)
-                  return false
-                }
-                clearErrors()
-                setActiveSession(result.value)
-                return true
-              })
+            onAcknowledgeOutcome={() => {
+              runNightOperation(() => applyNightResult(acknowledgeSessionNightOutcome(session)))
             }}
           />
         )
-      case 'night-presentation':
+      case 'night-resolution':
       case 'dawn':
         return (
           <DawnPresentation
-            view={selectNightPresentationView(session.workflow)}
-            error={presentationError}
-            onAcknowledgeResult={(resultId: PrivateNightResultId) => {
-              if (session.stage !== 'night-presentation') {
-                return
-              }
-              applyPresentationResult(acknowledgeSessionPrivateResult(session, resultId))
-            }}
-            onPreviousResult={() => {
-              if (session.stage !== 'night-presentation') {
-                return
-              }
-              applyPresentationResult(previousSessionPrivateResult(session))
-            }}
-            onNextResult={() => {
-              if (session.stage !== 'night-presentation') {
-                return
-              }
-              applyPresentationResult(nextSessionPrivateResult(session))
-            }}
+            view={selectNightCompletionView(session.workflow)}
+            error={completionError}
             onPrepareDawn={() => {
-              if (session.stage !== 'night-presentation') {
+              if (session.stage !== 'night-resolution') {
                 return
               }
-              runPresentationOperation(() => {
+              runCompletionOperation(() => {
                 const result = prepareSessionDawn(session)
                 if (!result.ok) {
                   if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
                     handleInvalidStage(result.error)
                   }
-                  setPresentationError(result.error)
+                  setCompletionError(result.error)
                   return false
                 }
-                setPresentationError(null)
+                setCompletionError(null)
                 setActiveSession(result.value)
                 return true
               })
@@ -489,38 +452,45 @@ export default function App({
     result: ReturnType<
       | typeof confirmSessionNightTarget
       | typeof continueSessionNight
-      | typeof previousSessionNight
-      | typeof editSessionNightAction
-      | typeof finaliseSessionNightActions
+      | typeof acknowledgeSessionNightOutcome
     >,
   ): boolean {
     if (!result.ok) {
       if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
         handleInvalidStage(result.error)
+      }
+      if (
+        result.error.type === 'NIGHT_ACTION_WORKFLOW_NOT_COMPLETE' ||
+        result.error.type === 'INVALID_NIGHT_RESOLUTION_PHASE' ||
+        result.error.type === 'NIGHT_RESOLUTION_GAME_ID_MISMATCH' ||
+        result.error.type === 'NIGHT_RESOLUTION_NIGHT_NUMBER_MISMATCH' ||
+        result.error.type === 'INVALID_GAME_STATE_FOR_NIGHT_RESOLUTION' ||
+        result.error.type === 'INVALID_COLLECTED_NIGHT_ACTIONS' ||
+        result.error.type === 'INVALID_RESOLUTION_ROLE_METADATA' ||
+        result.error.type === 'INVALID_INVESTIGATION_GROUP_DEFINITION' ||
+        result.error.type === 'MISSING_CANONICAL_INVESTIGATION_GROUP' ||
+        result.error.type === 'INVALID_NIGHT_APPLICATION_PHASE' ||
+        result.error.type === 'NIGHT_APPLICATION_GAME_ID_MISMATCH' ||
+        result.error.type === 'NIGHT_APPLICATION_NIGHT_NUMBER_MISMATCH' ||
+        result.error.type === 'INVALID_GAME_STATE_FOR_NIGHT_APPLICATION' ||
+        result.error.type === 'INVALID_NIGHT_RESOLUTION' ||
+        result.error.type === 'UNKNOWN_PROVISIONAL_DEATH_PLAYER' ||
+        result.error.type === 'DUPLICATE_PROVISIONAL_DEATH' ||
+        result.error.type === 'PROVISIONAL_DEATH_PLAYER_ALREADY_DEAD' ||
+        result.error.type === 'INVALID_PROVISIONAL_DEATH_ROLE' ||
+        result.error.type === 'INVALID_COLLECTED_ACTIONS_FOR_NIGHT_APPLICATION' ||
+        result.error.type === 'NIGHT_RESOLUTION_REVALIDATION_FAILED' ||
+        result.error.type === 'NIGHT_RESOLUTION_CONTENT_MISMATCH' ||
+        result.error.type === 'INVALID_DAWN_ANNOUNCEMENT' ||
+        result.error.type === 'RESOLUTION_ALREADY_APPLIED'
+      ) {
+        setCompletionError(result.error)
+        return false
       }
       setNightError(result.error)
       return false
     }
     setNightError(null)
-    setActiveSession(result.value)
-    return true
-  }
-
-  function applyPresentationResult(
-    result: ReturnType<
-      | typeof acknowledgeSessionPrivateResult
-      | typeof previousSessionPrivateResult
-      | typeof nextSessionPrivateResult
-    >,
-  ): boolean {
-    if (!result.ok) {
-      if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-        handleInvalidStage(result.error)
-      }
-      setPresentationError(result.error)
-      return false
-    }
-    setPresentationError(null)
     setActiveSession(result.value)
     return true
   }
@@ -572,17 +542,17 @@ export default function App({
     }
   }
 
-  function runPresentationOperation(operation: () => boolean): void {
-    if (presentationOperationPendingRef.current) {
+  function runCompletionOperation(operation: () => boolean): void {
+    if (completionOperationPendingRef.current) {
       return
     }
-    presentationOperationPendingRef.current = true
+    completionOperationPendingRef.current = true
     try {
       if (!operation()) {
-        presentationOperationPendingRef.current = false
+        completionOperationPendingRef.current = false
       }
     } catch (error: unknown) {
-      presentationOperationPendingRef.current = false
+      completionOperationPendingRef.current = false
       throw error
     }
   }
@@ -609,7 +579,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7A · Executioner briefing</p>
+        <p>Phase 7A.1 · Sequential night resolution</p>
       </header>
 
       <main className="app-main">
@@ -727,7 +697,7 @@ function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialA
 }
 
 function createSessionFingerprint(session: ActiveAppSession): string {
-  return JSON.stringify(toPersistedAppSessionV1(session))
+  return JSON.stringify(toPersistedAppSessionV2(session))
 }
 
 type FirstNightTransitionError =
@@ -801,6 +771,7 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'INVALID_SELF_TARGET':
     case 'DOCTOR_REPEATED_PREVIOUS_TARGET':
     case 'DUPLICATE_ACTOR_ACTION':
+    case 'BLOCKED_ACTOR_SUBMITTED_ACTION':
     case 'UNEXPECTED_ACTION':
     case 'MISSING_REQUIRED_ACTION':
     case 'DUPLICATE_PREVIOUS_TARGET_CONTEXT':
@@ -813,10 +784,21 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'INVALID_WORKFLOW_STATE':
     case 'INVALID_SEQUENCE_STEP':
     case 'NO_VALID_TARGETS':
-    case 'TARGET_REQUIRED':
     case 'SEQUENCE_BOUNDARY':
-    case 'ACTION_NOT_FOUND':
-    case 'INCOMPLETE_ACTION_BATCH':
+    case 'ACTOR_ALREADY_COMPLETED':
+    case 'ACTOR_NOT_CURRENT':
+    case 'ACTOR_BLOCKED':
+    case 'MISSING_BLOCK_STATE':
+    case 'INVALID_CURRENT_OUTCOME':
+    case 'OUTCOME_ACTOR_MISMATCH':
+    case 'OUTCOME_RESULT_MISMATCH':
+    case 'OUTCOME_NOT_ACKNOWLEDGED':
+    case 'OUTCOME_ALREADY_ACKNOWLEDGED':
+    case 'INVALID_VISIT_LEDGER':
+    case 'DETECTIVE_ACTION_RECORDED_AS_VISIT':
+    case 'IMMEDIATE_RESULT_DISAGREEMENT':
+    case 'PREVIOUS_STEP_SEALED':
+    case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
       return getNightActionCollectionErrorMessage(error)
   }
 }

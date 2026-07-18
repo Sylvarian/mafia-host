@@ -1,6 +1,6 @@
 import type { GameSettings } from '@/domain/game/game-settings.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
-import type { PlayerId, RoleId, RoleInstanceId } from '@/domain/identifiers.ts'
+import type { PlayerId } from '@/domain/identifiers.ts'
 import type { NightActionKind } from '@/domain/night-actions/night-action-kind.ts'
 import type {
   AttackOutcome,
@@ -9,58 +9,50 @@ import type {
 } from '@/domain/resolution/night-resolution-models.ts'
 
 import type { GameSetupDraft, RoleCount } from '../game-setup/index.ts'
+import type {
+  ImmediateNightOutcome,
+  SequentialNightStepRecord,
+  SubmittedNightAction,
+} from '../night-actions/index.ts'
 import type { ActiveAppSession } from './active-app-session.ts'
 
-export const PERSISTED_SESSION_SCHEMA_VERSION = 1 as const
+export const PERSISTED_SESSION_SCHEMA_VERSION = 2 as const
 
-export type PersistedPlayerV1 = Readonly<{
+export type PersistedPlayerV2 = Readonly<{
   id: string
   name: string
   playing: boolean
 }>
 
-export type PersistedRoleCountV1 = Readonly<{
-  roleId: string
-  count: number
-}>
+export type PersistedRoleCountV2 = Readonly<{ roleId: string; count: number }>
 
-export type PersistedSetupDraftV1 = Readonly<{
-  roster: readonly PersistedPlayerV1[]
-  roleCounts: readonly PersistedRoleCountV1[]
+export type PersistedSetupDraftV2 = Readonly<{
+  roster: readonly PersistedPlayerV2[]
+  roleCounts: readonly PersistedRoleCountV2[]
   settings: GameSettings
   nextPlayerNumber: number
 }>
 
-export type PersistedValidatedSetupV1 = Readonly<{
-  participatingPlayers: readonly PersistedPlayerV1[]
-  roleCounts: readonly PersistedRoleCountV1[]
+export type PersistedValidatedSetupV2 = Readonly<{
+  participatingPlayers: readonly PersistedPlayerV2[]
+  roleCounts: readonly PersistedRoleCountV2[]
   settings: GameSettings
 }>
 
-export type PersistedRoleInstanceV1 = Readonly<{
-  instanceId: string
-  roleId: string
-  ordinal: number | null
-}>
-
-export type PersistedGamePlayerV1 = Readonly<{
-  playerId: string
-  role: PersistedRoleInstanceV1
-  alive: boolean
-  publiclyRevealedRoleId: string | null
-  mayorRevealed: boolean
-}>
-
-export type PersistedDoctorPreviousTargetV1 = Readonly<{
-  doctorRoleInstanceId: string
-  targetPlayerId: string
-  nightNumber: number
-}>
-
-export type PersistedGameV1 = Readonly<{
+export type PersistedGameV2 = Readonly<{
   id: string
   phase: string
-  players: readonly PersistedGamePlayerV1[]
+  players: readonly Readonly<{
+    playerId: string
+    role: Readonly<{
+      instanceId: string
+      roleId: string
+      ordinal: number | null
+    }>
+    alive: boolean
+    publiclyRevealedRoleId: string | null
+    mayorRevealed: boolean
+  }>[]
   neutralStateVersion: 1
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
   executionerTargets: readonly Readonly<{
@@ -72,10 +64,14 @@ export type PersistedGameV1 = Readonly<{
   settings: GameSettings
   nightNumber: number
   dayNumber: number
-  doctorPreviousTargets: readonly PersistedDoctorPreviousTargetV1[]
+  doctorPreviousTargets: readonly Readonly<{
+    doctorRoleInstanceId: string
+    targetPlayerId: string
+    nightNumber: number
+  }>[]
 }>
 
-export type PersistedSubmittedNightActionV1 = Readonly<{
+export type PersistedSubmittedNightActionV2 = Readonly<{
   actorPlayerId: string
   actorRoleInstanceId: string
   actorRoleId: string
@@ -83,7 +79,66 @@ export type PersistedSubmittedNightActionV1 = Readonly<{
   targetPlayerId: string
 }>
 
-export type PersistedNightResolutionV1 = Readonly<{
+type PersistedImmediateOutcomeBaseV2 = Readonly<{
+  actorPlayerId: string
+  actorRoleId: string
+  actorRoleInstanceId: string
+}>
+
+export type PersistedImmediateNightOutcomeV2 =
+  | (PersistedImmediateOutcomeBaseV2 & Readonly<{ kind: 'blocked' }>)
+  | (PersistedImmediateOutcomeBaseV2 &
+      Readonly<{ kind: 'action-recorded'; targetPlayerId: string }>)
+  | (PersistedImmediateOutcomeBaseV2 &
+      Readonly<{
+        kind: 'sheriff-result'
+        targetPlayerId: string
+        status: 'suspicious' | 'not-suspicious'
+      }>)
+  | (PersistedImmediateOutcomeBaseV2 &
+      Readonly<{
+        kind: 'investigation-result'
+        targetPlayerId: string
+        investigationRole: 'investigator' | 'consigliere'
+        groupId: string
+      }>)
+  | (PersistedImmediateOutcomeBaseV2 &
+      (
+        | Readonly<{
+            kind: 'detective-result'
+            targetPlayerId: string
+            status: 'visited-nobody'
+          }>
+        | Readonly<{
+            kind: 'detective-result'
+            targetPlayerId: string
+            status: 'visited-player'
+            visitedPlayerId: string
+          }>
+      ))
+
+export type PersistedSequentialNightStepV2 =
+  | Readonly<{
+      stepIndex: number
+      status: 'blocked'
+      actorPlayerId: string
+      actorRoleId: string
+      actorRoleInstanceId: string
+      outcome: PersistedImmediateNightOutcomeV2
+      acknowledged: boolean
+    }>
+  | Readonly<{
+      stepIndex: number
+      status: 'action-confirmed'
+      actorPlayerId: string
+      actorRoleId: string
+      actorRoleInstanceId: string
+      action: PersistedSubmittedNightActionV2
+      outcome: PersistedImmediateNightOutcomeV2
+      acknowledged: boolean
+    }>
+
+export type PersistedNightResolutionV2 = Readonly<{
   gameId: string
   nightNumber: number
   roleBlockAttempts: readonly Readonly<{
@@ -156,23 +211,20 @@ export type PersistedNightResolutionV1 = Readonly<{
         actorPlayerId: string
         actorRoleInstanceId: string
         targetPlayerId: string
-        status: 'visited-player'
-        visitedPlayerId: string
+        status: 'visited-nobody'
       }>
     | Readonly<{
         actorPlayerId: string
         actorRoleInstanceId: string
         targetPlayerId: string
-        status: 'visited-nobody'
+        status: 'visited-player'
+        visitedPlayerId: string
       }>
   )[]
 }>
 
-export type PersistedDawnAnnouncementV1 =
-  | Readonly<{
-      outcome: 'no-deaths'
-      nightNumber: number
-    }>
+export type PersistedDawnAnnouncementV2 =
+  | Readonly<{ outcome: 'no-deaths'; nightNumber: number }>
   | Readonly<{
       outcome: 'deaths'
       nightNumber: number
@@ -182,68 +234,66 @@ export type PersistedDawnAnnouncementV1 =
       }>[]
     }>
 
-export type PersistedAppSessionV1 =
+export type PersistedAppSessionV2 =
   | Readonly<{
       stage: 'setup'
       workflowStatus: 'editing' | 'ready'
-      draft: PersistedSetupDraftV1
+      draft: PersistedSetupDraftV2
     }>
   | Readonly<{
       stage: 'role-distribution'
       workflowStatus: 'distributing'
-      setup: PersistedValidatedSetupV1
-      game: PersistedGameV1
+      setup: PersistedValidatedSetupV2
+      game: PersistedGameV2
       deliveredPlayerIds: readonly string[]
     }>
   | Readonly<{
       stage: 'role-distribution'
       workflowStatus: 'confirmed'
-      setup: PersistedValidatedSetupV1
-      game: PersistedGameV1
+      setup: PersistedValidatedSetupV2
+      game: PersistedGameV2
     }>
   | Readonly<{
       stage: 'executioner-briefing'
       workflowStatus: 'briefing' | 'ready'
-      game: PersistedGameV1
-      participants: readonly PersistedPlayerV1[]
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
       currentBriefingIndex: number
       acknowledgedBriefingIds: readonly string[]
     }>
   | Readonly<{
-      stage: 'night-action'
-      workflowStatus: 'collecting' | 'reviewing' | 'complete'
-      game: PersistedGameV1
-      participants: readonly PersistedPlayerV1[]
-      submittedActions: readonly PersistedSubmittedNightActionV1[]
-      currentStepIndex: number | null
-      returnToReviewAfterActor: boolean
+      stage: 'sequential-night'
+      workflowStatus: 'collecting' | 'awaiting-outcome-acknowledgement' | 'outcome-acknowledged'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      currentStepIndex: number
+      completedSteps: readonly PersistedSequentialNightStepV2[]
+      currentOutcome: PersistedImmediateNightOutcomeV2 | null
     }>
   | Readonly<{
-      stage: 'night-presentation'
-      workflowStatus: 'private-results' | 'ready-for-dawn'
-      game: PersistedGameV1
-      participants: readonly PersistedPlayerV1[]
-      collectedActions: readonly PersistedSubmittedNightActionV1[]
-      resolution: PersistedNightResolutionV1
-      acknowledgedResultIds: readonly string[]
-      currentResultIndex: number | null
+      stage: 'night-resolution'
+      workflowStatus: 'ready-for-dawn'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      collectedActions: readonly PersistedSubmittedNightActionV2[]
+      resolution: PersistedNightResolutionV2
     }>
   | Readonly<{
       stage: 'dawn'
       workflowStatus: 'dawn'
-      game: PersistedGameV1
-      participants: readonly PersistedPlayerV1[]
-      dawnAnnouncement: PersistedDawnAnnouncementV1
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      dawnAnnouncement: PersistedDawnAnnouncementV2
     }>
 
-export type PersistedSessionEnvelopeV1 = Readonly<{
-  schemaVersion: 1
+export type PersistedSessionEnvelopeV2 = Readonly<{
+  schemaVersion: 2
   savedAt: string
-  session: PersistedAppSessionV1
+  session: PersistedAppSessionV2
 }>
 
-export type RestoredSessionEnvelopeV1 = Readonly<{
-  schemaVersion: 1
+export type RestoredSessionEnvelopeV2 = Readonly<{
+  schemaVersion: 2
   savedAt: string
   session: ActiveAppSession
 }>
@@ -254,29 +304,27 @@ export type SessionStageSummary = Readonly<{
     | 'Setup prepared'
     | 'Role distribution'
     | 'Role distribution confirmed'
-    | 'Executioner briefing'
-    | 'Night action collection'
-    | 'Night actions complete'
-    | 'Private results'
-    | 'Ready for Dawn'
+    | 'Private briefing'
+    | 'Night actions'
+    | 'Night resolution'
     | 'Dawn announcement'
   playerCount: number
   nightNumber: number | null
   dayNumber: number | null
 }>
 
-export function createPersistedSessionEnvelopeV1(
+export function createPersistedSessionEnvelopeV2(
   session: ActiveAppSession,
   savedAt: string,
-): PersistedSessionEnvelopeV1 {
+): PersistedSessionEnvelopeV2 {
   return deepFreeze({
     schemaVersion: PERSISTED_SESSION_SCHEMA_VERSION,
     savedAt,
-    session: toPersistedAppSessionV1(session),
+    session: toPersistedAppSessionV2(session),
   })
 }
 
-export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedAppSessionV1 {
+export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedAppSessionV2 {
   switch (session.stage) {
     case 'setup':
       return deepFreeze({
@@ -294,7 +342,6 @@ export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedApp
         },
         game: copyGame(session.workflow.game),
       }
-
       return session.workflow.status === 'distributing'
         ? deepFreeze({
             ...source,
@@ -312,38 +359,27 @@ export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedApp
         currentBriefingIndex: session.workflow.currentBriefingIndex,
         acknowledgedBriefingIds: [...session.workflow.acknowledgedBriefingIds],
       })
-    case 'night-action': {
-      const submittedActions =
-        session.workflow.status === 'complete'
-          ? session.workflow.collectedActions.actions
-          : session.workflow.submittedActions
+    case 'sequential-night':
       return deepFreeze({
-        stage: 'night-action',
+        stage: 'sequential-night',
         workflowStatus: session.workflow.status,
         game: copyGame(session.workflow.game),
         participants: session.workflow.participants.map(copyPlayer),
-        submittedActions: submittedActions.map(copyNightAction),
-        currentStepIndex:
-          session.workflow.status === 'collecting' ? session.workflow.currentStepIndex : null,
-        returnToReviewAfterActor:
-          session.workflow.status === 'collecting'
-            ? session.workflow.returnToReviewAfterActor
-            : false,
+        currentStepIndex: session.workflow.currentStepIndex,
+        completedSteps: session.workflow.completedSteps.map(copySequentialStep),
+        currentOutcome:
+          session.workflow.currentOutcome === null
+            ? null
+            : copyImmediateOutcome(session.workflow.currentOutcome),
       })
-    }
-    case 'night-presentation':
+    case 'night-resolution':
       return deepFreeze({
-        stage: 'night-presentation',
-        workflowStatus: session.workflow.status,
+        stage: 'night-resolution',
+        workflowStatus: 'ready-for-dawn',
         game: copyGame(session.workflow.game),
         participants: session.workflow.participants.map(copyPlayer),
         collectedActions: session.workflow.collectedActions.actions.map(copyNightAction),
-        resolution: toPersistedNightResolutionV1(session.workflow.resolution),
-        acknowledgedResultIds: [...session.workflow.acknowledgedResultIds],
-        currentResultIndex:
-          session.workflow.status === 'private-results'
-            ? session.workflow.currentResultIndex
-            : null,
+        resolution: toPersistedNightResolutionV2(session.workflow.resolution),
       })
     case 'dawn':
       return deepFreeze({
@@ -369,43 +405,40 @@ export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedApp
   }
 }
 
-export function toPersistedNightResolutionV1(
+export function toPersistedNightResolutionV2(
   resolution: NightResolution,
-): PersistedNightResolutionV1 {
+): PersistedNightResolutionV2 {
   return deepFreeze({
     gameId: resolution.gameId,
     nightNumber: resolution.nightNumber,
-    roleBlockAttempts: resolution.roleBlockAttempts.map((attempt) => ({ ...attempt })),
-    blockedActors: resolution.blockedActors.map((record) => ({
-      blockedPlayerId: record.blockedPlayerId,
-      blockedRoleInstanceId: record.blockedRoleInstanceId,
-      sources: record.sources.map((source) => ({ ...source })),
+    roleBlockAttempts: resolution.roleBlockAttempts.map((entry) => ({ ...entry })),
+    blockedActors: resolution.blockedActors.map((entry) => ({
+      ...entry,
+      sources: entry.sources.map((source) => ({ ...source })),
     })),
-    finalVisits: resolution.finalVisits.map((visit) => ({ ...visit })),
-    frames: resolution.frames.map((frame) => ({
-      framedPlayerId: frame.framedPlayerId,
-      sources: frame.sources.map((source) => ({ ...source })),
+    finalVisits: resolution.finalVisits.map((entry) => ({ ...entry })),
+    frames: resolution.frames.map((entry) => ({
+      ...entry,
+      sources: entry.sources.map((source) => ({ ...source })),
     })),
-    protections: resolution.protections.map((protection) => ({
-      protectedPlayerId: protection.protectedPlayerId,
-      sources: protection.sources.map((source) => ({ ...source })),
+    protections: resolution.protections.map((entry) => ({
+      ...entry,
+      sources: entry.sources.map((source) => ({ ...source })),
     })),
-    attackAttempts: resolution.attackAttempts.map((attack) => ({ ...attack })),
-    provisionalDeaths: resolution.provisionalDeaths.map((death) => ({
-      deadPlayerId: death.deadPlayerId,
-      actualRoleId: death.actualRoleId,
-      nightNumber: death.nightNumber,
-      sources: death.sources.map((source) => ({ ...source })),
+    attackAttempts: resolution.attackAttempts.map((entry) => ({ ...entry })),
+    provisionalDeaths: resolution.provisionalDeaths.map((entry) => ({
+      ...entry,
+      sources: entry.sources.map((source) => ({ ...source })),
     })),
-    sheriffResults: resolution.sheriffResults.map((result) => ({ ...result })),
-    investigationResults: resolution.investigationResults.map((result) => ({
-      actorPlayerId: result.actorPlayerId,
-      actorRoleId: result.actorRoleId,
-      actorRoleInstanceId: result.actorRoleInstanceId,
-      targetPlayerId: result.targetPlayerId,
-      groupId: result.group.id,
+    sheriffResults: resolution.sheriffResults.map((entry) => ({ ...entry })),
+    investigationResults: resolution.investigationResults.map((entry) => ({
+      actorPlayerId: entry.actorPlayerId,
+      actorRoleId: entry.actorRoleId,
+      actorRoleInstanceId: entry.actorRoleInstanceId,
+      targetPlayerId: entry.targetPlayerId,
+      groupId: entry.group.id,
     })),
-    detectiveResults: resolution.detectiveResults.map((result) => ({ ...result })),
+    detectiveResults: resolution.detectiveResults.map((entry) => ({ ...entry })),
   })
 }
 
@@ -430,24 +463,21 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
       })
     case 'executioner-briefing':
       return Object.freeze({
-        stage: 'Executioner briefing',
+        stage: 'Private briefing',
         playerCount: session.game.players.length,
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
       })
-    case 'night-action':
+    case 'sequential-night':
       return Object.freeze({
-        stage:
-          session.workflow.status === 'complete'
-            ? 'Night actions complete'
-            : 'Night action collection',
+        stage: 'Night actions',
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
       })
-    case 'night-presentation':
+    case 'night-resolution':
       return Object.freeze({
-        stage: session.workflow.status === 'ready-for-dawn' ? 'Ready for Dawn' : 'Private results',
+        stage: 'Night resolution',
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
@@ -462,7 +492,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
   }
 }
 
-function copySetupDraft(draft: GameSetupDraft): PersistedSetupDraftV1 {
+function copySetupDraft(draft: GameSetupDraft): PersistedSetupDraftV2 {
   return {
     roster: draft.roster.map(copyPlayer),
     roleCounts: draft.roleCounts.map(copyRoleCount),
@@ -480,27 +510,16 @@ function copyRoleCount(roleCount: RoleCount) {
 }
 
 function copySettings(settings: GameSettings): GameSettings {
-  return {
-    godfatherAndSerialCanKillEachOther: settings.godfatherAndSerialCanKillEachOther,
-    godfatherAppearsSuspiciousToSheriff: settings.godfatherAppearsSuspiciousToSheriff,
-    doctorCanSelfProtect: settings.doctorCanSelfProtect,
-    doctorCannotRepeatPreviousTarget: settings.doctorCannotRepeatPreviousTarget,
-    revealRoleOnDeath: settings.revealRoleOnDeath,
-    allowFirstNightKills: settings.allowFirstNightKills,
-  }
+  return { ...settings }
 }
 
-function copyGame(game: GameState): PersistedGameV1 {
+function copyGame(game: GameState): PersistedGameV2 {
   return {
     id: game.id,
     phase: game.phase,
     players: game.players.map((player) => ({
       playerId: player.playerId,
-      role: {
-        instanceId: player.role.instanceId,
-        roleId: player.role.roleId,
-        ordinal: player.role.ordinal,
-      },
+      role: { ...player.role },
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
       mayorRevealed: player.mayorRevealed,
@@ -515,16 +534,69 @@ function copyGame(game: GameState): PersistedGameV1 {
   }
 }
 
-function copyNightAction(
-  action: Readonly<{
-    actorPlayerId: PlayerId
-    actorRoleInstanceId: RoleInstanceId
-    actorRoleId: RoleId
-    actionKind: NightActionKind
-    targetPlayerId: PlayerId
-  }>,
-): PersistedSubmittedNightActionV1 {
+function copyNightAction(action: SubmittedNightAction): PersistedSubmittedNightActionV2 {
   return { ...action }
+}
+
+function copySequentialStep(record: SequentialNightStepRecord): PersistedSequentialNightStepV2 {
+  return record.status === 'blocked'
+    ? {
+        stepIndex: record.stepIndex,
+        status: record.status,
+        actorPlayerId: record.actorPlayerId,
+        actorRoleId: record.actorRoleId,
+        actorRoleInstanceId: record.actorRoleInstanceId,
+        outcome: copyImmediateOutcome(record.outcome),
+        acknowledged: record.acknowledged,
+      }
+    : {
+        stepIndex: record.stepIndex,
+        status: record.status,
+        actorPlayerId: record.actorPlayerId,
+        actorRoleId: record.actorRoleId,
+        actorRoleInstanceId: record.actorRoleInstanceId,
+        action: copyNightAction(record.action),
+        outcome: copyImmediateOutcome(record.outcome),
+        acknowledged: record.acknowledged,
+      }
+}
+
+function copyImmediateOutcome(outcome: ImmediateNightOutcome): PersistedImmediateNightOutcomeV2 {
+  switch (outcome.kind) {
+    case 'blocked':
+    case 'action-recorded':
+    case 'sheriff-result':
+      return { ...outcome }
+    case 'investigation-result':
+      return {
+        kind: outcome.kind,
+        actorPlayerId: outcome.actorPlayerId,
+        actorRoleId: outcome.actorRoleId,
+        actorRoleInstanceId: outcome.actorRoleInstanceId,
+        targetPlayerId: outcome.targetPlayerId,
+        investigationRole: outcome.investigationRole,
+        groupId: outcome.group.id,
+      }
+    case 'detective-result':
+      return outcome.result.status === 'visited-nobody'
+        ? {
+            kind: outcome.kind,
+            actorPlayerId: outcome.actorPlayerId,
+            actorRoleId: outcome.actorRoleId,
+            actorRoleInstanceId: outcome.actorRoleInstanceId,
+            targetPlayerId: outcome.targetPlayerId,
+            status: 'visited-nobody',
+          }
+        : {
+            kind: outcome.kind,
+            actorPlayerId: outcome.actorPlayerId,
+            actorRoleId: outcome.actorRoleId,
+            actorRoleInstanceId: outcome.actorRoleInstanceId,
+            targetPlayerId: outcome.targetPlayerId,
+            status: 'visited-player',
+            visitedPlayerId: outcome.result.visitedPlayerId,
+          }
+  }
 }
 
 function deepFreeze<Value>(value: Value): Value {
@@ -536,10 +608,8 @@ function freezeRecursively(value: unknown): void {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
     return
   }
-
   for (const child of Object.values(value)) {
     freezeRecursively(child)
   }
-
   Object.freeze(value)
 }

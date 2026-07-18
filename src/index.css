@@ -41,6 +41,9 @@
   --mafia: #8e2635;
   --town: #2c6179;
   --neutral: #78623a;
+  --faction-mafia-soft: #f9e8e9;
+  --faction-town-soft: #e9f4e9;
+  --faction-neutral-soft: #f3ecdf;
   --focus-ring: rgba(35, 105, 145, 0.45);
   --radius-small: 0.65rem;
   --radius-medium: 1rem;

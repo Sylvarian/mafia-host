@@ -6,6 +6,7 @@ import type {
   RoleBlockAttempt,
   RoleBlockSource,
 } from './night-resolution-models.ts'
+import { selectBlockedRoleInstanceIds } from './role-block-status.ts'
 import { freezeResolutionSources } from './resolution-sources.ts'
 
 export type RoleBlockResolution = Readonly<{
@@ -77,4 +78,12 @@ export function selectEffectiveActions(
   return Object.freeze(
     orderedActions.filter((action) => !blockedRoleInstanceIds.has(action.actorRoleInstanceId)),
   )
+}
+
+export function isActorBlockedByConfirmedConsortActions(
+  game: GameState,
+  actorRoleInstanceId: SubmittedNightAction['actorRoleInstanceId'],
+  confirmedActions: readonly SubmittedNightAction[],
+): boolean {
+  return selectBlockedRoleInstanceIds(game, confirmedActions).has(actorRoleInstanceId)
 }

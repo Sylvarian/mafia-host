@@ -11,30 +11,34 @@ export type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 export { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 
 export {
+  acknowledgeImmediateNightOutcome,
   beginFirstNight,
-  createNightActionCollectionForStartedNight,
+  confirmNightActionTarget,
   continueNightActionCollection,
+  createNightActionCollectionForStartedNight,
   createNightActionCollectionWorkflow,
-  editNightAction,
-  finaliseNightActionCollection,
-  previousNightActionCollection,
   selectDoctorPreviousTargetsForNight,
-  selectNightActionTarget,
 } from './night-action-workflow.ts'
 export type {
   ActiveNightActionCollectionWorkflow,
+  AcknowledgedNightOutcomeWorkflow,
+  AwaitingNightOutcomeWorkflow,
   CollectingNightActionsWorkflow,
   CompleteNightActionsWorkflow,
+  ImmediateNightOutcome,
   NightActionCollectionError,
   NightActionCollectionWorkflow,
-  ReviewingNightActionsWorkflow,
+  SequentialNightStepRecord,
 } from './night-action-workflow.ts'
-export { selectCurrentNightStepView, selectNightActionReview } from './night-action-selectors.ts'
+export {
+  selectCurrentNightStepView,
+  selectImmediateNightOutcomeView,
+} from './night-action-selectors.ts'
 export type {
   CurrentNightStepView,
+  ImmediateNightOutcomeView,
   MafiaOverviewMember,
-  NightActionReviewRow,
   NightTargetOption,
 } from './night-action-selectors.ts'
-export { buildNightActionSequence, orderNightActionsBySequence } from './night-sequence.ts'
+export { buildNightActionSequence } from './night-sequence.ts'
 export type { NightSequenceError, NightSequenceStep } from './night-sequence.ts'

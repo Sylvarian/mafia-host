@@ -3,89 +3,61 @@
 [AGENTS.md](../../AGENTS.md) is the architecture authority. This directory coordinates domain
 operations through focused use cases and external-adapter contracts.
 
-`game-setup` owns the single Phase 2 pre-game draft, immutable roster and role-count operations,
-derived counts, structured validation, and the editing/ready workflow. A validated setup contains
-participating players, role counts, and settings only.
+`game-setup` owns the immutable roster, role counts, settings, structured validation, and
+editing/ready workflow. `role-assignment` expands and shuffles role instances, assigns stable
+ordinals, and owns unassigned/distributing/confirmed card delivery. Reassignment creates fresh
+identities. Phase 7A.1 adds one pure, idempotent bulk-delivery operation that marks only
+participating cards, retains individual undo, consumes no randomness, and does not finalize
+distribution.
 
-`role-assignment` consumes that exact validated value. It expands and shuffles role instances,
-assigns them in participating-player order, invokes the domain ordinal rule and active-game
-invariants, and owns the unassigned/distributing/confirmed card workflow. Reassignment creates
-fresh identities and clears delivery marks without mutating the previous game. Expected failures
-remain structured until the feature boundary.
+`executioner-briefing` owns the Phase 7A private workflow. It rebuilds minimal briefing records from
+canonical Executioner target relationships, orders duplicate Executioners by ordinal and roster
+order, and owns bounded navigation and acknowledgement. Names and duplicate labels are selector
+output; target roles and display prose are not authority.
 
-The setup owns all six settings. `godfatherAppearsSuspiciousToSheriff` has the authoritative default
-`true`; the other five current form defaults are `false`. Validation copies every selected boolean
-without treating missing values as disabled.
+`night-actions` owns the Phase 7A.1 sequential-night authority. Its canonical order is Mafia
+overview, Consorts, Framers, Godfathers, Serial Killers, Doctors, Sheriffs, Investigators,
+Consiglieres, and Detectives. Duplicate copies use role-instance ordinal and roster order.
+First-night-disabled killers have no step.
 
-`executioner-briefing` owns the focused Phase 7A private workflow. It reconstructs minimal briefing
-records from authoritative target relationships, orders duplicate Executioners by ordinal and
-participating roster order, creates deterministic collision-safe tuple IDs, and owns bounded
-navigation, prefix acknowledgement evidence, readiness, and completion. Names and duplicate-name
-labels are selector output; target roles, full assignments, and display prose are not briefing
-authority.
+Confirmed Consort actions determine later blocked steps. Every immutable actor record is either one
+validated action plus a narrow immediate outcome, or an explicit blocked outcome with no action.
+Immediate outcomes are limited to blocked, action recorded, Sheriff, permanent investigation group,
+and Detective. Acknowledgement removes the current private outcome; explicit continuation seals the
+step. Earlier actors cannot be edited. Final continuation constructs one domain-validated
+`CollectedNightActions` batch.
 
-`night-actions` owns the explicit `beginFirstNight` use case, deterministic living-role wake
-sequence, per-role-instance previous-target context, one authoritative submitted-action list,
-bounded navigation, correction, review, and finalisation. It uses the generic Phase 1 reducer only
-inside the begin-night use case; features never dispatch `ADVANCE_PHASE`. Participant names are an
-immutable presentation snapshot from confirmed setup, while `GameState` remains authoritative for
-phase, assignments, alive state, settings, and counters. Finalisation produces a domain-validated
-batch and deliberately leaves the game in `night-action-collection`. The sequence and batch share
-the domain collection-eligibility rule that omits Godfather and Serial Killer actors from a disabled
-first night while retaining all living Mafia in the private overview.
+The same shared domain functions resolve frames, Sheriff policy, investigation groups, blocks,
+visits, and Detective tracking for immediate and final results. Detective actions never enter the
+trackable visit ledger. Selectors provide sanitized actor, target, and immediate-outcome views;
+target rows contain only the display label, role, faction, alive/availability state, and structured
+disabled reason needed by the host UI.
 
-`night-resolution` owns one narrow Phase 5 operation over a completed Phase 4 workflow. It passes
-the authoritative game, canonical batch, and Doctor previous-target context through domain
-revalidation, then returns structured success or failure. It keeps no global resolution cache and
-does not dispatch a command, apply deaths, advance the phase, or introduce presentation state, so
-identical calls are deterministic and idempotent.
+`night-resolution` remains the narrow deterministic operation over a complete workflow.
+`night-completion` replaces the removed end-of-night private-result presentation slice. It enters
+`night-resolution` with deaths still provisional, then owns the deliberate prepare-Dawn operation.
+Dawn applies the retained batch and resolution exactly once and drops all private
+action/resolution material. It never advances to day discussion or evaluates a winner.
 
-`night-presentation` owns Phase 6 coordination. Its explicit resolve operation consumes only a
-completed Phase 4 workflow, derives the Phase 5 resolution, revalidates it against the same completed
-batch before entering `night-resolution`, constructs the deterministic player-facing investigative
-result queue, and owns immutable acknowledgement and bounded navigation state. Private results are
-ordered by canonical physical role order and stable role-instance identity, never by source-array
-insertion order or player name. The prepare-Dawn operation is unavailable until every result is
-acknowledged, revalidates and applies the retained batch and resolution once through the domain, then
-drops all private resolution/action data from the completed Dawn workflow. It never advances to day
-discussion or evaluates a winner.
+`session-persistence` owns the cross-phase `ActiveAppSession`. Exactly one setup, distribution,
+Executioner-briefing, sequential-night, night-resolution, or Dawn workflow is authoritative.
+Completing the sequential workflow atomically creates final night resolution; preparing Dawn
+atomically creates the public-only Dawn session.
 
-`session-persistence` owns the cross-phase `ActiveAppSession` discriminated union. Exactly one
-setup, distribution, Executioner-briefing, night-action, night-presentation, or Dawn workflow is
-authoritative at a time, so a started session contains one `GameState` and no stale game from an
-earlier stage. Pure
-application operations wrap the existing focused workflows and make every stage transition
-explicit.
+The slice defines schema V2, envelope validation, stage-specific restoration, canonical
+reconstruction, deep freezing, public-safe summaries, and narrow V1 migration. V2 persists
+canonical sequential records, current immediate outcome and acknowledgement state, and the final
+night-resolution boundary. It does not persist sequence arrays, derived labels/descriptions,
+display prose, colors, focus, dialogs, unconfirmed targets, operation guards, or an old
+private-result queue.
 
-Final distribution confirmation now atomically confirms delivery, assigns all Executioner targets
-through the domain operation, and enters either `executioner-briefing` or `night-action`. Failure
-returns the original distributing session unchanged. Completing every briefing atomically marks
-the domain briefing complete and constructs Night 1 action collection. Randomness is supplied only
-to final distribution and is never used during render, workflow navigation, or restoration.
+Restoration replays deterministic pure transitions, rebuilds registry and sequence data,
+cross-checks stored outcomes against canonical mechanics, rejects extra fields, and consumes no
+randomness. Safe V1 setup, distribution, Executioner briefing, and valid first-Dawn saves migrate
+to V2. Old in-progress night-action and private-result-replay saves fail closed because revealed
+information cannot be reconstructed without guessing. No generic migration framework exists.
 
-The same slice defines the schema-version-1 serialisable model, timestamp/envelope validation,
-stage-specific runtime restoration, canonical reconstruction, deep freezing, and public-safe
-session summaries. Derived sequence steps, progress, role descriptions, result-card text, and Dawn
-prose are rebuilt rather than trusted. Private-presentation saves retain the structured resolution
-only until Dawn; Dawn persistence has no field for the completed action batch, full resolution,
-private queue, or acknowledgements. The `GameSessionStore` and `SessionClock` contracts contain no
-browser implementation.
-
-Phase 7A is an explicit compatible V1 extension. Current game saves require
-`neutralStateVersion: 1`, `executionerTargets`, and `executionerBriefingStatus` together. Exact
-legacy Phase 6.5 game-player records with null player-level target and personal-win fields remain
-restorable; current records must omit those obsolete fields. Briefing saves persist only
-participants, game targets, status, current index, and acknowledgement IDs. Restoration
-canonicalizes target order, rebuilds briefing records, and rejects forged records, IDs, readiness,
-stage/phase mismatches, or an unbriefed later-phase Executioner.
-
-The V1 Dawn restorer is intentionally limited to recovery through the current first-Dawn product
-boundary: it requires the structured announcement to cover every dead player. Before later-day or
-later-night recovery exists, the persisted session contract must distinguish newly announced Dawn
-deaths from earlier deaths, pending Jester revenge, permanent Jester and Executioner personal wins,
-Executioner conversions, and current from historical public announcements.
-
-The first-Dawn representation cannot be reused unchanged because it could announce earlier deaths
-again. The later multi-day phase must deliberately update the contract, either with a new schema
-version or another explicit compatible V1 extension whose validation remains unambiguous. No
-generic migration system exists.
+The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. V2 Dawn
+recovery remains intentionally limited to the first-Dawn product boundary. Phase 7E must
+deliberately distinguish current from historical deaths and announcements before later nights are
+added.
