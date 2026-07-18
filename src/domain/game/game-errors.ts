@@ -1,6 +1,7 @@
 import type { PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
 import type { InvalidGameSettingError } from './game-settings.ts'
+import type { ExecutionerTargetInvariantError } from '../executioner/executioner-target-errors.ts'
 
 export type InvalidPhaseTransitionError = Readonly<{
   type: 'INVALID_PHASE_TRANSITION'
@@ -63,7 +64,7 @@ export type NonParticipatingPlayerError = Readonly<{
 export type UnknownPlayerReferenceError = Readonly<{
   type: 'UNKNOWN_PLAYER_REFERENCE'
   playerId: PlayerId
-  reference: 'game-player' | 'executioner-target'
+  reference: 'game-player'
 }>
 
 export type UnknownRoleReferenceError = Readonly<{
@@ -103,6 +104,11 @@ export type InvalidGameStateError = Readonly<{
       }>
     | Readonly<{
         type: 'INVALID_PLAYER_ALIVE_STATE'
+        playerId: PlayerId
+        value: unknown
+      }>
+    | Readonly<{
+        type: 'INVALID_MAYOR_REVEALED_STATE'
         playerId: PlayerId
         value: unknown
       }>
@@ -169,6 +175,7 @@ export type GameInvariantError =
   | UnknownRoleReferenceError
   | InvalidPublicRoleRevealError
   | DoctorPreviousTargetInvariantError
+  | ExecutionerTargetInvariantError
   | InvalidGameStateError
 
 export type CreateGameError =

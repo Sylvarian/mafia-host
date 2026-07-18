@@ -33,7 +33,8 @@ export function handleGameCommand(
     toPhase: phaseResult.value,
   }
 
-  return succeed({ state: applyAcceptedPhaseEvent(stateResult.value, event), event })
+  const nextStateResult = validateGameState(applyAcceptedPhaseEvent(stateResult.value, event))
+  return nextStateResult.ok ? succeed({ state: nextStateResult.value, event }) : nextStateResult
 }
 
 export function applyGameEvent(
@@ -60,7 +61,7 @@ export function applyGameEvent(
     return phaseResult
   }
 
-  return succeed(applyAcceptedPhaseEvent(stateResult.value, event))
+  return validateGameState(applyAcceptedPhaseEvent(stateResult.value, event))
 }
 
 function applyAcceptedPhaseEvent(state: GameState, event: GameEvent): GameState {
@@ -68,11 +69,20 @@ function applyAcceptedPhaseEvent(state: GameState, event: GameEvent): GameState 
     event.toPhase === 'executioner-briefing' ||
     (event.toPhase === 'night-action-collection' && event.fromPhase !== 'executioner-briefing')
   const startsDay = event.fromPhase === 'dawn-announcement' && event.toPhase === 'day-discussion'
+  const executionerBriefingStatus =
+    event.toPhase === 'executioner-briefing'
+      ? 'pending'
+      : event.fromPhase === 'executioner-briefing' && event.toPhase === 'night-action-collection'
+        ? 'completed'
+        : event.fromPhase === 'role-distribution' && event.toPhase === 'night-action-collection'
+          ? 'not-required'
+          : state.executionerBriefingStatus
 
   return {
     ...state,
     phase: event.toPhase,
     nightNumber: state.nightNumber + (startsNight ? 1 : 0),
     dayNumber: state.dayNumber + (startsDay ? 1 : 0),
+    executionerBriefingStatus,
   }
 }

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { gameId, playerId, roleId, roleInstanceId } from '../identifiers.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
+import { ROLE_IDS } from '../roles/role-registry.ts'
+import {
+  completeExecutionerBriefingPhase,
+  finalizeRoleDistributionForFirstNight,
+} from '../executioner/executioner-target.ts'
 import type { GameEvent } from './game-event.ts'
 import { createGame } from './game-invariants.ts'
 import { applyGameEvent, handleGameCommand } from './game-reducer.ts'
@@ -24,8 +29,6 @@ function createTestGame(): GameState {
         alive: true,
         publiclyRevealedRoleId: null,
         mayorRevealed: false,
-        executionerTargetId: null,
-        personalWin: null,
       },
     ],
     roleDefinitions: [{ id: participatingRoleId, name: 'Citizen', faction: 'town' }],
@@ -41,6 +44,60 @@ function createTestGame(): GameState {
 
   if (!result.ok) {
     throw new Error('Expected the test game to be valid.')
+  }
+
+  return result.value
+}
+
+function createExecutionerTestGame(): GameState {
+  const executionerPlayerId = playerId('executioner-player')
+  const townPlayerId = playerId('town-player')
+  const result = createGame({
+    id: gameId('executioner-game'),
+    roster: [
+      { id: executionerPlayerId, name: 'Executioner', playing: true },
+      { id: townPlayerId, name: 'Town', playing: true },
+    ],
+    players: [
+      {
+        playerId: executionerPlayerId,
+        role: {
+          instanceId: roleInstanceId('executioner-role'),
+          roleId: ROLE_IDS.executioner,
+          ordinal: null,
+        },
+        alive: true,
+        publiclyRevealedRoleId: null,
+        mayorRevealed: false,
+      },
+      {
+        playerId: townPlayerId,
+        role: {
+          instanceId: roleInstanceId('citizen-role'),
+          roleId: ROLE_IDS.citizen,
+          ordinal: null,
+        },
+        alive: true,
+        publiclyRevealedRoleId: null,
+        mayorRevealed: false,
+      },
+    ],
+    roleDefinitions: [
+      { id: ROLE_IDS.executioner, name: 'Executioner', faction: 'neutral' },
+      { id: ROLE_IDS.citizen, name: 'Citizen', faction: 'town' },
+    ],
+    settings: {
+      godfatherAndSerialCanKillEachOther: false,
+      godfatherAppearsSuspiciousToSheriff: true,
+      doctorCanSelfProtect: false,
+      doctorCannotRepeatPreviousTarget: false,
+      revealRoleOnDeath: false,
+      allowFirstNightKills: false,
+    },
+  })
+
+  if (!result.ok) {
+    throw new Error('Expected the Executioner test game to be valid.')
   }
 
   return result.value
@@ -67,20 +124,8 @@ const counterTransitionCases = [
   { fromPhase: 'setup', toPhase: 'role-distribution', nightDelta: 0, dayDelta: 0 },
   {
     fromPhase: 'role-distribution',
-    toPhase: 'executioner-briefing',
-    nightDelta: 1,
-    dayDelta: 0,
-  },
-  {
-    fromPhase: 'role-distribution',
     toPhase: 'night-action-collection',
     nightDelta: 1,
-    dayDelta: 0,
-  },
-  {
-    fromPhase: 'executioner-briefing',
-    toPhase: 'night-action-collection',
-    nightDelta: 0,
     dayDelta: 0,
   },
   {
@@ -205,6 +250,12 @@ describe('game reducer', () => {
         phase: transition.fromPhase,
         nightNumber: startingNight,
         dayNumber: startingDay,
+        executionerBriefingStatus:
+          transition.fromPhase === 'roster' ||
+          transition.fromPhase === 'setup' ||
+          transition.fromPhase === 'role-distribution'
+            ? 'not-started'
+            : 'not-required',
       }
       const result = applyGameEvent(state, {
         type: 'PHASE_ADVANCED',
@@ -266,26 +317,40 @@ describe('game reducer', () => {
   })
 
   it('counts the first night once when Executioner briefing is included', () => {
-    const briefingResult = handleGameCommand(createTestGame(), {
-      type: 'ADVANCE_PHASE',
-      targetPhase: 'executioner-briefing',
-    })
+    const briefingResult = finalizeRoleDistributionForFirstNight(
+      createExecutionerTestGame(),
+      true,
+      { next: () => 0 },
+    )
 
     if (!briefingResult.ok) {
       throw new Error('Expected Executioner briefing to begin the first night.')
     }
 
-    const collectionResult = handleGameCommand(briefingResult.value.state, {
-      type: 'ADVANCE_PHASE',
-      targetPhase: 'night-action-collection',
-    })
+    const collectionResult = completeExecutionerBriefingPhase(briefingResult.value)
 
     expect(collectionResult.ok).toBe(true)
     if (!collectionResult.ok) {
       throw new Error('Expected night action collection after Executioner briefing.')
     }
 
-    expect(collectionResult.value.state.nightNumber).toBe(1)
+    expect(collectionResult.value.nightNumber).toBe(1)
+    expect(collectionResult.value.dayNumber).toBe(0)
+  })
+
+  it('cannot use the generic phase command to bypass Executioner target assignment and briefing', () => {
+    const result = handleGameCommand(createExecutionerTestGame(), {
+      type: 'ADVANCE_PHASE',
+      targetPhase: 'night-action-collection',
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        type: 'EXECUTIONER_BRIEFING_STATUS_MISMATCH',
+        status: 'not-required',
+      },
+    })
   })
 
   it('rejects an event whose recorded source phase does not match state', () => {

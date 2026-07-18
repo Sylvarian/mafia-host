@@ -47,7 +47,7 @@ describe('night resolution application', () => {
       fixture.game.players.map((player) => player.role),
     )
     expect(applied.value.game.players[2]?.mayorRevealed).toBe(false)
-    expect(applied.value.game.players.every((player) => player.personalWin === null)).toBe(true)
+    expect(applied.value.game).not.toHaveProperty('personalWins')
     expect(applied.value.game).not.toHaveProperty('factionWinner')
     expect(JSON.stringify(fixture.game)).toBe(originalGame)
     expect(JSON.stringify(resolution)).toBe(originalResolution)

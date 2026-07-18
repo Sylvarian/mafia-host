@@ -34,3 +34,12 @@ recovery screens, local save status, host-facing persistence messages, and focus
 dialogs. Resume summaries contain only stage, counters, player count, and save time. Secret data is
 not rendered until the host continues. Dialog openness, operation guards, errors, and focus remain
 transient and are not persisted.
+
+Phase 7A adds `executioner-briefing`, a dedicated host-only privacy screen. It renders exactly one
+application-owned briefing, exposes the Executioner identity and target player name but never the
+target role, distinguishes duplicate names and Executioner ordinals, moves focus with the current
+briefing, and shows acknowledgement progress. Night 1 remains disabled until all briefings are
+acknowledged and a deliberate Escape-cancellable confirmation is accepted. Dialog state, focus,
+and repeated-operation guards stay local; targets, acknowledgement evidence, and cross-phase
+authority stay in domain/application state. The slice imports no night-runner or private-result
+feature internals.

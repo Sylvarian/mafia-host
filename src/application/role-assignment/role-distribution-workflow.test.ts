@@ -150,6 +150,8 @@ describe('role-distribution workflow', () => {
     expect(reassigned.value.game).not.toBe(delivered.game)
     expect(reassigned.value.game.id).not.toBe(delivered.game.id)
     expect(reassigned.value.deliveredPlayerIds).toEqual([])
+    expect(reassigned.value.game.executionerTargets).toEqual([])
+    expect(reassigned.value.game.executionerBriefingStatus).toBe('not-started')
     expect(reassigned.value.game.settings).toEqual(delivered.game.settings)
     expect(reassigned.value.game.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
     expect(reassigned.value.game.players.map((player) => player.role.roleId)).not.toEqual(

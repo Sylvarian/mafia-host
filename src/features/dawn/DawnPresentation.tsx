@@ -86,7 +86,7 @@ export function DawnPresentation({
         )}
         <div className="dawn-public__boundary">
           <strong>Dawn complete</strong>
-          <span>Day discussion will be added in Phase 7.</span>
+          <span>Day discussion will be added in Phase 7B.</span>
         </div>
       </section>
     )

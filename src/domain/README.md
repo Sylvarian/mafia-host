@@ -33,5 +33,14 @@ per-role-instance uniqueness, participating-player ordering, and immutable canon
 night-application boundary explicitly enters `night-resolution`, revalidates the resolution against
 the completed action batch, applies provisional deaths and configured public role reveals once,
 records every acting Doctor's submitted target even if blocked or killed, builds a public-safe Dawn
-model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, Executioner
-fields, and personal-win state and performs no neutral or faction outcome calculation.
+model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, and
+Executioner targets and performs no neutral or faction outcome calculation.
+
+Phase 7A adds an explicit immutable `ExecutionerTarget` relationship keyed by game, Executioner
+player, Executioner role instance, and target player. Final distribution uses the injected
+`RandomSource` once per Executioner against the full participating Town list in canonical roster
+order. Runtime invariants reject pre-finalization targets, missing or duplicate owners, mismatched
+role instances, cross-game records, unknown identities, non-Town targets, non-canonical ordering,
+and later phases whose briefing status is incomplete. Target selection and briefing completion
+preserve role assignments, settings, counters, and target identities. No personal win, role
+conversion, Jester revenge, victory, or later-night behavior exists in this phase.

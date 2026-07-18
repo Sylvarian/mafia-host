@@ -1,7 +1,7 @@
 import type { GameSettings } from '@/domain/game/game-settings.ts'
+import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId, RoleId, RoleInstanceId } from '@/domain/identifiers.ts'
 import type { NightActionKind } from '@/domain/night-actions/night-action-kind.ts'
-import type { PersonalWinKind } from '@/domain/game/game-records.ts'
 import type {
   AttackOutcome,
   NightResolution,
@@ -49,8 +49,6 @@ export type PersistedGamePlayerV1 = Readonly<{
   alive: boolean
   publiclyRevealedRoleId: string | null
   mayorRevealed: boolean
-  executionerTargetId: string | null
-  personalWin: PersonalWinKind | null
 }>
 
 export type PersistedDoctorPreviousTargetV1 = Readonly<{
@@ -63,6 +61,14 @@ export type PersistedGameV1 = Readonly<{
   id: string
   phase: string
   players: readonly PersistedGamePlayerV1[]
+  neutralStateVersion: 1
+  executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
+  executionerTargets: readonly Readonly<{
+    gameId: string
+    executionerPlayerId: string
+    executionerRoleInstanceId: string
+    targetPlayerId: string
+  }>[]
   settings: GameSettings
   nightNumber: number
   dayNumber: number
@@ -196,6 +202,14 @@ export type PersistedAppSessionV1 =
       game: PersistedGameV1
     }>
   | Readonly<{
+      stage: 'executioner-briefing'
+      workflowStatus: 'briefing' | 'ready'
+      game: PersistedGameV1
+      participants: readonly PersistedPlayerV1[]
+      currentBriefingIndex: number
+      acknowledgedBriefingIds: readonly string[]
+    }>
+  | Readonly<{
       stage: 'night-action'
       workflowStatus: 'collecting' | 'reviewing' | 'complete'
       game: PersistedGameV1
@@ -240,6 +254,7 @@ export type SessionStageSummary = Readonly<{
     | 'Setup prepared'
     | 'Role distribution'
     | 'Role distribution confirmed'
+    | 'Executioner briefing'
     | 'Night action collection'
     | 'Night actions complete'
     | 'Private results'
@@ -288,6 +303,15 @@ export function toPersistedAppSessionV1(session: ActiveAppSession): PersistedApp
           })
         : deepFreeze({ ...source, workflowStatus: 'confirmed' as const })
     }
+    case 'executioner-briefing':
+      return deepFreeze({
+        stage: 'executioner-briefing',
+        workflowStatus: session.workflow.status,
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+        currentBriefingIndex: session.workflow.currentBriefingIndex,
+        acknowledgedBriefingIds: [...session.workflow.acknowledgedBriefingIds],
+      })
     case 'night-action': {
       const submittedActions =
         session.workflow.status === 'complete'
@@ -404,6 +428,13 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         nightNumber: null,
         dayNumber: null,
       })
+    case 'executioner-briefing':
+      return Object.freeze({
+        stage: 'Executioner briefing',
+        playerCount: session.game.players.length,
+        nightNumber: session.game.nightNumber,
+        dayNumber: session.game.dayNumber,
+      })
     case 'night-action':
       return Object.freeze({
         stage:
@@ -459,7 +490,7 @@ function copySettings(settings: GameSettings): GameSettings {
   }
 }
 
-function copyGame(game: ActiveGame): PersistedGameV1 {
+function copyGame(game: GameState): PersistedGameV1 {
   return {
     id: game.id,
     phase: game.phase,
@@ -473,9 +504,10 @@ function copyGame(game: ActiveGame): PersistedGameV1 {
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
       mayorRevealed: player.mayorRevealed,
-      executionerTargetId: player.executionerTargetId,
-      personalWin: player.personalWin,
     })),
+    neutralStateVersion: 1,
+    executionerBriefingStatus: game.executionerBriefingStatus,
+    executionerTargets: game.executionerTargets.map((target) => ({ ...target })),
     settings: copySettings(game.settings),
     nightNumber: game.nightNumber,
     dayNumber: game.dayNumber,
@@ -494,8 +526,6 @@ function copyNightAction(
 ): PersistedSubmittedNightActionV1 {
   return { ...action }
 }
-
-type ActiveGame = Exclude<ActiveAppSession, Readonly<{ stage: 'setup' }>>['workflow']['game']
 
 function deepFreeze<Value>(value: Value): Value {
   freezeRecursively(value)

@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save implemented in Phase 6.5<br>
+**Persistence:** One versioned local active-session save implemented in Phase 6.5 and compatibly extended in Phase 7A<br>
 **Backend:** None
 
 ---
@@ -214,8 +214,8 @@ Randomly assign selected fixed roles to participating players.
 - Shuffle using injected random source.
 - Assign one role instance per participating player.
 - Assign duplicate ordinals.
-- Leave Executioner target assignment for its finalized prerequisite phase; do not hide an
-  incomplete assignment path behind a feature flag.
+- Leave Executioner targets absent during initial assignment and reassignment; Phase 7A assigns
+  them only after final physical distribution confirmation.
 - Build host-only assignment screen.
 - Add “Card given” confirmation per player.
 - Require all cards confirmed before Enter Night is enabled.
@@ -257,8 +257,9 @@ Create generic role-action metadata:
 
 Build `features/night-runner`:
 
-- Keep first-night entry explicitly blocked for a living Executioner with no assigned target; do
-  not add a fake or skipped briefing.
+- Defensively reject a later-phase game whose Executioner target is missing. Phase 7A supplies a
+  target-complete game only after the dedicated briefing, so valid Executioner games are no longer
+  blocked.
 - Mafia group overview
 - Godfather action
 - Framer action
@@ -436,7 +437,8 @@ For Investigator/Consigliere:
 
 - Host can conduct all private result reveals without consulting handwritten notes.
 - The active game finishes in `dawn-announcement`.
-- Phase 7 controls, neutral effects, and victory evaluation are not started.
+- Day controls, neutral outcomes beyond target assignment/briefing, and victory evaluation remain
+  outside Phase 6 and are still not implemented.
 
 ---
 
@@ -463,6 +465,16 @@ refresh, tab/browser restart, or return to the deployed GitHub Pages site.
 - Discard action, resolution, private-result, and acknowledgement material from Dawn saves.
 - Document unencrypted local privacy, one-tab operation, and the lack of backend/cloud sync.
 
+Phase 7A extends this same V1 contract unambiguously:
+
+- New game saves require `neutralStateVersion: 1`, canonical Executioner targets, and briefing
+  status together.
+- Exact deployed Phase 6.5 game-player shapes remain accepted as legacy V1.
+- A stage-specific Executioner briefing save retains current index and canonical acknowledgement
+  IDs, then rebuilds briefing records during restoration.
+- Partially upgraded payloads, forged targets, forged acknowledgements, and unbriefed later-phase
+  Executioners are rejected.
+
 ### Current V1 boundary
 
 V1 recovery is implemented through the first Dawn only. The current Dawn representation requires
@@ -475,7 +487,7 @@ Before later-day or later-night persistence is implemented, the session contract
 - Players who died on earlier nights or days.
 - Pending Jester revenge obligations.
 - Permanent Jester and Executioner personal wins.
-- Executioner targets and conversions.
+- Executioner conversions.
 - Current versus historical public announcements.
 
 The Phase 7 delivery sequence must update the persisted contract deliberately. It may introduce a
@@ -499,13 +511,14 @@ No migration system currently exists.
 - Invalid and unsupported saves never become authoritative or disappear automatically.
 - First-Dawn persistence contains only its active game, participants, and structured current public
   announcement.
-- The app remains a static Vite/GitHub Pages application with no backend or Phase 7 behavior.
+- The app remains a static Vite/GitHub Pages application with no backend or post-7A behavior.
 
 ---
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Planned; not started. R-006 through R-012 and the Mayor rules are finalized.**
+**Status: Phase 7A implemented; Phase 7B and later are planned. R-006 through R-012 and the Mayor
+rules are finalized.**
 
 ### Goal
 
@@ -534,6 +547,9 @@ a state the next subphase cannot resolve safely.
 
 ### Phase 7A — Neutral foundations and Executioner briefing
 
+**Status: Implemented for target eligibility, assignment, private briefing, and compatible V1
+recovery only.**
+
 #### Work
 
 - Assign each Executioner one participating Town target using the injected random source before
@@ -542,13 +558,14 @@ a state the next subphase cannot resolve safely.
 - Add the private per-Executioner briefing and deliberate host acknowledgement.
 - Replace a missing target with explicit validation failure; do not retain a permanent block once
   assignment exists.
-- Model durable personal-win records per player and stable role instance, not one global
-  neutral-win flag.
-- Model Executioner-to-Jester conversion after any non-execution target death without reviving the
-  Executioner or retaining the old target.
-- Model pending Jester revenge as an explicit obligation without selecting its future victim.
-- Preserve duplicate role-instance identity and ordinals through independent wins and conversions.
+- Add the explicit Executioner-briefing application session stage and atomically construct Night 1
+  only after all briefings are acknowledged.
+- Extend V1 persistence with explicit current/legacy shape discrimination, canonical target
+  restoration, acknowledgement evidence, and a public-safe resume summary.
+- Preserve duplicate role-instance identity and ordinals through independent target relationships.
 - Do not introduce a generic effect engine.
+- Do not add personal wins, role conversion, Jester revenge, victory, day controls, or later-night
+  behavior.
 
 #### Tests
 
@@ -557,15 +574,17 @@ a state the next subphase cannot resolve safely.
 - Injected randomness makes assignment deterministic in tests.
 - Multiple Executioners may share one target and retain independent assignments.
 - Briefing follows assignment and covers every Executioner instance.
-- Multiple affected Executioners convert independently after one non-execution target death.
-- Conversion preserves the player's alive/dead state, clears the target, and grants no retroactive
-  Jester win.
+- Target assignment runs once after final distribution and never during render or restoration.
+- Briefing navigation, acknowledgement, completion, privacy, persistence, and malformed-state
+  rejection are covered directly.
+- Phase 7A never creates a personal win, conversion, or revenge obligation.
 
 #### Acceptance criteria
 
 - Games containing an Executioner can pass a complete, private target briefing.
-- The domain can represent independent permanent wins, conversions, and pending revenge before day
-  controls are exposed.
+- Games without an Executioner skip the empty briefing and enter Night 1.
+- Exact targets and briefing progress survive refresh behind the public-safe recovery gate.
+- The domain retains only the narrow target state needed by this phase.
 
 ### Phase 7B — Day controls and Mayor reveal
 
@@ -895,9 +914,9 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 6.5 are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7A are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
-When Phase 7 is explicitly requested, begin with Phase 7A. Do not start later subphases
-automatically, do not add app-managed voting, and do not reuse the current first-Dawn persistence
-representation for a multi-day loop.
+When further Phase 7 work is explicitly requested, begin with Phase 7B. Do not start later
+subphases automatically, do not add app-managed voting early, and do not reuse the current
+first-Dawn persistence representation for a multi-day loop.

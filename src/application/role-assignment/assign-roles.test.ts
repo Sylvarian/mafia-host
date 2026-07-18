@@ -148,11 +148,13 @@ describe('role assignment and active game creation', () => {
         alive: true,
         publiclyRevealedRoleId: null,
         mayorRevealed: false,
-        executionerTargetId: null,
-        personalWin: null,
       })
+      expect(player).not.toHaveProperty('executionerTargetId')
+      expect(player).not.toHaveProperty('personalWin')
     }
 
+    expect(result.value.executionerTargets).toEqual([])
+    expect(result.value.executionerBriefingStatus).toBe('not-started')
     expect(result.value).not.toHaveProperty('deaths')
     expect(result.value).not.toHaveProperty('trialVotes')
     expect(result.value).not.toHaveProperty('factionWinner')

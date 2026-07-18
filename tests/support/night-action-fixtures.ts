@@ -10,8 +10,14 @@ import {
 } from '../../src/domain/identifiers.ts'
 import type { GamePhase } from '../../src/domain/phases/game-phase.ts'
 import type { Player } from '../../src/domain/players/player.ts'
-import { ROLE_REGISTRY, findRoleDefinition } from '../../src/domain/roles/role-registry.ts'
+import {
+  ROLE_IDS,
+  ROLE_REGISTRY,
+  findRoleDefinition,
+} from '../../src/domain/roles/role-registry.ts'
 import type { RoleDistributionWorkflow } from '../../src/application/role-assignment/role-distribution-workflow.ts'
+
+export { ROLE_IDS as FIXTURE_ROLE_IDS }
 
 export type NightFixtureRole = Readonly<{
   roleId: RoleId
@@ -19,6 +25,10 @@ export type NightFixtureRole = Readonly<{
   alive?: boolean
   executionerTargetId?: PlayerId | null
 }>
+
+export function nightFixturePlayerId(value: string): PlayerId {
+  return playerId(value)
+}
 
 const defaultSettings: GameSettings = {
   godfatherAndSerialCanKillEachOther: false,
@@ -37,6 +47,7 @@ export function createNightFixture(
     settings?: Partial<GameSettings>
     distributionStatus?: RoleDistributionWorkflow['status']
     doctorPreviousTargets?: readonly DoctorPreviousTarget[]
+    executionerBriefingStatus?: GameState['executionerBriefingStatus']
   }> = {},
 ): Readonly<{
   game: GameState
@@ -73,23 +84,62 @@ export function createNightFixture(
       alive: role.alive ?? true,
       publiclyRevealedRoleId: null,
       mayorRevealed: false,
-      executionerTargetId: role.executionerTargetId ?? null,
-      personalWin: null,
     }
   })
   const selectedRoleIds = new Set(roles.map((role) => role.roleId))
   const roleDefinitions = ROLE_REGISTRY.filter((role) => selectedRoleIds.has(role.id)).map(
     ({ id, name, faction }) => ({ id, name, faction }),
   )
+  const fixtureGameId = gameId('night-fixture-game')
+  const phase = options.phase ?? 'role-distribution'
+  const defaultExecutionerTarget = players.find(
+    (player) => findRoleDefinition(player.role.roleId)?.faction === 'town',
+  )
+  const executionerTargets = roles.flatMap((role, index) => {
+    if (role.roleId !== ROLE_IDS.executioner) {
+      return []
+    }
+
+    const owner = players[index]
+    const selectedTargetId =
+      role.executionerTargetId === undefined
+        ? phase === 'role-distribution'
+          ? undefined
+          : defaultExecutionerTarget?.playerId
+        : role.executionerTargetId === null
+          ? undefined
+          : role.executionerTargetId
+
+    return owner === undefined || selectedTargetId === undefined
+      ? []
+      : [
+          {
+            gameId: fixtureGameId,
+            executionerPlayerId: owner.playerId,
+            executionerRoleInstanceId: owner.role.instanceId,
+            targetPlayerId: selectedTargetId,
+          },
+        ]
+  })
   const game: GameState = {
-    id: gameId('night-fixture-game'),
-    phase: options.phase ?? 'role-distribution',
+    id: fixtureGameId,
+    phase,
     players,
     roleDefinitions,
     settings,
     nightNumber: options.nightNumber ?? 0,
     dayNumber: 0,
     doctorPreviousTargets: options.doctorPreviousTargets ?? [],
+    executionerTargets,
+    executionerBriefingStatus:
+      options.executionerBriefingStatus ??
+      (phase === 'role-distribution'
+        ? 'not-started'
+        : roles.some((role) => role.roleId === ROLE_IDS.executioner)
+          ? phase === 'executioner-briefing'
+            ? 'pending'
+            : 'completed'
+          : 'not-required'),
   }
   const roleCounts = ROLE_REGISTRY.map((role) => ({
     roleId: role.id,

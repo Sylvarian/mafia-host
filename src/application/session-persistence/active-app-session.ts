@@ -1,6 +1,25 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
+import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
+import type { Player } from '@/domain/players/player.ts'
+import type { RandomSource } from '@/domain/randomness/random-source.ts'
+import {
+  completeExecutionerBriefingPhase,
+  finalizeRoleDistributionForFirstNight,
+  type CompleteExecutionerBriefingPhaseError,
+  type FinalizeRoleDistributionError,
+} from '@/domain/executioner/executioner-target.ts'
 
+import {
+  acknowledgeExecutionerBriefing,
+  createExecutionerBriefingWorkflow,
+  nextExecutionerBriefing,
+  previousExecutionerBriefing,
+  validateExecutionerBriefingsReadyForCompletion,
+  type ActiveExecutionerBriefingWorkflow,
+  type ExecutionerBriefingError,
+  type ExecutionerBriefingId,
+} from '../executioner-briefing/index.ts'
 import {
   createGameSetupWorkflow,
   reduceGameSetupWorkflow,
@@ -9,7 +28,7 @@ import {
   type GameSetupWorkflowState,
 } from '../game-setup/index.ts'
 import {
-  beginFirstNight,
+  createNightActionCollectionForStartedNight,
   continueNightActionCollection,
   editNightAction,
   finaliseNightActionCollection,
@@ -50,6 +69,13 @@ export type RoleDistributionAppSession = Readonly<{
   workflow: DistributingRolesWorkflow | ConfirmedRoleDistributionWorkflow
 }>
 
+export type ExecutionerBriefingAppSession = Readonly<{
+  stage: 'executioner-briefing'
+  game: GameState
+  participants: readonly Player[]
+  workflow: ActiveExecutionerBriefingWorkflow
+}>
+
 export type NightActionAppSession = Readonly<{
   stage: 'night-action'
   workflow: ActiveNightActionCollectionWorkflow
@@ -68,6 +94,7 @@ export type DawnAppSession = Readonly<{
 export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
+  | ExecutionerBriefingAppSession
   | NightActionAppSession
   | NightPresentationAppSession
   | DawnAppSession
@@ -81,6 +108,10 @@ export type ActiveAppSessionOperation =
   | 'confirm-distribution'
   | 'reassign-roles'
   | 'begin-first-night'
+  | 'acknowledge-executioner-briefing'
+  | 'previous-executioner-briefing'
+  | 'next-executioner-briefing'
+  | 'complete-executioner-briefings'
   | 'confirm-night-target'
   | 'continue-night'
   | 'previous-night'
@@ -101,6 +132,9 @@ export type InvalidActiveAppSessionStageError = Readonly<{
 export type ActiveAppSessionError =
   | GameSetupEditError
   | RoleDistributionError
+  | FinalizeRoleDistributionError
+  | ExecutionerBriefingError
+  | CompleteExecutionerBriefingPhaseError
   | NightActionCollectionError
   | NightPresentationError
   | InvalidActiveAppSessionStageError
@@ -174,18 +208,21 @@ export function setSessionCardDelivered(
 
 export function confirmSessionRoleDistribution(
   session: ActiveAppSession,
+  randomSource: RandomSource,
 ): DomainResult<
-  RoleDistributionAppSession,
-  RoleDistributionError | InvalidActiveAppSessionStageError
+  ExecutionerBriefingAppSession | NightActionAppSession,
+  | RoleDistributionError
+  | FinalizeRoleDistributionError
+  | ExecutionerBriefingError
+  | NightActionCollectionError
+  | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'role-distribution') {
     return invalidStage('confirm-distribution', session.stage)
   }
 
   const result = confirmRoleDistribution(session.workflow)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
-    : result
+  return result.ok ? startFirstNightStage(result.value, randomSource) : result
 }
 
 export function reassignSessionRoles(
@@ -207,21 +244,98 @@ export function reassignSessionRoles(
 
 export function beginSessionFirstNight(
   session: ActiveAppSession,
+  randomSource: RandomSource,
 ): DomainResult<
-  NightActionAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
+  ExecutionerBriefingAppSession | NightActionAppSession,
+  | FinalizeRoleDistributionError
+  | ExecutionerBriefingError
+  | NightActionCollectionError
+  | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'role-distribution') {
     return invalidStage('begin-first-night', session.stage)
   }
 
-  const result = beginFirstNight({
-    status: 'not-started',
-    distribution: session.workflow,
-  })
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'night-action', workflow: result.value }))
-    : result
+  if (session.workflow.status !== 'confirmed') {
+    return fail({ type: 'DISTRIBUTION_NOT_CONFIRMED' })
+  }
+
+  return startFirstNightStage(session.workflow, randomSource)
+}
+
+export function acknowledgeSessionExecutionerBriefing(
+  session: ActiveAppSession,
+  briefingId: ExecutionerBriefingId,
+): DomainResult<
+  ExecutionerBriefingAppSession,
+  ExecutionerBriefingError | InvalidActiveAppSessionStageError
+> {
+  return updateExecutionerBriefingSession(
+    session,
+    'acknowledge-executioner-briefing',
+    (game, workflow) => acknowledgeExecutionerBriefing(game, workflow, briefingId),
+  )
+}
+
+export function previousSessionExecutionerBriefing(
+  session: ActiveAppSession,
+): DomainResult<
+  ExecutionerBriefingAppSession,
+  ExecutionerBriefingError | InvalidActiveAppSessionStageError
+> {
+  return updateExecutionerBriefingSession(
+    session,
+    'previous-executioner-briefing',
+    previousExecutionerBriefing,
+  )
+}
+
+export function nextSessionExecutionerBriefing(
+  session: ActiveAppSession,
+): DomainResult<
+  ExecutionerBriefingAppSession,
+  ExecutionerBriefingError | InvalidActiveAppSessionStageError
+> {
+  return updateExecutionerBriefingSession(
+    session,
+    'next-executioner-briefing',
+    nextExecutionerBriefing,
+  )
+}
+
+export function completeSessionExecutionerBriefings(
+  session: ActiveAppSession,
+): DomainResult<
+  NightActionAppSession,
+  | ExecutionerBriefingError
+  | CompleteExecutionerBriefingPhaseError
+  | NightActionCollectionError
+  | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'executioner-briefing') {
+    return invalidStage('complete-executioner-briefings', session.stage)
+  }
+
+  const readinessResult = validateExecutionerBriefingsReadyForCompletion(
+    session.game,
+    session.workflow,
+  )
+  if (!readinessResult.ok) {
+    return readinessResult
+  }
+
+  const phaseResult = completeExecutionerBriefingPhase(session.game)
+  if (!phaseResult.ok) {
+    return phaseResult
+  }
+
+  const nightResult = createNightActionCollectionForStartedNight(
+    phaseResult.value,
+    session.participants,
+  )
+  return nightResult.ok
+    ? succeed(Object.freeze({ stage: 'night-action', workflow: nightResult.value }))
+    : nightResult
 }
 
 export function confirmSessionNightTarget(
@@ -366,6 +480,60 @@ function updateNightSession(
   return result.ok
     ? succeed(Object.freeze({ stage: 'night-action', workflow: result.value }))
     : result
+}
+
+function startFirstNightStage(
+  distribution: ConfirmedRoleDistributionWorkflow,
+  randomSource: RandomSource,
+): DomainResult<
+  ExecutionerBriefingAppSession | NightActionAppSession,
+  FinalizeRoleDistributionError | ExecutionerBriefingError | NightActionCollectionError
+> {
+  const gameResult = finalizeRoleDistributionForFirstNight(distribution.game, true, randomSource)
+  if (!gameResult.ok) {
+    return gameResult
+  }
+
+  const participants = Object.freeze(
+    distribution.setup.participatingPlayers.map((player) => Object.freeze({ ...player })),
+  )
+  if (gameResult.value.phase === 'executioner-briefing') {
+    const workflowResult = createExecutionerBriefingWorkflow(gameResult.value)
+    return workflowResult.ok
+      ? succeed(
+          Object.freeze({
+            stage: 'executioner-briefing',
+            game: gameResult.value,
+            participants,
+            workflow: workflowResult.value,
+          }),
+        )
+      : workflowResult
+  }
+
+  const nightResult = createNightActionCollectionForStartedNight(gameResult.value, participants)
+  return nightResult.ok
+    ? succeed(Object.freeze({ stage: 'night-action', workflow: nightResult.value }))
+    : nightResult
+}
+
+function updateExecutionerBriefingSession(
+  session: ActiveAppSession,
+  operation: ActiveAppSessionOperation,
+  update: (
+    game: ExecutionerBriefingAppSession['game'],
+    workflow: ActiveExecutionerBriefingWorkflow,
+  ) => DomainResult<ActiveExecutionerBriefingWorkflow, ExecutionerBriefingError>,
+): DomainResult<
+  ExecutionerBriefingAppSession,
+  ExecutionerBriefingError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'executioner-briefing') {
+    return invalidStage(operation, session.stage)
+  }
+
+  const result = update(session.game, session.workflow)
+  return result.ok ? succeed(Object.freeze({ ...session, workflow: result.value })) : result
 }
 
 function updatePresentationSession(

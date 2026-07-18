@@ -176,7 +176,7 @@ describe('Phase 6 private results and Dawn UI', () => {
       'Finley died during the night. Their role was Citizen.',
     )
     expect(screen.getByText('Dawn complete')).toBeVisible()
-    expect(screen.getByText('Day discussion will be added in Phase 7.')).toBeVisible()
+    expect(screen.getByText('Day discussion will be added in Phase 7B.')).toBeVisible()
     expect(screen.queryByRole('button', { name: /enter day|day discussion/i })).toBeNull()
     expect(screen.queryByText(/victory|winner|executioner|jester suicide/i)).toBeNull()
     expect(screen.queryByText(/attack|blocked|protected|framed/i)).toBeNull()

@@ -59,6 +59,50 @@ describe('game setup validation', () => {
   })
 
   it.each([
+    ['one Executioner', 1],
+    ['multiple Executioners', 2],
+  ])('rejects %s when no participating Town role is selected', (_label, executionerCount) => {
+    let draft = createInitialGameSetupDraft()
+    for (let index = 0; index < executionerCount + 1; index += 1) {
+      draft = expectSuccess(addPlayer(draft, `Player ${String(index + 1)}`))
+    }
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.godfather, 1))
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.executioner, executionerCount))
+
+    expect(inspectGameSetupDraft(draft).errors).toContainEqual({
+      type: 'EXECUTIONER_REQUIRES_TOWN_TARGET',
+    })
+  })
+
+  it('accepts multiple Executioners sharing one selected Town candidate', () => {
+    let draft = createInitialGameSetupDraft()
+    for (const name of ['Alex', 'Blair', 'Casey', 'Dana']) {
+      draft = expectSuccess(addPlayer(draft, name))
+    }
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.godfather, 1))
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.executioner, 2))
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.citizen, 1))
+
+    const result = validateGameSetupDraft(draft)
+    expect(result.ok).toBe(true)
+  })
+
+  it('does not treat a non-playing Town roster member as a selected target candidate', () => {
+    let draft = createInitialGameSetupDraft()
+    for (const name of ['Mafia', 'Executioner', 'Watching Town']) {
+      draft = expectSuccess(addPlayer(draft, name))
+    }
+    const nonPlayingTownId = draft.roster[2]?.id ?? missingPlayerId()
+    draft = expectSuccess(togglePlayerParticipation(draft, nonPlayingTownId))
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.godfather, 1))
+    draft = expectSuccess(setRoleCount(draft, ROLE_IDS.executioner, 1))
+
+    expect(inspectGameSetupDraft(draft).errors).toContainEqual({
+      type: 'EXECUTIONER_REQUIRES_TOWN_TARGET',
+    })
+  })
+
+  it.each([
     -1,
     1.5,
     Number.NaN,

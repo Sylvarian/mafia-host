@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 6.5<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7A<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -30,16 +30,17 @@ The implemented product currently includes:
 
 - Setup.
 - Role assignment and physical distribution.
+- Executioner target eligibility, assignment, and private briefing.
 - First-night action collection.
 - Deterministic ordinary night resolution.
 - Private result presentation.
 - The first public Dawn.
-- Browser-local refresh recovery through that first Dawn.
+- Browser-local refresh recovery through setup, Executioner briefing, and that first Dawn.
 
 The following rules are finalized but their gameplay is not implemented:
 
-- Executioner target assignment and briefing.
 - Executioner-to-Jester conversion.
+- Executioner personal-win awarding.
 - Jester personal wins and pending revenge.
 - Mayor daytime reveal.
 - Host-managed day controls.
@@ -48,7 +49,7 @@ The following rules are finalized but their gameplay is not implemented:
 - Faction victory calculation.
 - Game-over presentation.
 
-These features are planned for the Phase 7 delivery sequence or a prerequisite subphase. A finalized
+These features are planned for Phase 7B or later. A finalized
 rule must not be read as evidence that its feature is already available.
 
 The application does **not** initially provide:
@@ -104,9 +105,16 @@ data is untrusted and must be schema-version checked, validated, canonicalised, 
 the host before private information is displayed.
 
 The save is local to one browser profile and device and is not encrypted. It may contain role
-assignments, actions, investigative results, alive/dead state, and public reveals. It is crash and
+assignments, Executioner targets, actions, investigative results, alive/dead state, and public
+reveals. It is crash and
 refresh recovery, not a backup or cloud sync. Clearing site data removes it, private browsing may
 not retain it, and one host tab is recommended because tabs are not synchronised.
+
+The Phase 7A compatible V1 extension requires `neutralStateVersion: 1`, Executioner targets, and
+briefing status together on every new persisted game. It recognizes deployed Phase 6.5 game shapes
+only when both obsolete player-level neutral fields are present and null. Briefing records are
+rebuilt from canonical target relationships; persisted authority is limited to the game, current
+index, and acknowledgement IDs. Missing or partially upgraded neutral fields remain invalid.
 
 Current V1 persistence supports recovery only through the first Dawn. Its Dawn representation
 requires the public announcement to account for every currently dead player. Before supporting
@@ -116,7 +124,7 @@ later days and nights, persistence must distinguish:
 - Players who died on earlier nights or days.
 - Pending Jester revenge obligations.
 - Permanent Jester and Executioner personal wins.
-- Executioner targets and conversions.
+- Executioner conversions.
 - Current versus historical public announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
@@ -520,28 +528,28 @@ Cards are never dynamically generated from the selected game setup.
 
 ## 9. Starting a game
 
-When the host presses **Start Game**:
+When the host prepares, distributes, and confirms a game:
 
 1. Validate participating-player count against selected role count.
 2. Create a fresh game ID in memory.
 3. Randomly shuffle the selected role instances.
 4. Assign exactly one role instance to each participating player.
 5. Assign ordinals to duplicate roles.
-6. Assign Executioner targets.
-7. Initialise alive status.
-8. Initialise night-history fields such as each Doctor's previous target.
-9. Display the private assignment list to the host.
-10. The host physically distributes the corresponding role cards.
-11. The host confirms that all cards have been distributed.
-12. The app enables **Enter Night**.
+6. Initialise alive status.
+7. Initialise night-history fields such as each Doctor's previous target.
+8. Display the private assignment list to the host.
+9. The host physically distributes the corresponding role cards.
+10. The host confirms that all cards have been distributed.
+11. Assign one eligible Town target to every Executioner from the final assignments.
+12. If Executioners exist, complete the private briefing one Executioner at a time.
+13. Enter Night 1 action collection.
 
 Role assignments must use a testable injected random source rather than calling `Math.random()` throughout the domain.
 
-Executioner target eligibility and assignment behaviour are finalized, but steps 6 and the
-Executioner briefing are not implemented. In the current Phase 6.5 product, Executioner targets
-remain `null` and a living Executioner with no target blocks first-night entry. A future
-prerequisite subphase must implement target assignment before games containing an Executioner can
-continue beyond distribution.
+Steps 11 and 12 are implemented in Phase 7A. No target exists before final distribution
+confirmation. Assignment and the stage transition are atomic, use the injected random source once
+per Executioner, and never rerun during render, refresh, navigation, or restoration. A malformed
+later-phase game without every required target remains invalid.
 
 ---
 
@@ -585,7 +593,7 @@ Roster
 
 ## 11.1 First-night Executioner briefing
 
-Rule finalized; implementation planned for a Phase 7 prerequisite subphase.
+Implemented in Phase 7A for target communication and acknowledgement.
 
 After Executioner targets have been assigned and before ordinary first-night actions:
 
@@ -594,6 +602,10 @@ After Executioner targets have been assigned and before ordinary first-night act
 3. The app shows the host that Executioner's target.
 4. The host privately communicates the target.
 5. Host confirms and continues.
+
+The briefing model contains only stable Executioner/target identities and duplicate-role ordinal.
+It does not contain the target's role or faction. Games with no Executioner proceed directly to
+Night 1 without creating an empty briefing workflow.
 
 ## 11.2 Mafia actions
 
@@ -972,17 +984,20 @@ src/
 ├─ domain/
 │  ├─ game/
 │  ├─ roles/
+│  ├─ executioner/
 │  ├─ resolution/
 │  ├─ investigation/
 │  └─ win-conditions/
 ├─ application/
 │  ├─ commands/
+│  ├─ executioner-briefing/
 │  ├─ use-cases/
 │  └─ selectors/
 ├─ features/
 │  ├─ roster/
 │  ├─ game-setup/
 │  ├─ role-distribution/
+│  ├─ executioner-briefing/
 │  ├─ night-runner/
 │  ├─ dawn/
 │  ├─ day-dashboard/
@@ -1020,7 +1035,13 @@ type GamePlayer = {
   alive: boolean;
   publiclyRevealedRoleId: RoleId | null;
   mayorRevealed: boolean;
-  executionerTargetId: PlayerId | null;
+};
+
+type ExecutionerTarget = {
+  gameId: GameId;
+  executionerPlayerId: PlayerId;
+  executionerRoleInstanceId: string;
+  targetPlayerId: PlayerId;
 };
 
 type PersonalWinRecord = {
@@ -1041,6 +1062,8 @@ type GameSettings = {
 
 Additional types are required for:
 
+- Canonical Executioner target relationships
+- Executioner briefing status
 - Night actions
 - Visit map
 - Temporary effects
@@ -1117,8 +1140,9 @@ Minimum scenarios:
 
 ## 22. Rule decisions
 
-R-001 through R-012 are finalized and authoritative. R-006 through R-012 finalize rules only;
-their gameplay remains unimplemented at the Phase 6.5 product boundary.
+R-001 through R-012 are finalized and authoritative. Phase 7A implements only the target
+eligibility, assignment, and private-briefing portion of R-008. The remaining R-006 through R-012
+gameplay is not implemented.
 
 ### R-001 — Mutual killing disabled
 
@@ -1204,7 +1228,8 @@ personal wins remain recorded.
 
 ### R-008 — Executioner target eligibility and assignment
 
-**Status: Finalized. Rule finalized; implementation planned for a Phase 7 prerequisite subphase.**
+**Status: Finalized. Eligibility, assignment, and private briefing implemented in Phase 7A;
+personal-win and later outcome rules remain planned.**
 
 - An Executioner target must be a participating player with a Town role.
 - Mafia, Jester, Executioner, Serial Killer, and other non-Town roles are ineligible.
@@ -1219,10 +1244,10 @@ personal wins remain recorded.
 - A living Executioner does not prevent Mafia victory.
 - An Executioner remains Neutral and is not counted as Town for Mafia parity.
 
-Target assignment and briefing are not implemented. Current Executioner targets remain `null`, and
-the first night remains blocked when a living Executioner has no target. Once the future assignment
-and briefing work exists, games containing Executioners will no longer be permanently blocked for
-that reason.
+Phase 7A stores each relationship independently by game, Executioner player, Executioner role
+instance, and target player. It assigns only after final distribution, briefs each Executioner
+privately, persists exact targets and acknowledgement state, and then permits Night 1. It awards no
+personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-009 — Serial Killer victory
 

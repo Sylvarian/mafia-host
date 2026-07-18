@@ -84,6 +84,22 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.getAllByText('Disabled')).toHaveLength(1)
   })
 
+  it('explains that an Executioner setup needs one selected participating Town role', () => {
+    renderApp()
+
+    addPlayer('Mafia')
+    addPlayer('Executioner')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+
+    expect(
+      screen.getByText(
+        'An Executioner requires at least one participating Town role to be selected as their target.',
+      ),
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Prepare Game' })).toBeDisabled()
+  })
+
   it('reviews the exact validated setup and preserves the draft when returning before assignment', () => {
     renderApp()
 
@@ -134,7 +150,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.getByRole('button', { name: 'Prepare Game' })).toBeEnabled()
   })
 
-  it('assigns roles privately, numbers duplicates, tracks every card, and blocks unresolved Executioner entry', () => {
+  it('assigns roles privately, numbers duplicates, and enters a private Executioner briefing', () => {
     renderApp()
 
     addPlayer('Alex')
@@ -159,7 +175,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.queryByRole('button', { name: /submit night action|resolve night/i })).toBeNull()
 
     const confirmDistribution = screen.getByRole('button', {
-      name: 'Confirm Role Distribution',
+      name: 'Confirm Distribution and Continue',
     })
     expect(screen.getByText('0 of 4')).toBeVisible()
     expect(confirmDistribution).toBeDisabled()
@@ -205,16 +221,13 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(confirmDistribution).toBeEnabled()
     fireEvent.click(confirmDistribution)
 
-    expect(screen.getByRole('heading', { name: 'Role distribution complete' })).toBeVisible()
-    expect(screen.getByText('Ready to begin the first night')).toBeVisible()
-    const beginFirstNight = screen.getByRole('button', { name: 'Begin First Night' })
-    expect(beginFirstNight).toBeEnabled()
-    expect(screen.getByText(/active game remains in role-distribution/i)).toBeVisible()
-    fireEvent.click(beginFirstNight)
-    expect(
-      screen.getByText(/Executioner target eligibility has not been configured yet/),
-    ).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Role distribution complete' })).toBeVisible()
+    expect(screen.getByText('Private Executioner briefing')).toBeVisible()
+    expect(screen.getByText(/Your target is/)).toBeVisible()
+    expect(screen.getByText(/personally win if .* is executed during the day/)).toBeVisible()
+    expect(screen.queryByText(/target.*Doctor/i)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Begin Night 1' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as briefed' }))
+    expect(screen.getByRole('button', { name: 'Begin Night 1' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /resolve night/i })).toBeNull()
   })
 
@@ -404,13 +417,12 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
       fireEvent.click(checkbox)
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Role Distribution' }))
-
-    expect(screen.queryByText('Everyone, close your eyes.')).toBeNull()
-    const beginButton = screen.getByRole('button', { name: 'Begin First Night' })
+    const confirmButton = screen.getByRole('button', {
+      name: 'Confirm Distribution and Continue',
+    })
     act(() => {
-      beginButton.click()
-      beginButton.click()
+      confirmButton.click()
+      confirmButton.click()
     })
     expect(screen.getByText('Everyone, close your eyes.')).toBeVisible()
     expect(screen.getByText('Private host view · Night 1')).toBeVisible()
@@ -447,8 +459,7 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
       fireEvent.click(checkbox)
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Role Distribution' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin First Night' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Distribution and Continue' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
@@ -484,10 +495,100 @@ describe('Phase 2 through Phase 6 host workflow', () => {
     expect(screen.getByText('Bob').closest('li')).toHaveTextContent(
       'Bob died during the night. Their role was Citizen.',
     )
-    expect(screen.getByText('Day discussion will be added in Phase 7.')).toBeVisible()
+    expect(screen.getByText('Day discussion will be added in Phase 7B.')).toBeVisible()
     expect(screen.queryByText('Casey appears suspicious.')).toBeNull()
     expect(screen.queryByRole('button', { name: /enter day|start day/i })).toBeNull()
     expect(screen.queryByText(/winner|victory/i)).toBeNull()
+  })
+
+  it('assigns targets once and atomically enters Night 1 after every private briefing', () => {
+    let randomRequestCount = 0
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: {
+        next: () => {
+          randomRequestCount += 1
+          return 0
+        },
+      },
+      identitySource: new SequentialRoleAssignmentIdentitySource(),
+    }
+    const store = new TestGameSessionStore()
+    render(createAppElement(dependencies, store, true))
+
+    addPlayer('Alex')
+    addPlayer('Blair')
+    addPlayer('Casey')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+
+    const requestsBeforeConfirmation = randomRequestCount
+    const confirm = screen.getByRole('button', {
+      name: 'Confirm Distribution and Continue',
+    })
+    act(() => {
+      confirm.click()
+      confirm.click()
+    })
+
+    expect(randomRequestCount).toBe(requestsBeforeConfirmation + 1)
+    expect(screen.getByText('Private Executioner briefing')).toBeVisible()
+    const targetSave = JSON.stringify(store.envelope)
+    expect(targetSave).toContain('"executionerTargets"')
+    expect(targetSave).toContain('"executionerBriefingStatus":"pending"')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as briefed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin Night 1' }))
+    const begin = screen.getByRole('button', { name: 'Confirm and Begin Night 1' })
+    act(() => {
+      begin.click()
+      begin.click()
+    })
+
+    expect(screen.getByText('Everyone, close your eyes.')).toBeVisible()
+    expect(randomRequestCount).toBe(requestsBeforeConfirmation + 1)
+    const nightSave = JSON.stringify(store.envelope)
+    expect(nightSave).toContain('"executionerBriefingStatus":"completed"')
+    const targetRecord = /"executionerTargets":(\[[^\]]+\])/.exec(targetSave)?.[1]
+    expect(targetRecord).toBeDefined()
+    expect(nightSave).toContain(`"executionerTargets":${targetRecord ?? 'missing'}`)
+  })
+
+  it('keeps distribution authoritative when defensive target assignment fails', () => {
+    let randomRequestCount = 0
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: {
+        next: () => {
+          randomRequestCount += 1
+          return randomRequestCount === 3 ? 1 : 0
+        },
+      },
+      identitySource: new SequentialRoleAssignmentIdentitySource(),
+    }
+    renderApp(dependencies)
+
+    addPlayer('Alex')
+    addPlayer('Blair')
+    addPlayer('Casey')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Distribution and Continue' }))
+
+    expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
+    expect(screen.getByText(/random source returned 1 instead of a value/i)).toBeVisible()
+    expect(screen.queryByText('Private Executioner briefing')).toBeNull()
+    expect(screen.queryByText('Everyone, close your eyes.')).toBeNull()
   })
 
   it('rejects blank names and confirms roster removal', () => {

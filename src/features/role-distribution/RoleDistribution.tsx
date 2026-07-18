@@ -43,12 +43,12 @@ export function RoleDistribution({
   if (workflow.status === 'confirmed') {
     return (
       <section className="distribution-complete" aria-labelledby="distribution-complete-heading">
-        <p className="distribution-complete__eyebrow">Phase 3 confirmed</p>
+        <p className="distribution-complete__eyebrow">Restored confirmed distribution</p>
         <h2 id="distribution-complete-heading">Role distribution complete</h2>
         <p className="distribution-complete__lead">Ready to begin the first night</p>
         <p>
-          The active game remains in role-distribution until you deliberately begin. No Executioner
-          target or night action has been created.
+          Continue once to assign any required Executioner targets and enter the correct private
+          first-night stage. Existing targets will never be rerolled.
         </p>
 
         {error === null ? null : <DistributionError error={error} />}
@@ -60,7 +60,7 @@ export function RoleDistribution({
 
         <div className="distribution-complete__actions">
           <button type="button" className="button button--prepare" onClick={onBeginFirstNight}>
-            Begin First Night
+            Continue to First Night
           </button>
         </div>
       </section>
@@ -108,6 +108,11 @@ export function RoleDistribution({
       </div>
 
       {error === null ? null : <DistributionError error={error} />}
+      {beginNightErrorMessage === null ? null : (
+        <p className="distribution-error" role="alert">
+          {beginNightErrorMessage}
+        </p>
+      )}
 
       <ul className="assignment-list" aria-label="Private role assignments">
         {rows.map((row) => {
@@ -172,7 +177,7 @@ export function RoleDistribution({
           disabled={!progress.isComplete || confirmation !== 'none'}
           onClick={onConfirmDistribution}
         >
-          Confirm Role Distribution
+          Confirm Distribution and Continue
         </button>
       </div>
 

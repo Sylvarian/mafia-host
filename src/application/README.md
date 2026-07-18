@@ -17,10 +17,12 @@ The setup owns all six settings. `godfatherAppearsSuspiciousToSheriff` has the a
 `true`; the other five current form defaults are `false`. Validation copies every selected boolean
 without treating missing values as disabled.
 
-R-008 now finalizes Executioner target eligibility, but target assignment and briefing are not
-implemented. Executioner targets therefore remain `null`, and confirming physical distribution
-does not invoke a phase transition or enter night-action collection. A future prerequisite phase
-must assign eligible Town targets with the injected random source before the first-night briefing.
+`executioner-briefing` owns the focused Phase 7A private workflow. It reconstructs minimal briefing
+records from authoritative target relationships, orders duplicate Executioners by ordinal and
+participating roster order, creates deterministic collision-safe tuple IDs, and owns bounded
+navigation, prefix acknowledgement evidence, readiness, and completion. Names and duplicate-name
+labels are selector output; target roles, full assignments, and display prose are not briefing
+authority.
 
 `night-actions` owns the explicit `beginFirstNight` use case, deterministic living-role wake
 sequence, per-role-instance previous-target context, one authoritative submitted-action list,
@@ -48,11 +50,18 @@ acknowledged, revalidates and applies the retained batch and resolution once thr
 drops all private resolution/action data from the completed Dawn workflow. It never advances to day
 discussion or evaluates a winner.
 
-`session-persistence` owns the Phase 6.5 cross-phase `ActiveAppSession` discriminated union. Exactly
-one setup, distribution, night-action, night-presentation, or Dawn workflow is authoritative at a
-time, so a started session contains one `GameState` and no stale game from an earlier stage. Pure
+`session-persistence` owns the cross-phase `ActiveAppSession` discriminated union. Exactly one
+setup, distribution, Executioner-briefing, night-action, night-presentation, or Dawn workflow is
+authoritative at a time, so a started session contains one `GameState` and no stale game from an
+earlier stage. Pure
 application operations wrap the existing focused workflows and make every stage transition
 explicit.
+
+Final distribution confirmation now atomically confirms delivery, assigns all Executioner targets
+through the domain operation, and enters either `executioner-briefing` or `night-action`. Failure
+returns the original distributing session unchanged. Completing every briefing atomically marks
+the domain briefing complete and constructs Night 1 action collection. Randomness is supplied only
+to final distribution and is never used during render, workflow navigation, or restoration.
 
 The same slice defines the schema-version-1 serialisable model, timestamp/envelope validation,
 stage-specific runtime restoration, canonical reconstruction, deep freezing, and public-safe
@@ -62,13 +71,21 @@ only until Dawn; Dawn persistence has no field for the completed action batch, f
 private queue, or acknowledgements. The `GameSessionStore` and `SessionClock` contracts contain no
 browser implementation.
 
+Phase 7A is an explicit compatible V1 extension. Current game saves require
+`neutralStateVersion: 1`, `executionerTargets`, and `executionerBriefingStatus` together. Exact
+legacy Phase 6.5 game-player records with null player-level target and personal-win fields remain
+restorable; current records must omit those obsolete fields. Briefing saves persist only
+participants, game targets, status, current index, and acknowledgement IDs. Restoration
+canonicalizes target order, rebuilds briefing records, and rejects forged records, IDs, readiness,
+stage/phase mismatches, or an unbriefed later-phase Executioner.
+
 The V1 Dawn restorer is intentionally limited to recovery through the current first-Dawn product
 boundary: it requires the structured announcement to cover every dead player. Before later-day or
 later-night recovery exists, the persisted session contract must distinguish newly announced Dawn
 deaths from earlier deaths, pending Jester revenge, permanent Jester and Executioner personal wins,
-Executioner targets and conversions, and current from historical public announcements.
+Executioner conversions, and current from historical public announcements.
 
 The first-Dawn representation cannot be reused unchanged because it could announce earlier deaths
-again. Phase 7 must deliberately update the contract, either with a new schema version or an
-explicit compatible V1 extension whose validation remains unambiguous. No migration system
-currently exists.
+again. The later multi-day phase must deliberately update the contract, either with a new schema
+version or another explicit compatible V1 extension whose validation remains unambiguous. No
+generic migration system exists.

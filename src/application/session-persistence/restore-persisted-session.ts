@@ -1,7 +1,18 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
+import {
+  orderExecutionerTargets,
+  type ExecutionerTarget,
+} from '@/domain/executioner/executioner-target.ts'
 import { validateGameState } from '@/domain/game/game-invariants.ts'
 import type { GameState, GameStateCandidate } from '@/domain/game/game-state.ts'
 import { validateGameSettings } from '@/domain/game/game-settings.ts'
+import {
+  acknowledgeExecutionerBriefing,
+  createExecutionerBriefingWorkflow,
+  nextExecutionerBriefing,
+  previousExecutionerBriefing,
+  type ActiveExecutionerBriefingWorkflow,
+} from '../executioner-briefing/index.ts'
 import {
   gameId,
   playerId,
@@ -21,7 +32,7 @@ import type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 import type { Player } from '@/domain/players/player.ts'
 import type { GamePlayer } from '@/domain/players/game-player.ts'
 import type { DawnAnnouncement, DawnDeath } from '@/domain/resolution/dawn-announcement.ts'
-import { ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { ROLE_IDS, ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
 import {
   inspectGameSetupDraft,
@@ -52,6 +63,7 @@ import {
 import type {
   ActiveAppSession,
   DawnAppSession,
+  ExecutionerBriefingAppSession,
   NightActionAppSession,
   NightPresentationAppSession,
   RoleDistributionAppSession,
@@ -100,6 +112,7 @@ export type InvalidRoleDistributionSessionError = Readonly<{
     | 'invalid-game'
     | 'setup-game-mismatch'
     | 'invalid-delivery-evidence'
+    | 'contains-private-briefing-data'
     | 'contains-private-night-data'
 }>
 
@@ -111,7 +124,19 @@ export type InvalidNightActionSessionError = Readonly<{
     | 'invalid-participants'
     | 'invalid-actions'
     | 'invalid-sequence-position'
+    | 'contains-private-briefing-data'
     | 'unreachable-workflow-state'
+}>
+
+export type InvalidExecutionerBriefingSessionError = Readonly<{
+  type: 'INVALID_EXECUTIONER_BRIEFING_SESSION'
+  reason:
+    | 'invalid-shape'
+    | 'invalid-game'
+    | 'invalid-participants'
+    | 'invalid-acknowledgements'
+    | 'restored-briefing-session-mismatch'
+    | 'contains-persisted-briefing-records'
 }>
 
 export type InvalidNightPresentationSessionError = Readonly<{
@@ -123,6 +148,7 @@ export type InvalidNightPresentationSessionError = Readonly<{
     | 'invalid-actions'
     | 'invalid-resolution'
     | 'invalid-acknowledgements'
+    | 'contains-private-briefing-data'
     | 'cross-game-records'
 }>
 
@@ -133,6 +159,7 @@ export type InvalidDawnSessionError = Readonly<{
     | 'invalid-game'
     | 'invalid-participants'
     | 'invalid-announcement'
+    | 'contains-private-briefing-data'
     | 'contains-private-night-data'
 }>
 
@@ -153,6 +180,7 @@ export type RestorePersistedSessionError =
   | UnknownPersistedStageError
   | InvalidSetupSessionError
   | InvalidRoleDistributionSessionError
+  | InvalidExecutionerBriefingSessionError
   | InvalidNightActionSessionError
   | InvalidNightPresentationSessionError
   | InvalidDawnSessionError
@@ -163,6 +191,14 @@ const ALLOWED_EDITING_SETUP_ERRORS = new Set<GameSetupValidationError['type']>([
   'NO_PARTICIPATING_PLAYERS',
   'ROLE_COUNT_MISMATCH',
   'NO_MAFIA_ROLE',
+  'EXECUTIONER_REQUIRES_TOWN_TARGET',
+])
+
+const PRIVATE_EXECUTIONER_BRIEFING_FIELDS = Object.freeze([
+  'briefings',
+  'records',
+  'acknowledgedBriefingIds',
+  'currentBriefingIndex',
 ])
 
 export function restorePersistedSessionEnvelopeV1(
@@ -226,6 +262,8 @@ function restoreAppSession(
       return restoreSetupSession(candidate)
     case 'role-distribution':
       return restoreRoleDistributionSession(candidate)
+    case 'executioner-briefing':
+      return restoreExecutionerBriefingSession(candidate)
     case 'night-action':
       return restoreNightActionSession(candidate)
     case 'night-presentation':
@@ -331,6 +369,12 @@ function restoreSetupDraft(
 function restoreRoleDistributionSession(
   candidate: Readonly<Record<string, unknown>>,
 ): DomainResult<RoleDistributionAppSession, RestorePersistedSessionError> {
+  if (hasAny(candidate, PRIVATE_EXECUTIONER_BRIEFING_FIELDS)) {
+    return fail({
+      type: 'INVALID_ROLE_DISTRIBUTION_SESSION',
+      reason: 'contains-private-briefing-data',
+    })
+  }
   if (
     hasAny(candidate, [
       'resolution',
@@ -418,9 +462,128 @@ function restoreRoleDistributionSession(
   return succeed(deepFreeze({ stage: 'role-distribution', workflow }))
 }
 
+function restoreExecutionerBriefingSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<ExecutionerBriefingAppSession, RestorePersistedSessionError> {
+  if (hasAny(candidate, ['briefings', 'records', 'targetRoleId', 'targetRoleIds'])) {
+    return invalidExecutionerBriefing('contains-persisted-briefing-records')
+  }
+  if (
+    (candidate.workflowStatus !== 'briefing' && candidate.workflowStatus !== 'ready') ||
+    !Array.isArray(candidate.acknowledgedBriefingIds) ||
+    typeof candidate.currentBriefingIndex !== 'number' ||
+    !Number.isSafeInteger(candidate.currentBriefingIndex)
+  ) {
+    return invalidExecutionerBriefing('invalid-shape')
+  }
+
+  const gameResult = restoreGame(candidate.game)
+  if (!gameResult.ok) {
+    return invalidExecutionerBriefing('invalid-game')
+  }
+  if (gameResult.value.phase !== 'executioner-briefing') {
+    return fail({
+      type: 'STAGE_PHASE_MISMATCH',
+      stage: 'executioner-briefing',
+      phase: gameResult.value.phase,
+    })
+  }
+
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidExecutionerBriefing('invalid-participants')
+  }
+
+  const workflowResult = createExecutionerBriefingWorkflow(gameResult.value)
+  if (!workflowResult.ok) {
+    return invalidExecutionerBriefing('restored-briefing-session-mismatch')
+  }
+  let workflow: ActiveExecutionerBriefingWorkflow = workflowResult.value
+  const savedAcknowledgementIds: string[] = []
+  for (const acknowledgementCandidate of candidate.acknowledgedBriefingIds) {
+    if (typeof acknowledgementCandidate !== 'string') {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    if (savedAcknowledgementIds.includes(acknowledgementCandidate)) {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    savedAcknowledgementIds.push(acknowledgementCandidate)
+  }
+
+  const canonicalIds = workflow.briefings.map((briefing) => briefing.id)
+  if (
+    savedAcknowledgementIds.length > canonicalIds.length ||
+    !savedAcknowledgementIds.every((id, index) => id === canonicalIds[index])
+  ) {
+    return invalidExecutionerBriefing('invalid-acknowledgements')
+  }
+
+  for (const [index, acknowledgementId] of savedAcknowledgementIds.entries()) {
+    const canonicalId = canonicalIds[index]
+    if (canonicalId === undefined || canonicalId !== acknowledgementId) {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    const acknowledgementResult = acknowledgeExecutionerBriefing(
+      gameResult.value,
+      workflow,
+      canonicalId,
+    )
+    if (!acknowledgementResult.ok) {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    workflow = acknowledgementResult.value
+
+    if (index < savedAcknowledgementIds.length - 1) {
+      const nextResult = nextExecutionerBriefing(gameResult.value, workflow)
+      if (!nextResult.ok) {
+        return invalidExecutionerBriefing('invalid-acknowledgements')
+      }
+      workflow = nextResult.value
+    }
+  }
+
+  if (workflow.status !== candidate.workflowStatus) {
+    return invalidExecutionerBriefing('restored-briefing-session-mismatch')
+  }
+  if (
+    candidate.currentBriefingIndex < 0 ||
+    candidate.currentBriefingIndex >= workflow.briefings.length ||
+    candidate.currentBriefingIndex > savedAcknowledgementIds.length
+  ) {
+    return invalidExecutionerBriefing('invalid-acknowledgements')
+  }
+
+  while (workflow.currentBriefingIndex > candidate.currentBriefingIndex) {
+    const previousResult = previousExecutionerBriefing(gameResult.value, workflow)
+    if (!previousResult.ok) {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    workflow = previousResult.value
+  }
+  while (workflow.currentBriefingIndex < candidate.currentBriefingIndex) {
+    const nextResult = nextExecutionerBriefing(gameResult.value, workflow)
+    if (!nextResult.ok) {
+      return invalidExecutionerBriefing('invalid-acknowledgements')
+    }
+    workflow = nextResult.value
+  }
+
+  return succeed(
+    deepFreeze({
+      stage: 'executioner-briefing',
+      game: gameResult.value,
+      participants: participantsResult.value,
+      workflow,
+    }),
+  )
+}
+
 function restoreNightActionSession(
   candidate: Readonly<Record<string, unknown>>,
 ): DomainResult<NightActionAppSession, RestorePersistedSessionError> {
+  if (hasAny(candidate, PRIVATE_EXECUTIONER_BRIEFING_FIELDS)) {
+    return invalidNightAction('contains-private-briefing-data')
+  }
   if (
     candidate.workflowStatus !== 'collecting' &&
     candidate.workflowStatus !== 'reviewing' &&
@@ -548,6 +711,9 @@ function restoreNightActionSession(
 function restoreNightPresentationSession(
   candidate: Readonly<Record<string, unknown>>,
 ): DomainResult<NightPresentationAppSession, RestorePersistedSessionError> {
+  if (hasAny(candidate, PRIVATE_EXECUTIONER_BRIEFING_FIELDS)) {
+    return invalidNightPresentation('contains-private-briefing-data')
+  }
   if (
     candidate.workflowStatus !== 'private-results' &&
     candidate.workflowStatus !== 'ready-for-dawn'
@@ -688,6 +854,9 @@ function restoreNightPresentationSession(
 function restoreDawnSession(
   candidate: Readonly<Record<string, unknown>>,
 ): DomainResult<DawnAppSession, RestorePersistedSessionError> {
+  if (hasAny(candidate, PRIVATE_EXECUTIONER_BRIEFING_FIELDS)) {
+    return invalidDawn('contains-private-briefing-data')
+  }
   if (
     hasAny(candidate, [
       'resolution',
@@ -783,6 +952,28 @@ function restoreGame(
     return invalidDistribution('invalid-game')
   }
 
+  const hasNeutralStateVersion = Object.hasOwn(candidate, 'neutralStateVersion')
+  const hasExecutionerTargets = Object.hasOwn(candidate, 'executionerTargets')
+  const hasExecutionerBriefingStatus = Object.hasOwn(candidate, 'executionerBriefingStatus')
+  if (
+    hasNeutralStateVersion !== hasExecutionerTargets ||
+    hasNeutralStateVersion !== hasExecutionerBriefingStatus
+  ) {
+    return invalidDistribution('invalid-game')
+  }
+  const isLegacyGame = !hasNeutralStateVersion
+  if (
+    !isLegacyGame &&
+    (candidate.neutralStateVersion !== 1 ||
+      !Array.isArray(candidate.executionerTargets) ||
+      (candidate.executionerBriefingStatus !== 'not-started' &&
+        candidate.executionerBriefingStatus !== 'not-required' &&
+        candidate.executionerBriefingStatus !== 'pending' &&
+        candidate.executionerBriefingStatus !== 'completed'))
+  ) {
+    return invalidDistribution('invalid-game')
+  }
+
   const players: GamePlayer[] = []
   const selectedRoleIds = new Set<RoleId>()
   for (const playerCandidate of candidate.players) {
@@ -801,12 +992,23 @@ function restoreGame(
       typeof playerCandidate.alive !== 'boolean' ||
       (playerCandidate.publiclyRevealedRoleId !== null &&
         typeof playerCandidate.publiclyRevealedRoleId !== 'string') ||
-      typeof playerCandidate.mayorRevealed !== 'boolean' ||
-      (playerCandidate.executionerTargetId !== null &&
-        typeof playerCandidate.executionerTargetId !== 'string') ||
-      (playerCandidate.personalWin !== null &&
-        playerCandidate.personalWin !== 'jester' &&
-        playerCandidate.personalWin !== 'executioner')
+      typeof playerCandidate.mayorRevealed !== 'boolean'
+    ) {
+      return invalidDistribution('invalid-game')
+    }
+    if (
+      isLegacyGame &&
+      (!Object.hasOwn(playerCandidate, 'executionerTargetId') ||
+        playerCandidate.executionerTargetId !== null ||
+        !Object.hasOwn(playerCandidate, 'personalWin') ||
+        playerCandidate.personalWin !== null)
+    ) {
+      return invalidDistribution('invalid-game')
+    }
+    if (
+      !isLegacyGame &&
+      (Object.hasOwn(playerCandidate, 'executionerTargetId') ||
+        Object.hasOwn(playerCandidate, 'personalWin'))
     ) {
       return invalidDistribution('invalid-game')
     }
@@ -829,12 +1031,36 @@ function restoreGame(
           ? null
           : roleId(playerCandidate.publiclyRevealedRoleId),
       mayorRevealed: playerCandidate.mayorRevealed,
-      executionerTargetId:
-        playerCandidate.executionerTargetId === null
-          ? null
-          : playerId(playerCandidate.executionerTargetId),
-      personalWin: playerCandidate.personalWin,
     })
+  }
+
+  const executionerTargets: ExecutionerTarget[] = []
+  const targetCandidates = isLegacyGame ? [] : candidate.executionerTargets
+  if (!Array.isArray(targetCandidates)) {
+    return invalidDistribution('invalid-game')
+  }
+  for (const targetCandidate of targetCandidates) {
+    if (
+      !isUnknownRecord(targetCandidate) ||
+      typeof targetCandidate.gameId !== 'string' ||
+      targetCandidate.gameId.trim().length === 0 ||
+      typeof targetCandidate.executionerPlayerId !== 'string' ||
+      targetCandidate.executionerPlayerId.trim().length === 0 ||
+      typeof targetCandidate.executionerRoleInstanceId !== 'string' ||
+      targetCandidate.executionerRoleInstanceId.trim().length === 0 ||
+      typeof targetCandidate.targetPlayerId !== 'string' ||
+      targetCandidate.targetPlayerId.trim().length === 0
+    ) {
+      return invalidDistribution('invalid-game')
+    }
+    executionerTargets.push(
+      Object.freeze({
+        gameId: gameId(targetCandidate.gameId),
+        executionerPlayerId: playerId(targetCandidate.executionerPlayerId),
+        executionerRoleInstanceId: roleInstanceId(targetCandidate.executionerRoleInstanceId),
+        targetPlayerId: playerId(targetCandidate.targetPlayerId),
+      }),
+    )
   }
 
   const settingsResult = validateGameSettings(candidate.settings)
@@ -853,6 +1079,16 @@ function restoreGame(
     nightNumber: candidate.nightNumber,
     dayNumber: candidate.dayNumber,
     doctorPreviousTargets: candidate.doctorPreviousTargets,
+    executionerTargets: orderExecutionerTargets(executionerTargets, players),
+    executionerBriefingStatus: isLegacyGame
+      ? candidate.phase === 'roster' ||
+        candidate.phase === 'setup' ||
+        candidate.phase === 'role-distribution'
+        ? 'not-started'
+        : players.some((player) => player.role.roleId === ROLE_IDS.executioner)
+          ? 'not-started'
+          : 'not-required'
+      : candidate.executionerBriefingStatus,
   }
   const result = validateGameState(gameCandidate)
   return result.ok ? succeed(deepFreeze(result.value)) : invalidDistribution('invalid-game')
@@ -1251,6 +1487,12 @@ function invalidDistribution(
   reason: InvalidRoleDistributionSessionError['reason'],
 ): DomainResult<never, InvalidRoleDistributionSessionError> {
   return fail({ type: 'INVALID_ROLE_DISTRIBUTION_SESSION', reason })
+}
+
+function invalidExecutionerBriefing(
+  reason: InvalidExecutionerBriefingSessionError['reason'],
+): DomainResult<never, InvalidExecutionerBriefingSessionError> {
+  return fail({ type: 'INVALID_EXECUTIONER_BRIEFING_SESSION', reason })
 }
 
 function invalidNightAction(

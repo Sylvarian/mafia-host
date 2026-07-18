@@ -124,7 +124,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     ROLE_IDS.executioner,
     'Executioner',
     'neutral',
-    'Receives a target in a later phase and wins personally if that target is executed.',
+    'Receives a private Town target after distribution and aims to have that player executed.',
     noNightAction(),
   ),
   roleEntry(

@@ -12,6 +12,7 @@ export { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 
 export {
   beginFirstNight,
+  createNightActionCollectionForStartedNight,
   continueNightActionCollection,
   createNightActionCollectionWorkflow,
   editNightAction,

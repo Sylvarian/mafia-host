@@ -5,6 +5,7 @@ import {
   type RoleId,
   type RoleInstanceId,
 } from '../identifiers.ts'
+import { copyAndValidateExecutionerTargets } from '../executioner/executioner-target-invariants.ts'
 import { isGamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
@@ -37,6 +38,8 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     nightNumber: 0,
     dayNumber: 0,
     doctorPreviousTargets: [],
+    executionerTargets: [],
+    executionerBriefingStatus: 'not-started',
   })
 
   if (!gameResult.ok) {
@@ -98,10 +101,6 @@ export function validateGameState(
     return playerResult
   }
 
-  const participatingPlayerIds = new Set(
-    playerResult.value.map((gamePlayer) => gamePlayer.playerId),
-  )
-
   const doctorHistoryResult = copyDoctorPreviousTargets(
     candidate.doctorPreviousTargets,
     playerResult.value,
@@ -112,17 +111,29 @@ export function validateGameState(
     return doctorHistoryResult
   }
 
-  for (const gamePlayer of playerResult.value) {
-    if (
-      gamePlayer.executionerTargetId !== null &&
-      !participatingPlayerIds.has(gamePlayer.executionerTargetId)
-    ) {
-      return fail({
-        type: 'UNKNOWN_PLAYER_REFERENCE',
-        playerId: gamePlayer.executionerTargetId,
-        reference: 'executioner-target',
-      })
-    }
+  const executionerBriefingStatus = candidate.executionerBriefingStatus
+  if (
+    executionerBriefingStatus !== 'not-started' &&
+    executionerBriefingStatus !== 'not-required' &&
+    executionerBriefingStatus !== 'pending' &&
+    executionerBriefingStatus !== 'completed'
+  ) {
+    return fail({
+      type: 'INVALID_EXECUTIONER_TARGETS',
+      value: executionerBriefingStatus,
+    })
+  }
+
+  const executionerTargetResult = copyAndValidateExecutionerTargets(
+    candidate.executionerTargets,
+    candidate.id,
+    playerResult.value,
+    candidate.phase,
+    executionerBriefingStatus,
+  )
+
+  if (!executionerTargetResult.ok) {
+    return executionerTargetResult
   }
 
   return succeed({
@@ -134,6 +145,8 @@ export function validateGameState(
     nightNumber: candidate.nightNumber,
     dayNumber: candidate.dayNumber,
     doctorPreviousTargets: doctorHistoryResult.value,
+    executionerTargets: executionerTargetResult.value,
+    executionerBriefingStatus,
   })
 }
 
@@ -394,6 +407,17 @@ function copyGamePlayers(
       })
     }
 
+    if (typeof candidate.mayorRevealed !== 'boolean') {
+      return fail({
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'INVALID_MAYOR_REVEALED_STATE',
+          playerId: candidate.playerId,
+          value: candidate.mayorRevealed,
+        },
+      })
+    }
+
     if (roleInstanceIds.has(candidate.role.instanceId)) {
       return fail({
         type: 'DUPLICATE_ROLE_ASSIGNMENT',
@@ -469,8 +493,6 @@ function copyGamePlayers(
       alive: candidate.alive,
       publiclyRevealedRoleId: candidate.publiclyRevealedRoleId,
       mayorRevealed: candidate.mayorRevealed,
-      executionerTargetId: candidate.executionerTargetId,
-      personalWin: candidate.personalWin,
     })
   }
 
@@ -523,7 +545,7 @@ function isNonNegativeInteger(value: number): boolean {
 }
 
 function isRuntimeIdentity(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function invalidIdentity(

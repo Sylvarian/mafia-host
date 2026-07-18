@@ -66,6 +66,100 @@ describe('local session refresh recovery', () => {
     expect(screen.getByRole('checkbox', { name: 'Card delivered to Bob' })).not.toBeChecked()
   })
 
+  it('restores the exact private Executioner target behind a public-safe recovery gate', () => {
+    const store = new MemoryGameSessionStore()
+    const firstView = renderApp(store, true)
+    for (const name of ['Secret Alex', 'Secret Blair', 'Secret Casey']) {
+      addPlayer(name)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Distribution and Continue' }))
+    const targetText = document.querySelector('.executioner-briefing__target')?.textContent
+    expect(targetText).toMatch(/^Your target is Secret /)
+    const savedTitle = document.title
+    const savedUrl = window.location.href
+    const saveCountBeforeAcknowledgement = store.saveCount
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as briefed' }))
+    expect(store.saveCount).toBe(saveCountBeforeAcknowledgement + 1)
+    firstView.unmount()
+
+    renderApp(store, true)
+    expect(screen.getByText('Night 1 — Executioner briefing')).toBeVisible()
+    expect(document.body).not.toHaveTextContent('Secret Alex')
+    expect(document.body).not.toHaveTextContent('Secret Blair')
+    expect(document.body).not.toHaveTextContent('Secret Casey')
+    expect(document.body).not.toHaveTextContent('Your target is')
+    expect(document.body.innerHTML).not.toContain('player-')
+    expect(document.title).toBe(savedTitle)
+    expect(window.location.href).toBe(savedUrl)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(document.querySelector('.executioner-briefing__target')).toHaveTextContent(
+      targetText ?? 'missing target',
+    )
+    expect(screen.getByRole('button', { name: 'Begin Night 1' })).toBeEnabled()
+  })
+
+  it('keeps an assigned target stable when its first save fails and retry does not reroll', () => {
+    const store = new MemoryGameSessionStore()
+    let randomCalls = 0
+    const dependencies: RoleAssignmentDependencies = {
+      randomSource: {
+        next: () => {
+          randomCalls += 1
+          return 0
+        },
+      },
+      identitySource: new SequentialRoleAssignmentIdentitySource(),
+    }
+    const view = renderApp(store, true, dependencies)
+    for (const name of ['Alex', 'Blair', 'Casey']) {
+      addPlayer(name)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Executioner count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
+      fireEvent.click(checkbox)
+    }
+
+    const callsBeforeTargetAssignment = randomCalls
+    store.failSave = true
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Distribution and Continue' }))
+    const targetText = document.querySelector('.executioner-briefing__target')?.textContent
+
+    expect(targetText).toMatch(/^Your target is /)
+    expect(randomCalls).toBe(callsBeforeTargetAssignment + 1)
+    expect(
+      screen.getByText(/Unable to save locally — the current game will continue in this tab/),
+    ).toBeVisible()
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(randomCalls).toBe(callsBeforeTargetAssignment + 1)
+    expect(document.querySelector('.executioner-briefing__target')).toHaveTextContent(
+      targetText ?? 'missing target',
+    )
+    view.unmount()
+
+    renderApp(store, true, dependencies)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(document.querySelector('.executioner-briefing__target')).toHaveTextContent(
+      targetText ?? 'missing target',
+    )
+    expect(randomCalls).toBe(callsBeforeTargetAssignment + 1)
+  })
+
   it('does not save or restore a tentative target before host confirmation', () => {
     const store = new MemoryGameSessionStore()
     const firstView = renderApp(store)
@@ -291,8 +385,7 @@ function enterFirstNight(): void {
   for (const checkbox of screen.getAllByRole('checkbox', { name: /Card delivered to/ })) {
     fireEvent.click(checkbox)
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm Role Distribution' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Begin First Night' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Distribution and Continue' }))
 }
 
 function resolveTwoPlayerNight(): void {
@@ -322,10 +415,14 @@ function addPlayer(name: string): void {
   fireEvent.click(screen.getByRole('button', { name: 'Add player' }))
 }
 
-function renderApp(store: MemoryGameSessionStore, strict = false) {
+function renderApp(
+  store: MemoryGameSessionStore,
+  strict = false,
+  dependencies: RoleAssignmentDependencies = createDependencies(),
+) {
   const app = (
     <App
-      roleAssignmentDependencies={createDependencies()}
+      roleAssignmentDependencies={dependencies}
       sessionStore={store}
       sessionClock={CLOCK}
       initialLoadResult={store.load()}

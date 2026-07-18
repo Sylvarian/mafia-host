@@ -6,8 +6,9 @@ physical role and result cards.
 
 ## Current status
 
-Phase 6.5 — Versioned local session persistence and refresh recovery — is implemented on top of the
-completed Phase 6 private-results and Dawn boundary. Phase 4 guides the host through the physical
+Phase 7A — Neutral foundations, Executioner target assignment, and private briefing — is
+implemented on top of the completed Phase 6.5 local recovery boundary. Phase 4 guides the host
+through the physical
 wake sequence, allows corrections, and finalises one immutable `CollectedNightActions` batch.
 Phase 5 deterministically resolves that batch into one canonical `NightResolution` without applying
 it. Phase 6 then enters `night-resolution`, presents only Sheriff, Investigator, Consigliere, and
@@ -21,8 +22,17 @@ public-safe Dawn model containing only the night number, dead player identities,
 public role reveals. The active game ends Phase 6 in `dawn-announcement`; there is no Day button,
 victory evaluation, neutral conversion, or Jester effect.
 
-One authoritative application session now spans setup, role distribution, night-action collection,
-private-result presentation, and public Dawn. Each successful authoritative transition is saved
+After final physical-card confirmation, every Executioner now receives one randomly selected
+participating Town target from the final assignments. The injected random source is called once per
+Executioner against the full canonical Town list, so duplicate Executioners remain independent and
+may share a target. The target relationship records the game, Executioner player, Executioner role
+instance, and target player. The host then sees one private briefing at a time and must acknowledge
+every briefing before the application creates the Night 1 action workflow. Games without an
+Executioner skip the briefing.
+
+One authoritative application session now spans setup, role distribution, Executioner briefing,
+night-action collection, private-result presentation, and public Dawn. Each successful
+authoritative transition is saved
 under the versioned browser key `mafia-host:active-session:v1`. On a later visit, the app validates
 and canonicalises that untrusted data, shows a public-safe summary, and waits for the host to choose
 **Continue saved game** before displaying private information. Invalid or incompatible saves never
@@ -36,17 +46,18 @@ permanent Investigator/Consigliere group resolver without changing the target's 
 unblocked Doctor protection prevents every ordinary Godfather and Serial Killer attack against its
 target for that night.
 
-Executioner target eligibility is finalized under R-008, but target assignment and briefing are not
-implemented. Executioner role instances may still be distributed, but their target remains `null`.
-Any living Executioner with a null target blocks first-night entry with an explicit host message.
-The current product does not assign a target, enter or skip the private briefing, or claim
-Executioner support is complete.
+R-008 target eligibility, assignment, and private briefing are implemented. A setup with an
+Executioner requires at least one selected participating Town role. Targets do not exist before
+final distribution confirmation, are never stored on `GamePlayer`, and survive refresh without
+rerandomization. Defensive validation still rejects any later-phase game with a missing, duplicate,
+cross-game, unknown, or non-Town target.
 
 R-006 through R-012 now finalize the future daytime, neutral-role, death-resolution, and victory
-rules. Those decisions are documentation, not implemented gameplay. Mayor daytime reveal, host
-day controls, day execution, end-day flow, Executioner target assignment and conversion, Jester
-personal wins and revenge, faction victory calculation, game-over presentation, and the
-subsequent-night loop remain planned work.
+rules. Except for the Phase 7A portion of R-008 described above, those decisions are documentation,
+not implemented gameplay. Mayor daytime reveal, host day controls, day execution, end-day flow,
+Executioner personal-win awarding and conversion, Jester personal wins and revenge, faction
+victory calculation, game-over presentation, and the subsequent-night loop remain planned work.
+The whole Executioner role is not complete.
 
 ## Local save and privacy
 
@@ -64,11 +75,18 @@ recovery, not a backup:
 - Use one host tab. Tabs are not synchronised, merged, or locked.
 - There is no account, backend, database, cloud sync, export/import, or remote API.
 
+The V1 schema was extended compatibly for Phase 7A. New game payloads carry an explicit
+`neutralStateVersion: 1` marker plus canonical Executioner targets and briefing status; briefing
+saves retain only current index and acknowledgement IDs and rebuild private briefing records.
+Deployed Phase 6.5 V1 setup, distribution, no-Executioner night, private-result, and Dawn saves are
+recognized through their exact legacy player shape. Partially upgraded or malformed new payloads
+are rejected rather than defaulted.
+
 V1 supports recovery through the first Dawn and deliberately requires that Dawn announcement to
 account for every currently dead player. Before later days and nights can be persisted, the session
 contract must distinguish deaths newly announced at the current Dawn from deaths on earlier nights
 or days, pending Jester revenge obligations, permanent Jester and Executioner personal wins,
-Executioner targets and conversions, and current versus historical public announcements.
+Executioner conversions, and current versus historical public announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
 announce earlier deaths again. The Phase 7 delivery sequence must update the persisted session
@@ -169,6 +187,13 @@ single-application guard. Phase 6.5 moves cross-phase ownership into one discrim
 session, owns the V1 serialisable schema and runtime restoration, and gives infrastructure only the
 JSON/localStorage transport boundary. React renders stage-specific application models and keeps
 only errors, interaction guards, dialog state, save status, and focus state locally.
+
+Phase 7A adds an explicit domain-owned Executioner-target model and invariant module. A focused
+application briefing workflow owns deterministic tuple IDs, canonical ordering, acknowledgement
+evidence, navigation, and completion. The application session transition atomically finalizes
+distribution, assigns targets, and selects either briefing or Night 1; briefing completion
+atomically creates the night-action workflow. The dedicated feature renders only the current
+sanitized briefing and never owns target authority.
 
 ## Project authorities
 

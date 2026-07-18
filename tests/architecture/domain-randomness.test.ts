@@ -11,7 +11,9 @@ const randomnessRestrictedRoots = [
   join(process.cwd(), 'src/application'),
 ] as const
 const forbiddenRandomnessAccess = /\bMath\s*(?:\.\s*random\b|\[\s*(['"])random\1\s*\])/u
-const architectureCheckTimeout = 20_000
+// ESLint initialization competes with the concurrent Vitest suite on slower hosts.
+// Keep the limit local so production tests retain Vitest's default timeout.
+const architectureCheckTimeout = 60_000
 
 function listProductionTypeScriptFiles(directory: string): string[] {
   const files: string[] = []

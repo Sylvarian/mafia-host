@@ -15,11 +15,17 @@ possible outputs, `Math.floor(randomValue * maxExclusive)` gives some buckets on
 integer whenever `maxExclusive` does not divide `2 ** 32`. That finite-source bias is negligible
 for an in-person roster but is not described as mathematically unbiased.
 
+Phase 7A reuses this same adapter for post-distribution Executioner target selection. The domain
+validates every returned value as finite and within `[0, 1)` and requests exactly one value per
+Executioner. Infrastructure does not know the eligible players, assignments, targets, or briefing
+workflow.
+
 The identity adapter requires browser Web Crypto with `randomUUID()`. It fails explicitly during
 composition when that API is unavailable or returns an empty token; no UUID package or retry loop
 is used.
 
-Phase 6.5 adds a narrow `BrowserGameSessionStore` and browser clock. The store reads, writes, or
+Phase 6.5 adds a narrow `BrowserGameSessionStore` and browser clock. The Phase 7A compatible V1
+extension changes only the application-owned serialized value; the store still reads, writes, or
 removes only `mafia-host:active-session:v1`, and only when its corresponding method is called. It
 owns localStorage access, JSON text transport, unavailable/read/write/quota/clear failures, and no
 console logging. The composition root injects the application restorer, so parsed JSON crosses that

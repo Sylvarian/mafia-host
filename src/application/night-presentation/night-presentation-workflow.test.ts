@@ -290,7 +290,7 @@ describe('night presentation workflow', () => {
     expect(applied.value.game.nightNumber).toBe(fixture.game.nightNumber)
     expect(applied.value.game.phase).not.toBe('day-discussion')
     expect(applied.value.game).not.toHaveProperty('factionWinner')
-    expect(applied.value.game.players.every((player) => player.personalWin === null)).toBe(true)
+    expect(applied.value.game).not.toHaveProperty('personalWins')
     expect(applied.value.dawnAnnouncement).not.toHaveProperty('privateResults')
     expect(JSON.stringify(applied.value.dawnAnnouncement)).not.toContain('attack')
     expect(JSON.stringify(applied.value.dawnAnnouncement)).not.toContain('block')

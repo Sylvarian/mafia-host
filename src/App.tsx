@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
+import {
+  selectExecutionerBriefingView,
+  type CompleteExecutionerBriefingPhaseError,
+  type ExecutionerBriefingError,
+  type ExecutionerBriefingId,
+  type FinalizeRoleDistributionError,
+} from '@/application/executioner-briefing/index.ts'
 import type {
   GameSetupEditError,
   GameSetupWorkflowCommand,
@@ -17,8 +24,10 @@ import type {
 } from '@/application/role-assignment/index.ts'
 import {
   acknowledgeSessionPrivateResult,
+  acknowledgeSessionExecutionerBriefing,
   assignSessionRoles,
   beginSessionFirstNight,
+  completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionRoleDistribution,
   continueSessionNight,
@@ -27,8 +36,10 @@ import {
   editSessionNightAction,
   finaliseSessionNightActions,
   nextSessionPrivateResult,
+  nextSessionExecutionerBriefing,
   prepareSessionDawn,
   previousSessionNight,
+  previousSessionExecutionerBriefing,
   previousSessionPrivateResult,
   reassignSessionRoles,
   resolveSessionNight,
@@ -45,6 +56,10 @@ import {
   type SessionClock,
 } from '@/application/session-persistence/index.ts'
 import { DawnPresentation, getNightPresentationErrorMessage } from '@/features/dawn/index.ts'
+import {
+  ExecutionerBriefing,
+  getExecutionerBriefingErrorMessage,
+} from '@/features/executioner-briefing/index.ts'
 import { GameSetup } from '@/features/game-setup/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import {
@@ -102,10 +117,13 @@ export default function App({
   const [distributionError, setDistributionError] = useState<RoleDistributionError | null>(null)
   const [nightError, setNightError] = useState<NightActionCollectionError | null>(null)
   const [presentationError, setPresentationError] = useState<NightPresentationError | null>(null)
+  const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
+  const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
   const persistedFingerprintRef = useRef<string | null>(initialState.persistedFingerprint)
   const identityOperationPendingRef = useRef(false)
   const nightOperationPendingRef = useRef(false)
+  const briefingOperationPendingRef = useRef(false)
   const presentationOperationPendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
   const activeSession = appState.mode === 'active' ? appState.session : null
@@ -113,6 +131,7 @@ export default function App({
   useEffect(() => {
     identityOperationPendingRef.current = false
     nightOperationPendingRef.current = false
+    briefingOperationPendingRef.current = false
     presentationOperationPendingRef.current = false
   }, [activeSession])
 
@@ -148,6 +167,8 @@ export default function App({
     setDistributionError(null)
     setNightError(null)
     setPresentationError(null)
+    setFirstNightErrorMessage(null)
+    setBriefingErrorMessage(null)
   }
 
   function clearSavedSession(): void {
@@ -254,7 +275,8 @@ export default function App({
             workflow={session.workflow}
             error={distributionError}
             beginNightErrorMessage={
-              nightError === null ? null : getNightActionCollectionErrorMessage(nightError)
+              firstNightErrorMessage ??
+              (nightError === null ? null : getNightActionCollectionErrorMessage(nightError))
             }
             onCardDeliveryChange={(playerId: PlayerId, delivered: boolean) => {
               const result = setSessionCardDelivered(session, playerId, delivered)
@@ -269,16 +291,22 @@ export default function App({
               setActiveSession(result.value)
             }}
             onConfirmDistribution={() => {
-              const result = confirmSessionRoleDistribution(session)
-              if (!result.ok) {
-                if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                  handleInvalidStage(result.error)
+              runIdentityOperation(() => {
+                const result = confirmSessionRoleDistribution(
+                  session,
+                  roleAssignmentDependencies.randomSource,
+                )
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setFirstNightErrorMessage(getFirstNightTransitionErrorMessage(result.error))
+                  return false
                 }
-                setDistributionError(result.error)
-                return
-              }
-              setDistributionError(null)
-              setActiveSession(result.value)
+                clearErrors()
+                setActiveSession(result.value)
+                return true
+              })
             }}
             onReassignRoles={() => {
               runIdentityOperation(() => {
@@ -297,12 +325,66 @@ export default function App({
             }}
             onBeginFirstNight={() => {
               runNightOperation(() => {
-                const result = beginSessionFirstNight(session)
+                const result = beginSessionFirstNight(
+                  session,
+                  roleAssignmentDependencies.randomSource,
+                )
                 if (!result.ok) {
                   if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
                     handleInvalidStage(result.error)
                   }
-                  setNightError(result.error)
+                  setFirstNightErrorMessage(getFirstNightTransitionErrorMessage(result.error))
+                  return false
+                }
+                clearErrors()
+                setActiveSession(result.value)
+                return true
+              })
+            }}
+          />
+        )
+      case 'executioner-briefing':
+        return (
+          <ExecutionerBriefing
+            view={selectExecutionerBriefingView(
+              session.game,
+              session.participants,
+              session.workflow,
+            )}
+            errorMessage={briefingErrorMessage}
+            onAcknowledge={(briefingId: ExecutionerBriefingId) => {
+              runBriefingOperation(() => {
+                const result = acknowledgeSessionExecutionerBriefing(session, briefingId)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setBriefingErrorMessage(getExecutionerBriefingErrorMessage(result.error))
+                  return false
+                }
+                setBriefingErrorMessage(null)
+                setActiveSession(result.value)
+                return true
+              })
+            }}
+            onPrevious={() => {
+              runBriefingOperation(() =>
+                applyExecutionerBriefingResult(previousSessionExecutionerBriefing(session)),
+              )
+            }}
+            onNext={() => {
+              runBriefingOperation(() =>
+                applyExecutionerBriefingResult(nextSessionExecutionerBriefing(session)),
+              )
+            }}
+            onBeginNight={() => {
+              runBriefingOperation(() => {
+                const result = completeSessionExecutionerBriefings(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setBriefingErrorMessage(getBriefingCompletionErrorMessage(result.error))
                   return false
                 }
                 clearErrors()
@@ -443,6 +525,23 @@ export default function App({
     return true
   }
 
+  function applyExecutionerBriefingResult(
+    result: ReturnType<
+      typeof previousSessionExecutionerBriefing | typeof nextSessionExecutionerBriefing
+    >,
+  ): boolean {
+    if (!result.ok) {
+      if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+        handleInvalidStage(result.error)
+      }
+      setBriefingErrorMessage(getExecutionerBriefingErrorMessage(result.error))
+      return false
+    }
+    setBriefingErrorMessage(null)
+    setActiveSession(result.value)
+    return true
+  }
+
   function runIdentityOperation(operation: () => boolean): void {
     if (identityOperationPendingRef.current) {
       return
@@ -488,6 +587,21 @@ export default function App({
     }
   }
 
+  function runBriefingOperation(operation: () => boolean): void {
+    if (briefingOperationPendingRef.current) {
+      return
+    }
+    briefingOperationPendingRef.current = true
+    try {
+      if (!operation()) {
+        briefingOperationPendingRef.current = false
+      }
+    } catch (error: unknown) {
+      briefingOperationPendingRef.current = false
+      throw error
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -495,7 +609,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 6.5 · Local refresh recovery</p>
+        <p>Phase 7A · Executioner briefing</p>
       </header>
 
       <main className="app-main">
@@ -614,4 +728,102 @@ function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialA
 
 function createSessionFingerprint(session: ActiveAppSession): string {
   return JSON.stringify(toPersistedAppSessionV1(session))
+}
+
+type FirstNightTransitionError =
+  | RoleDistributionError
+  | FinalizeRoleDistributionError
+  | ExecutionerBriefingError
+  | NightActionCollectionError
+
+function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): string {
+  switch (error.type) {
+    case 'UNKNOWN_ROLE':
+    case 'DUPLICATE_ROLE_COUNT':
+    case 'INVALID_ROLE_COUNT':
+    case 'ASSIGNMENT_COUNT_MISMATCH':
+    case 'DUPLICATE_PARTICIPATING_PLAYER':
+    case 'IDENTIFIER_COLLISION':
+    case 'INVALID_IDENTIFIER':
+    case 'INVALID_RANDOM_VALUE':
+    case 'DOMAIN_ASSIGNMENT_REJECTED':
+    case 'INVALID_ROLE_DISTRIBUTION_STATE':
+    case 'UNKNOWN_CARD_DELIVERY_PLAYER':
+    case 'CARD_DELIVERY_INCOMPLETE':
+    case 'REASSIGNMENT_CONFIRMATION_REQUIRED':
+    case 'REASSIGNMENT_AFTER_CONFIRMATION':
+      return getRoleDistributionErrorMessage(error)
+    case 'ACTIVE_GAME_REJECTED':
+      return 'The active game failed domain validation, so the first-night transition was not applied.'
+    case 'WRONG_EXECUTIONER_ASSIGNMENT_PHASE':
+      return `Executioner targets can be assigned only after role distribution, not during ${error.currentPhase}.`
+    case 'DISTRIBUTION_NOT_FINALIZED':
+      return 'Confirm every physical role card before assigning Executioner targets.'
+    case 'EXISTING_EXECUTIONER_TARGETS':
+      return 'Executioner targets were already assigned. The game was not rerolled.'
+    case 'DEAD_EXECUTIONER_BEFORE_ASSIGNMENT':
+      return 'A finalized role distribution cannot assign a target to an Executioner already marked dead.'
+    case 'NO_ELIGIBLE_TOWN_TARGETS':
+      return 'No participating Town player is available as an Executioner target.'
+    case 'INVALID_EXECUTIONER_RANDOM_OUTPUT':
+      return `The random source returned ${String(error.value)} instead of a value from 0 inclusive to 1 exclusive.`
+    case 'EXECUTIONER_ASSIGNMENT_GAME_REJECTED':
+      return 'The finalized game failed domain validation, so no Executioner target was assigned.'
+    case 'EXECUTIONER_BRIEFING_GAME_REJECTED':
+    case 'EXECUTIONER_BRIEFING_GAME_MISMATCH':
+    case 'EXECUTIONER_BRIEFING_PHASE_MISMATCH':
+    case 'NO_EXECUTIONERS_FOR_BRIEFING':
+    case 'MISSING_EXECUTIONER_TARGET_RELATIONSHIP':
+    case 'INVALID_EXECUTIONER_BRIEFING_RECORD':
+    case 'UNKNOWN_EXECUTIONER_BRIEFING_ID':
+    case 'DUPLICATE_EXECUTIONER_BRIEFING_ACKNOWLEDGEMENT':
+    case 'UNKNOWN_EXECUTIONER_BRIEFING_ACKNOWLEDGEMENT':
+    case 'EXECUTIONER_BRIEFING_NOT_CURRENT':
+    case 'EXECUTIONER_BRIEFING_NOT_ACKNOWLEDGED':
+    case 'EXECUTIONER_BRIEFING_INDEX_OUT_OF_RANGE':
+    case 'EXECUTIONER_BRIEFING_NAVIGATION_BOUNDARY':
+    case 'INCOMPLETE_EXECUTIONER_BRIEFINGS':
+    case 'INVALID_EXECUTIONER_BRIEFING_WORKFLOW':
+      return getExecutionerBriefingErrorMessage(error)
+    case 'DISTRIBUTION_NOT_CONFIRMED':
+    case 'EXECUTIONER_BRIEFING_REQUIRED':
+    case 'INVALID_STARTING_PHASE':
+    case 'INVALID_STARTED_NIGHT_PHASE':
+    case 'UNKNOWN_ACTOR':
+    case 'DEAD_ACTOR':
+    case 'UNKNOWN_ROLE_INSTANCE':
+    case 'ROLE_INSTANCE_DOES_NOT_BELONG_TO_ACTOR':
+    case 'ACTOR_ROLE_MISMATCH':
+    case 'ROLE_HAS_NO_NIGHT_ACTION':
+    case 'WRONG_ACTION_KIND':
+    case 'UNKNOWN_TARGET':
+    case 'DEAD_TARGET':
+    case 'INVALID_SELF_TARGET':
+    case 'DOCTOR_REPEATED_PREVIOUS_TARGET':
+    case 'DUPLICATE_ACTOR_ACTION':
+    case 'UNEXPECTED_ACTION':
+    case 'MISSING_REQUIRED_ACTION':
+    case 'DUPLICATE_PREVIOUS_TARGET_CONTEXT':
+    case 'UNKNOWN_PREVIOUS_TARGET_ROLE_INSTANCE':
+    case 'PREVIOUS_TARGET_ROLE_NOT_DOCTOR':
+    case 'UNKNOWN_PREVIOUS_TARGET':
+    case 'ACTION_BATCH_GAME_MISMATCH':
+    case 'INVALID_ACTION_BATCH':
+    case 'UNKNOWN_SEQUENCE_ROLE':
+    case 'INVALID_WORKFLOW_STATE':
+    case 'INVALID_SEQUENCE_STEP':
+    case 'NO_VALID_TARGETS':
+    case 'TARGET_REQUIRED':
+    case 'SEQUENCE_BOUNDARY':
+    case 'ACTION_NOT_FOUND':
+    case 'INCOMPLETE_ACTION_BATCH':
+      return getNightActionCollectionErrorMessage(error)
+  }
+}
+
+function getBriefingCompletionErrorMessage(
+  error:
+    ExecutionerBriefingError | CompleteExecutionerBriefingPhaseError | NightActionCollectionError,
+): string {
+  return getFirstNightTransitionErrorMessage(error)
 }

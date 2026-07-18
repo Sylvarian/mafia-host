@@ -99,6 +99,36 @@ function getActiveGameRejectionMessage(error: ActiveGameRejection): string {
       return `Doctor role instance ${error.doctorRoleInstanceId} appears more than once in target history.`
     case 'DOCTOR_HISTORY_ORDER_MISMATCH':
       return 'Doctor target history is not in canonical participating-player order.'
+    case 'INVALID_EXECUTIONER_TARGETS':
+      return 'Executioner target state is malformed.'
+    case 'INVALID_EXECUTIONER_TARGET_RECORD':
+      return `Executioner target record ${String(error.index + 1)} has an invalid ${error.field} value.`
+    case 'EXECUTIONER_TARGET_GAME_MISMATCH':
+      return 'An Executioner target belongs to a different game.'
+    case 'UNKNOWN_EXECUTIONER_PLAYER':
+      return `Executioner target state references unknown owner ${error.executionerPlayerId}.`
+    case 'UNKNOWN_EXECUTIONER_ROLE_INSTANCE':
+      return `Executioner target state references unknown role instance ${error.executionerRoleInstanceId}.`
+    case 'EXECUTIONER_ROLE_INSTANCE_MISMATCH':
+      return 'An Executioner target owner does not match the assigned role instance.'
+    case 'NON_EXECUTIONER_TARGET_OWNER':
+      return 'A non-Executioner role instance cannot own an Executioner target.'
+    case 'DUPLICATE_EXECUTIONER_TARGET':
+      return `Executioner role instance ${error.executionerRoleInstanceId} has more than one target.`
+    case 'UNKNOWN_EXECUTIONER_TARGET_PLAYER':
+      return `Executioner target state references unknown player ${error.targetPlayerId}.`
+    case 'INELIGIBLE_EXECUTIONER_TARGET':
+      return `Player ${error.targetPlayerId} is not an eligible Town target.`
+    case 'EXECUTIONER_TARGET_ORDER_MISMATCH':
+      return 'Executioner targets are not in canonical role-instance order.'
+    case 'MISSING_EXECUTIONER_TARGET':
+      return `Executioner role instance ${error.executionerRoleInstanceId} is missing a target.`
+    case 'UNEXPECTED_EXECUTIONER_TARGET':
+      return `Role instance ${error.executionerRoleInstanceId} has an unexpected Executioner target.`
+    case 'EXECUTIONER_TARGETS_BEFORE_FINALIZATION':
+      return 'Executioner targets cannot exist before role distribution is finalised.'
+    case 'EXECUTIONER_BRIEFING_STATUS_MISMATCH':
+      return 'Executioner briefing status does not match the active game phase.'
     case 'INVALID_GAME_STATE':
       return getInvalidGameStateMessage(error.reason)
   }
@@ -118,6 +148,8 @@ function getInvalidGameStateMessage(
       return `The active game rejected an invalid ${error.field} identity.`
     case 'INVALID_PLAYER_ALIVE_STATE':
       return `Player ID ${error.playerId} has an invalid alive state; expected an explicit boolean.`
+    case 'INVALID_MAYOR_REVEALED_STATE':
+      return `Player ID ${error.playerId} has an invalid Mayor reveal state; expected an explicit boolean.`
     case 'INVALID_ROLE_ORDINAL':
       return `Role instance ${error.roleInstanceId} has invalid ordinal ${String(error.ordinal)}.`
     case 'ROLE_ORDINAL_MISMATCH':

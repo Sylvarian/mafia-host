@@ -115,6 +115,8 @@ function formatValidationError(error: GameSetupValidationError): string {
     }
     case 'NO_MAFIA_ROLE':
       return 'Select at least one Mafia role.'
+    case 'EXECUTIONER_REQUIRES_TOWN_TARGET':
+      return 'An Executioner requires at least one participating Town role to be selected as their target.'
   }
 }
 
@@ -135,6 +137,7 @@ function getValidationErrorKey(error: GameSetupValidationError): string {
       return `${error.type}-${String(error.participatingCount)}-${String(error.selectedRoleCount)}`
     case 'NO_PARTICIPATING_PLAYERS':
     case 'NO_MAFIA_ROLE':
+    case 'EXECUTIONER_REQUIRES_TOWN_TARGET':
       return error.type
   }
 }

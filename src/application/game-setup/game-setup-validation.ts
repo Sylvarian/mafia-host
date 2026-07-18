@@ -6,7 +6,7 @@ import {
 } from '@/domain/game/game-settings.ts'
 import type { PlayerId, RoleId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
-import { ROLE_REGISTRY } from '@/domain/roles/role-registry.ts'
+import { ROLE_IDS, ROLE_REGISTRY } from '@/domain/roles/role-registry.ts'
 
 import type { GameSetupDraft, RoleCount } from './game-setup-draft.ts'
 import { getParticipatingPlayerCount, getSelectedRoleCount } from './game-setup-draft.ts'
@@ -27,6 +27,7 @@ export type GameSetupValidationError =
       selectedRoleCount: number
     }>
   | Readonly<{ type: 'NO_MAFIA_ROLE' }>
+  | Readonly<{ type: 'EXECUTIONER_REQUIRES_TOWN_TARGET' }>
 
 export type GameSetupValidation = Readonly<{
   isValid: boolean
@@ -139,6 +140,15 @@ export function inspectGameSetupDraft(draft: GameSetupDraftCandidate): GameSetup
     errors.push({ type: 'NO_MAFIA_ROLE' })
   }
 
+  const executionerCount = getValidRoleCount(draft.roleCounts, ROLE_IDS.executioner)
+  const townRoleCount = ROLE_REGISTRY.filter((role) => role.faction === 'town').reduce(
+    (total, role) => total + getValidRoleCount(draft.roleCounts, role.id),
+    0,
+  )
+  if (executionerCount > 0 && townRoleCount === 0) {
+    errors.push({ type: 'EXECUTIONER_REQUIRES_TOWN_TARGET' })
+  }
+
   return Object.freeze({
     isValid: errors.length === 0,
     errors: Object.freeze(errors),
@@ -182,4 +192,14 @@ export function validateGameSetupDraft(
 
 function isValidRoleCount(count: number): boolean {
   return Number.isSafeInteger(count) && count >= 0
+}
+
+function getValidRoleCount(roleCounts: readonly RoleCount[], roleId: RoleId): number {
+  const matchingCounts = roleCounts.filter((roleCount) => roleCount.roleId === roleId)
+  if (matchingCounts.length !== 1) {
+    return 0
+  }
+
+  const count = matchingCounts[0]?.count
+  return count !== undefined && isValidRoleCount(count) ? count : 0
 }

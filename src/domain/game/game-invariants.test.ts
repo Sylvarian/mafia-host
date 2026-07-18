@@ -42,8 +42,6 @@ const aliceGamePlayer: GamePlayerCandidate = {
   alive: true,
   publiclyRevealedRoleId: null,
   mayorRevealed: false,
-  executionerTargetId: null,
-  personalWin: null,
 }
 const bobGamePlayer: GamePlayerCandidate = {
   playerId: bobId,
@@ -51,8 +49,6 @@ const bobGamePlayer: GamePlayerCandidate = {
   alive: true,
   publiclyRevealedRoleId: null,
   mayorRevealed: false,
-  executionerTargetId: null,
-  personalWin: null,
 }
 const roster: readonly Player[] = [
   { id: aliceId, name: 'Alice', playing: true },
@@ -210,20 +206,19 @@ describe('game invariants', () => {
     })
   })
 
-  it('rejects unknown player references', () => {
+  it('does not adopt legacy player-level target properties as authority', () => {
+    const legacyCandidate = { ...aliceGamePlayer, executionerTargetId: unknownPlayerId }
     const result = createGame({
       ...validInput(),
-      players: [{ ...aliceGamePlayer, executionerTargetId: unknownPlayerId }, bobGamePlayer],
+      players: [legacyCandidate, bobGamePlayer],
     })
 
-    expect(result).toEqual({
-      ok: false,
-      error: {
-        type: 'UNKNOWN_PLAYER_REFERENCE',
-        playerId: unknownPlayerId,
-        reference: 'executioner-target',
-      },
-    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected legacy player-level target data to be ignored.')
+    }
+    expect(result.value.executionerTargets).toEqual([])
+    expect(result.value.players[0]).not.toHaveProperty('executionerTargetId')
   })
 
   it('rejects role-instance references to unknown role definitions', () => {

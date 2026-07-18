@@ -7,6 +7,7 @@ import { createNightFixture } from '../../../tests/support/night-action-fixtures
 import {
   beginFirstNight,
   continueNightActionCollection,
+  createNightActionCollectionForStartedNight,
   createNightActionCollectionWorkflow,
   editNightAction,
   finaliseNightActionCollection,
@@ -83,7 +84,7 @@ describe('begin first night', () => {
     expect(workflow.game.nightNumber).toBe(1)
   })
 
-  it('blocks an unset Executioner target without assigning one or entering briefing', () => {
+  it('does not bypass the dedicated Executioner briefing from the legacy entry operation', () => {
     const fixture = createNightFixture([
       { roleId: ROLE_IDS.godfather },
       { roleId: ROLE_IDS.executioner },
@@ -93,16 +94,16 @@ describe('begin first night', () => {
 
     expect(result).toMatchObject({
       ok: false,
-      error: { type: 'EXECUTIONER_TARGET_REQUIRED', actorPlayerId: 'player-2' },
+      error: { type: 'EXECUTIONER_BRIEFING_REQUIRED', actorPlayerId: 'player-2' },
     })
     expect(fixture.game.phase).toBe('role-distribution')
-    expect(fixture.game.players[1]?.executionerTargetId).toBeNull()
+    expect(fixture.game.executionerTargets).toEqual([])
   })
 
-  it('checks every living Executioner for a null target before considering briefing', () => {
+  it('does not reroll or skip a briefing when a target record is already present', () => {
     const fixture = createNightFixture([
       { roleId: ROLE_IDS.executioner, executionerTargetId: playerId('player-3') },
-      { roleId: ROLE_IDS.executioner },
+      { roleId: ROLE_IDS.executioner, executionerTargetId: null },
       { roleId: ROLE_IDS.citizen },
     ])
 
@@ -111,28 +112,56 @@ describe('begin first night', () => {
     ).toMatchObject({
       ok: false,
       error: {
-        type: 'EXECUTIONER_TARGET_REQUIRED',
-        actorPlayerId: 'player-2',
-        actorRoleInstanceId: 'role-instance-2',
+        type: 'EXECUTIONER_BRIEFING_REQUIRED',
+        actorPlayerId: 'player-1',
       },
     })
-    expect(fixture.game.players.map((player) => player.executionerTargetId)).toEqual([
+    expect(fixture.game.executionerTargets.map((target) => target.targetPlayerId)).toEqual([
       'player-3',
-      null,
-      null,
     ])
   })
 
-  it('does not let a dead Executioner block night entry', () => {
+  it('does not skip a malformed dead Executioner at the legacy entry boundary', () => {
     const fixture = createNightFixture([
-      { roleId: ROLE_IDS.executioner, alive: false },
+      { roleId: ROLE_IDS.executioner, alive: false, executionerTargetId: null },
       { roleId: ROLE_IDS.citizen },
     ])
     const result = beginFirstNight(createNightActionCollectionWorkflow(fixture.distribution))
 
-    expect(result.ok).toBe(true)
-    if (!result.ok) throw new Error('Expected the dead Executioner to be omitted.')
-    expect(result.value.steps).toEqual([{ type: 'night-opening' }, { type: 'review' }])
+    expect(result).toMatchObject({
+      ok: false,
+      error: { type: 'EXECUTIONER_BRIEFING_REQUIRED', actorPlayerId: 'player-1' },
+    })
+  })
+
+  it('rejects a started Night 1 game whose Executioner target is missing', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.godfather },
+      ],
+      { phase: 'night-action-collection', nightNumber: 1 },
+    )
+    const executioner = fixture.game.players[0]
+    if (executioner === undefined) throw new Error('Expected an Executioner fixture player.')
+
+    const result = createNightActionCollectionForStartedNight(
+      { ...fixture.game, executionerTargets: [] },
+      fixture.participants,
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        type: 'ACTIVE_GAME_REJECTED',
+        error: {
+          type: 'MISSING_EXECUTIONER_TARGET',
+          executionerPlayerId: executioner.playerId,
+          executionerRoleInstanceId: executioner.role.instanceId,
+        },
+      },
+    })
   })
 
   it('rejects invalid previous-target identities at entry without changing the original game', () => {
@@ -560,9 +589,7 @@ describe('night-action collection workflow', () => {
     expect(result.value.collectedActions).not.toHaveProperty('results')
     expect(result.value.collectedActions).not.toHaveProperty('deaths')
     expect(result.value.collectedActions).not.toHaveProperty('visits')
-    expect(result.value.game.players.every((player) => player.executionerTargetId === null)).toBe(
-      true,
-    )
+    expect(result.value.game.executionerTargets).toEqual([])
   })
 
   it('carries mutual Consort targets through review and finalisation as intent only', () => {

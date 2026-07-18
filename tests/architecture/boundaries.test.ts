@@ -12,7 +12,9 @@ const dependencyCruiserCli = resolve(
 )
 const allowedFixture = resolve(repositoryRoot, 'tests/architecture/fixtures/allowed/src')
 const forbiddenFixture = resolve(repositoryRoot, 'tests/architecture/fixtures/forbidden/src')
-const architectureCheckTimeout = 20_000
+// Dependency Cruiser competes with the concurrent Vitest suite on slower hosts.
+// Keep the limit local so production tests retain Vitest's default timeout.
+const architectureCheckTimeout = 60_000
 
 function runDependencyCruiser(
   outputType: 'err' | 'json',

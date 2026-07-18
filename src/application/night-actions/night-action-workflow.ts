@@ -1,5 +1,6 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
 import type { GameCommandError } from '@/domain/game/game-errors.ts'
+import { validateGameState } from '@/domain/game/game-invariants.ts'
 import { handleGameCommand } from '@/domain/game/game-reducer.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
@@ -83,12 +84,8 @@ export type NightActionCollectionError =
   | NightActionBatchError
   | Readonly<{ type: 'DISTRIBUTION_NOT_CONFIRMED' }>
   | Readonly<{ type: 'INVALID_STARTING_PHASE'; currentPhase: GameState['phase'] }>
-  | Readonly<{
-      type: 'EXECUTIONER_TARGET_REQUIRED'
-      actorPlayerId: PlayerId
-      actorRoleInstanceId: RoleInstanceId
-    }>
   | Readonly<{ type: 'EXECUTIONER_BRIEFING_REQUIRED'; actorPlayerId: PlayerId }>
+  | Readonly<{ type: 'INVALID_STARTED_NIGHT_PHASE'; currentPhase: GameState['phase'] }>
   | Readonly<{ type: 'ACTIVE_GAME_REJECTED'; error: GameCommandError }>
   | Readonly<{
       type: 'INVALID_WORKFLOW_STATE'
@@ -139,23 +136,8 @@ export function beginFirstNight(
     return fail({ type: 'INVALID_STARTING_PHASE', currentPhase: startingGame.phase })
   }
 
-  const executionerWithoutTarget = startingGame.players.find(
-    (player) =>
-      player.alive &&
-      player.role.roleId === ROLE_IDS.executioner &&
-      player.executionerTargetId === null,
-  )
-
-  if (executionerWithoutTarget !== undefined) {
-    return fail({
-      type: 'EXECUTIONER_TARGET_REQUIRED',
-      actorPlayerId: executionerWithoutTarget.playerId,
-      actorRoleInstanceId: executionerWithoutTarget.role.instanceId,
-    })
-  }
-
   const executionerRequiringBriefing = startingGame.players.find(
-    (player) => player.alive && player.role.roleId === ROLE_IDS.executioner,
+    (player) => player.role.roleId === ROLE_IDS.executioner,
   )
 
   if (executionerRequiringBriefing !== undefined) {
@@ -175,16 +157,35 @@ export function beginFirstNight(
     return fail({ type: 'ACTIVE_GAME_REJECTED', error: gameResult.error })
   }
 
-  const game = gameResult.value.state
-  const sequenceResult = buildNightActionSequence(game)
+  return createNightActionCollectionForStartedNight(
+    gameResult.value.state,
+    workflow.distribution.setup.participatingPlayers,
+  )
+}
+
+export function createNightActionCollectionForStartedNight(
+  game: GameState,
+  participants: readonly Player[],
+): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
+  if (game.phase !== 'night-action-collection') {
+    return fail({ type: 'INVALID_STARTED_NIGHT_PHASE', currentPhase: game.phase })
+  }
+
+  const gameResult = validateGameState(game)
+  if (!gameResult.ok) {
+    return fail({ type: 'ACTIVE_GAME_REJECTED', error: gameResult.error })
+  }
+  const validatedGame = gameResult.value
+
+  const sequenceResult = buildNightActionSequence(validatedGame)
 
   if (!sequenceResult.ok) {
     return sequenceResult
   }
 
   const previousTargetsResult = validatePreviousNightTargets(
-    game,
-    selectDoctorPreviousTargetsForNight(game),
+    validatedGame,
+    selectDoctorPreviousTargetsForNight(validatedGame),
   )
 
   if (!previousTargetsResult.ok) {
@@ -198,10 +199,10 @@ export function beginFirstNight(
       continue
     }
 
-    const hasValidTarget = game.players.some(
+    const hasValidTarget = validatedGame.players.some(
       (target) =>
         createActionForStep(
-          game,
+          validatedGame,
           step,
           target.playerId,
           findPreviousTarget(previousTargetsCopy, step.actorRoleInstanceId),
@@ -219,12 +220,8 @@ export function beginFirstNight(
 
   return succeed({
     status: 'collecting',
-    game,
-    participants: Object.freeze(
-      workflow.distribution.setup.participatingPlayers.map((player) =>
-        Object.freeze({ ...player }),
-      ),
-    ),
+    game: validatedGame,
+    participants: Object.freeze(participants.map((player) => Object.freeze({ ...player }))),
     steps: sequenceResult.value,
     currentStepIndex: 0,
     submittedActions: Object.freeze([]),

@@ -1,4 +1,5 @@
 import type { GameId } from '../identifiers.ts'
+import type { ExecutionerTarget } from '../executioner/executioner-target-model.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
@@ -17,14 +18,27 @@ export type GameState = Readonly<{
   nightNumber: NightNumber
   dayNumber: DayNumber
   doctorPreviousTargets: readonly DoctorPreviousTarget[]
+  executionerTargets: readonly ExecutionerTarget[]
+  executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
 }>
 
-export type GamePlayerCandidate = Readonly<Omit<GamePlayer, 'role'> & { role: RoleInstance | null }>
+export type GamePlayerCandidate = Readonly<
+  Omit<GamePlayer, 'role'> & {
+    role: RoleInstance | null
+  }
+>
 
 export type GameStateCandidate = Readonly<
   Omit<
     GameState,
-    'phase' | 'players' | 'settings' | 'nightNumber' | 'dayNumber' | 'doctorPreviousTargets'
+    | 'phase'
+    | 'players'
+    | 'settings'
+    | 'nightNumber'
+    | 'dayNumber'
+    | 'doctorPreviousTargets'
+    | 'executionerTargets'
+    | 'executionerBriefingStatus'
   > & {
     phase: string
     players: readonly GamePlayerCandidate[]
@@ -32,6 +46,8 @@ export type GameStateCandidate = Readonly<
     nightNumber: number
     dayNumber: number
     doctorPreviousTargets: unknown
+    executionerTargets: unknown
+    executionerBriefingStatus: unknown
   }
 >
 

@@ -4,12 +4,12 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
   switch (error.type) {
     case 'DISTRIBUTION_NOT_CONFIRMED':
       return 'Confirm every physical role card has been distributed before beginning the first night.'
-    case 'EXECUTIONER_TARGET_REQUIRED':
-      return 'This game contains an Executioner, but Executioner target eligibility has not been configured yet. The first night cannot begin until R-008 is resolved.'
     case 'EXECUTIONER_BRIEFING_REQUIRED':
-      return 'This Executioner requires a private first-night briefing. Phase 4 does not implement or skip that briefing.'
+      return 'Complete the private Executioner briefing before collecting Night 1 actions.'
     case 'INVALID_STARTING_PHASE':
       return `The first night can begin only from role distribution. The game is currently in ${error.currentPhase}.`
+    case 'INVALID_STARTED_NIGHT_PHASE':
+      return `Night action collection cannot be created while the game is in ${error.currentPhase}.`
     case 'UNKNOWN_ACTOR':
       return 'The acting player is not part of this game.'
     case 'DEAD_ACTOR':

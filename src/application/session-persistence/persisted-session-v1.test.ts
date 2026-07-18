@@ -15,16 +15,21 @@ import {
 } from '../../../tests/support/night-resolution-fixtures.ts'
 import { SequentialRoleAssignmentIdentitySource } from '../../../tests/support/sequential-role-assignment-identity-source.ts'
 import type { RoleAssignmentDependencies } from '../role-assignment/index.ts'
+import { confirmRoleDistribution } from '../role-assignment/index.ts'
 import {
+  acknowledgeSessionExecutionerBriefing,
   acknowledgeSessionPrivateResult,
   assignSessionRoles,
   beginSessionFirstNight,
+  completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionRoleDistribution,
   continueSessionNight,
   createActiveAppSession,
   createPersistedSessionEnvelopeV1,
+  createSessionStageSummary,
   finaliseSessionNightActions,
+  nextSessionExecutionerBriefing,
   nextSessionPrivateResult,
   previousSessionNight,
   prepareSessionDawn,
@@ -164,14 +169,18 @@ describe('persisted session envelope V1', () => {
     getMutableSession(forgedConfirmationEnvelope).workflowStatus = 'confirmed'
     expectFailure(forgedConfirmationEnvelope, 'INVALID_ROLE_DISTRIBUTION_SESSION')
 
-    const confirmed = take(confirmSessionRoleDistribution(distribution))
+    const confirmedWorkflow = take(confirmRoleDistribution(distribution.workflow))
+    const confirmed: ActiveAppSession = {
+      stage: 'role-distribution',
+      workflow: confirmedWorkflow,
+    }
     const confirmedRestored = roundTrip(confirmed).session
     expect(confirmedRestored.stage).toBe('role-distribution')
     if (confirmedRestored.stage !== 'role-distribution') {
       throw new Error('Expected confirmed distribution.')
     }
     expect(confirmedRestored.workflow.status).toBe('confirmed')
-    expect(confirmedRestored.workflow.game.id).toBe(confirmed.workflow.game.id)
+    expect(confirmedRestored.workflow.game.id).toBe(confirmedWorkflow.game.id)
     expect(toPersistedAppSessionV1(confirmed)).not.toHaveProperty('deliveredPlayerIds')
   })
 
@@ -233,6 +242,397 @@ describe('persisted session envelope V1', () => {
       ),
     ).toBe(true)
     expect(reassigned.workflow.deliveredPlayerIds).toEqual([])
+  })
+
+  it('round-trips the first, middle, and ready Executioner briefing without rerandomizing targets', () => {
+    let randomCalls = 0
+    const opening = buildExecutionerBriefingSession({
+      next: () => {
+        randomCalls += 1
+        return 0
+      },
+    })
+    expect(randomCalls).toBe(2)
+    const originalTargets = opening.game.executionerTargets
+    expect(originalTargets.map((target) => target.targetPlayerId)).toEqual(['player-2', 'player-2'])
+
+    const openingRestored = roundTrip(opening).session
+    expect(randomCalls).toBe(2)
+    if (openingRestored.stage !== 'executioner-briefing') {
+      throw new Error('Expected restored opening briefing.')
+    }
+    expect(openingRestored.game.executionerTargets).toEqual(originalTargets)
+    expect(openingRestored.workflow.currentBriefingIndex).toBe(0)
+    expect(openingRestored.workflow.acknowledgedBriefingIds).toEqual([])
+
+    const firstBriefingId =
+      opening.workflow.briefings[0]?.id ?? missing('first Executioner briefing')
+    const acknowledged = take(acknowledgeSessionExecutionerBriefing(opening, firstBriefingId))
+    const middle = take(nextSessionExecutionerBriefing(acknowledged))
+    const middleRestored = roundTrip(middle).session
+    if (middleRestored.stage !== 'executioner-briefing') {
+      throw new Error('Expected restored middle briefing.')
+    }
+    expect(middleRestored.workflow.currentBriefingIndex).toBe(1)
+    expect(middleRestored.workflow.acknowledgedBriefingIds).toEqual([firstBriefingId])
+    expect(middleRestored.game.executionerTargets).toEqual(originalTargets)
+
+    const secondBriefingId =
+      middle.workflow.briefings[1]?.id ?? missing('second Executioner briefing')
+    const ready = take(acknowledgeSessionExecutionerBriefing(middle, secondBriefingId))
+    expect(ready.workflow.status).toBe('ready')
+    const readyRestored = roundTrip(ready).session
+    if (readyRestored.stage !== 'executioner-briefing') {
+      throw new Error('Expected restored ready briefing.')
+    }
+    expect(readyRestored.workflow.status).toBe('ready')
+    expect(readyRestored.workflow.acknowledgedBriefingIds).toEqual([
+      firstBriefingId,
+      secondBriefingId,
+    ])
+
+    const night = take(completeSessionExecutionerBriefings(readyRestored))
+    expect(night.workflow.game.executionerTargets).toEqual(originalTargets)
+    expect(night.workflow.game.executionerBriefingStatus).toBe('completed')
+    expect(roundTrip(night).session).toEqual(night)
+    expect(randomCalls).toBe(2)
+  })
+
+  it('persists only canonical briefing evidence and rebuilds reordered targets canonically', () => {
+    const opening = buildExecutionerBriefingSession({ next: () => 0 })
+    const persisted = toPersistedAppSessionV1(opening)
+    expect(persisted.stage).toBe('executioner-briefing')
+    expect(persisted).not.toHaveProperty('briefings')
+    expect(persisted).not.toHaveProperty('records')
+    expect(JSON.stringify(persisted)).not.toContain('targetRoleId')
+    expect(JSON.stringify(persisted)).not.toContain('targetFaction')
+
+    const envelope = mutableEnvelope(createPersistedSessionEnvelopeV1(opening, SAVED_AT))
+    const session = getMutableSession(envelope)
+    if (!isUnknownRecord(session.game) || !Array.isArray(session.game.executionerTargets)) {
+      throw new Error('Expected persisted Executioner targets.')
+    }
+    session.game.executionerTargets.reverse()
+
+    const restored = take(restorePersistedSessionEnvelopeV1(envelope))
+    if (restored.session.stage !== 'executioner-briefing') {
+      throw new Error('Expected canonical restored briefing.')
+    }
+    expect(restored.session.game.executionerTargets).toEqual(opening.game.executionerTargets)
+    expect(restored.session.workflow.briefings).toEqual(opening.workflow.briefings)
+  })
+
+  it('rejects forged target, acknowledgement, status, index, and stage/phase briefing state', () => {
+    function briefingEnvelope() {
+      return mutableEnvelope(
+        createPersistedSessionEnvelopeV1(
+          buildExecutionerBriefingSession({ next: () => 0 }),
+          SAVED_AT,
+        ),
+      )
+    }
+
+    const nonTownTarget = briefingEnvelope()
+    const nonTownSession = getMutableSession(nonTownTarget)
+    if (
+      !isUnknownRecord(nonTownSession.game) ||
+      !Array.isArray(nonTownSession.game.executionerTargets) ||
+      !isUnknownRecord(nonTownSession.game.executionerTargets[0])
+    ) {
+      throw new Error('Expected a persisted target.')
+    }
+    nonTownSession.game.executionerTargets[0].targetPlayerId = 'player-4'
+    expectFailure(nonTownTarget, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const crossGameTarget = briefingEnvelope()
+    const crossGameSession = getMutableSession(crossGameTarget)
+    if (
+      !isUnknownRecord(crossGameSession.game) ||
+      !Array.isArray(crossGameSession.game.executionerTargets) ||
+      !isUnknownRecord(crossGameSession.game.executionerTargets[0])
+    ) {
+      throw new Error('Expected a persisted target.')
+    }
+    crossGameSession.game.executionerTargets[0].gameId = 'another-game'
+    expectFailure(crossGameTarget, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const duplicateOwner = briefingEnvelope()
+    const duplicateSession = getMutableSession(duplicateOwner)
+    if (
+      !isUnknownRecord(duplicateSession.game) ||
+      !Array.isArray(duplicateSession.game.executionerTargets) ||
+      !isUnknownRecord(duplicateSession.game.executionerTargets[0]) ||
+      !isUnknownRecord(duplicateSession.game.executionerTargets[1])
+    ) {
+      throw new Error('Expected duplicate persisted targets.')
+    }
+    duplicateSession.game.executionerTargets[1].executionerPlayerId =
+      duplicateSession.game.executionerTargets[0].executionerPlayerId
+    duplicateSession.game.executionerTargets[1].executionerRoleInstanceId =
+      duplicateSession.game.executionerTargets[0].executionerRoleInstanceId
+    expectFailure(duplicateOwner, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const forgedAcknowledgement = briefingEnvelope()
+    getMutableSession(forgedAcknowledgement).acknowledgedBriefingIds = ['forged-briefing']
+    expectFailure(forgedAcknowledgement, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const forgedReady = briefingEnvelope()
+    getMutableSession(forgedReady).workflowStatus = 'ready'
+    expectFailure(forgedReady, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const invalidIndex = briefingEnvelope()
+    getMutableSession(invalidIndex).currentBriefingIndex = 2
+    expectFailure(invalidIndex, 'INVALID_EXECUTIONER_BRIEFING_SESSION')
+
+    const wrongPhase = briefingEnvelope()
+    const wrongPhaseSession = getMutableSession(wrongPhase)
+    if (!isUnknownRecord(wrongPhaseSession.game)) {
+      throw new Error('Expected a persisted briefing game.')
+    }
+    wrongPhaseSession.game.phase = 'night-action-collection'
+    wrongPhaseSession.game.executionerBriefingStatus = 'completed'
+    expectFailure(wrongPhase, 'STAGE_PHASE_MISMATCH')
+  })
+
+  it('rejects stale briefing workflow evidence outside the briefing stage', () => {
+    const distributionSource = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      { distributionStatus: 'confirmed' },
+    )
+    if (distributionSource.distribution.status !== 'confirmed') {
+      throw new Error('Expected a confirmed distribution fixture.')
+    }
+    const distribution = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(
+        { stage: 'role-distribution', workflow: distributionSource.distribution },
+        SAVED_AT,
+      ),
+    )
+    getMutableSession(distribution).acknowledgedBriefingIds = []
+    expectFailure(distribution, 'INVALID_ROLE_DISTRIBUTION_SESSION')
+
+    const night = mutableEnvelope(createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT))
+    getMutableSession(night).currentBriefingIndex = 0
+    expectFailure(night, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const presentation = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildReadyForDawn(), SAVED_AT),
+    )
+    getMutableSession(presentation).briefings = []
+    expectFailure(presentation, 'INVALID_NIGHT_PRESENTATION_SESSION')
+
+    const dawn = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(take(prepareSessionDawn(buildReadyForDawn())), SAVED_AT),
+    )
+    getMutableSession(dawn).acknowledgedBriefingIds = []
+    expectFailure(dawn, 'INVALID_DAWN_SESSION')
+  })
+
+  it('keeps the briefing recovery summary public-safe', () => {
+    const opening = buildExecutionerBriefingSession({ next: () => 0 })
+    const summary = createSessionStageSummary(opening)
+    const text = JSON.stringify(summary)
+
+    expect(summary).toEqual({
+      stage: 'Executioner briefing',
+      playerCount: 4,
+      nightNumber: 1,
+      dayNumber: 0,
+    })
+    expect(text).not.toContain('Secret Executioner')
+    expect(text).not.toContain('Secret Target')
+    expect(text).not.toContain('player-1')
+    expect(text).not.toContain('player-2')
+    expect(text).not.toContain('executionerCount')
+  })
+
+  it('restores deployed V1 distributions, no-Executioner nights, and Dawn through explicit legacy shape detection', () => {
+    const unconfirmedSource = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.godfather },
+      ],
+      { distributionStatus: 'distributing' },
+    )
+    if (unconfirmedSource.distribution.status !== 'distributing') {
+      throw new Error('Expected unconfirmed legacy distribution fixture.')
+    }
+    const legacyUnconfirmed = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(
+        { stage: 'role-distribution', workflow: unconfirmedSource.distribution },
+        SAVED_AT,
+      ),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyUnconfirmed))
+    const restoredUnconfirmed = take(restorePersistedSessionEnvelopeV1(legacyUnconfirmed)).session
+    expect(restoredUnconfirmed.stage).toBe('role-distribution')
+    if (
+      restoredUnconfirmed.stage !== 'role-distribution' ||
+      restoredUnconfirmed.workflow.status !== 'distributing'
+    ) {
+      throw new Error('Expected restored unconfirmed legacy distribution.')
+    }
+
+    const briefingSource = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner, name: 'Executioner' },
+        { roleId: ROLE_IDS.citizen, name: 'Town' },
+        { roleId: ROLE_IDS.godfather, name: 'Mafia' },
+      ],
+      { distributionStatus: 'confirmed' },
+    )
+    if (briefingSource.distribution.status !== 'confirmed') {
+      throw new Error('Expected confirmed legacy distribution fixture.')
+    }
+    const legacyDistribution = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(
+        { stage: 'role-distribution', workflow: briefingSource.distribution },
+        SAVED_AT,
+      ),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyDistribution))
+    const restoredDistribution = take(restorePersistedSessionEnvelopeV1(legacyDistribution)).session
+    expect(restoredDistribution.stage).toBe('role-distribution')
+    const started = take(beginSessionFirstNight(restoredDistribution, { next: () => 0 }))
+    expect(started.stage).toBe('executioner-briefing')
+
+    const legacyNight = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyNight))
+    expect(take(restorePersistedSessionEnvelopeV1(legacyNight)).session.stage).toBe('night-action')
+
+    const legacyDawn = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(take(prepareSessionDawn(buildReadyForDawn())), SAVED_AT),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyDawn))
+    expect(take(restorePersistedSessionEnvelopeV1(legacyDawn)).session.stage).toBe('dawn')
+
+    const partialCurrent = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT),
+    )
+    const partialSession = getMutableSession(partialCurrent)
+    if (!isUnknownRecord(partialSession.game)) throw new Error('Expected current game.')
+    delete partialSession.game.executionerTargets
+    expectFailure(partialCurrent, 'INVALID_NIGHT_ACTION_SESSION')
+  })
+
+  it('accepts only the exact deployed null legacy player fields and rejects mixed shapes', () => {
+    function legacyNightEnvelope() {
+      const envelope = mutableEnvelope(
+        createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT),
+      )
+      convertGameToLegacyV1(getMutableSession(envelope))
+      return envelope
+    }
+
+    expect(take(restorePersistedSessionEnvelopeV1(legacyNightEnvelope())).session.stage).toBe(
+      'night-action',
+    )
+
+    const bothAbsent = legacyNightEnvelope()
+    const bothAbsentPlayer = getFirstMutableGamePlayer(getMutableSession(bothAbsent))
+    delete bothAbsentPlayer.executionerTargetId
+    delete bothAbsentPlayer.personalWin
+    expectFailure(bothAbsent, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const missingTarget = legacyNightEnvelope()
+    delete getFirstMutableGamePlayer(getMutableSession(missingTarget)).executionerTargetId
+    expectFailure(missingTarget, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const missingWin = legacyNightEnvelope()
+    delete getFirstMutableGamePlayer(getMutableSession(missingWin)).personalWin
+    expectFailure(missingWin, 'INVALID_NIGHT_ACTION_SESSION')
+
+    for (const value of ['player-2', false, '', 0, {}, []]) {
+      const invalidTarget = legacyNightEnvelope()
+      getFirstMutableGamePlayer(getMutableSession(invalidTarget)).executionerTargetId = value
+      expectFailure(invalidTarget, 'INVALID_NIGHT_ACTION_SESSION')
+    }
+    for (const value of ['jester', 'executioner', false, '', 0, {}, []]) {
+      const forgedWin = legacyNightEnvelope()
+      getFirstMutableGamePlayer(getMutableSession(forgedWin)).personalWin = value
+      expectFailure(forgedWin, 'INVALID_NIGHT_ACTION_SESSION')
+    }
+
+    const mixedLegacyPlayers = legacyNightEnvelope()
+    const mixedSession = getMutableSession(mixedLegacyPlayers)
+    const secondPlayer = getMutableGamePlayer(mixedSession, 1)
+    delete secondPlayer.executionerTargetId
+    delete secondPlayer.personalWin
+    expectFailure(mixedLegacyPlayers, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const mixedCurrentPlayer = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT),
+    )
+    const currentPlayer = getFirstMutableGamePlayer(getMutableSession(mixedCurrentPlayer))
+    currentPlayer.executionerTargetId = null
+    currentPlayer.personalWin = null
+    expectFailure(mixedCurrentPlayer, 'INVALID_NIGHT_ACTION_SESSION')
+  })
+
+  it('requires the complete current neutral-state extension with exact field types', () => {
+    function currentNightEnvelope() {
+      return mutableEnvelope(createPersistedSessionEnvelopeV1(buildNightSession(), SAVED_AT))
+    }
+
+    const partialMutations: readonly ((game: Record<string, unknown>) => void)[] = [
+      (game) => {
+        delete game.neutralStateVersion
+      },
+      (game) => {
+        delete game.executionerTargets
+      },
+      (game) => {
+        delete game.executionerBriefingStatus
+      },
+    ]
+    for (const mutateGame of partialMutations) {
+      const partial = currentNightEnvelope()
+      const session = getMutableSession(partial)
+      if (!isUnknownRecord(session.game)) throw new Error('Expected a current persisted game.')
+      mutateGame(session.game)
+      expectFailure(partial, 'INVALID_NIGHT_ACTION_SESSION')
+    }
+
+    const unknownNeutralVersion = currentNightEnvelope()
+    const unknownVersionSession = getMutableSession(unknownNeutralVersion)
+    if (!isUnknownRecord(unknownVersionSession.game)) {
+      throw new Error('Expected a current persisted game.')
+    }
+    unknownVersionSession.game.neutralStateVersion = 2
+    expectFailure(unknownNeutralVersion, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const invalidTargets = currentNightEnvelope()
+    const invalidTargetsSession = getMutableSession(invalidTargets)
+    if (!isUnknownRecord(invalidTargetsSession.game)) {
+      throw new Error('Expected a current persisted game.')
+    }
+    invalidTargetsSession.game.executionerTargets = {}
+    expectFailure(invalidTargets, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const invalidStatus = currentNightEnvelope()
+    const invalidStatusSession = getMutableSession(invalidStatus)
+    if (!isUnknownRecord(invalidStatusSession.game)) {
+      throw new Error('Expected a current persisted game.')
+    }
+    invalidStatusSession.game.executionerBriefingStatus = true
+    expectFailure(invalidStatus, 'INVALID_NIGHT_ACTION_SESSION')
+  })
+
+  it('rejects impossible deployed Executioner Night and Dawn saves', () => {
+    const legacyNight = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildExecutionerCompleteNight(), SAVED_AT),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyNight))
+    expectFailure(legacyNight, 'INVALID_NIGHT_ACTION_SESSION')
+
+    const legacyDawn = mutableEnvelope(
+      createPersistedSessionEnvelopeV1(buildExecutionerDawn(), SAVED_AT),
+    )
+    convertGameToLegacyV1(getMutableSession(legacyDawn))
+    expectFailure(legacyDawn, 'INVALID_DAWN_SESSION')
   })
 
   it('restores opening, partial, corrected, review, and complete night-action states', () => {
@@ -317,10 +717,13 @@ describe('persisted session envelope V1', () => {
       throw new Error('Expected confirmed Doctor distribution.')
     }
     const begun = take(
-      beginSessionFirstNight({
-        stage: 'role-distribution',
-        workflow: fixture.distribution,
-      }),
+      beginSessionFirstNight(
+        {
+          stage: 'role-distribution',
+          workflow: fixture.distribution,
+        },
+        createDependencies().randomSource,
+      ),
     )
     expect(toPersistedAppSessionV1(begun)).not.toHaveProperty('previousTargets')
 
@@ -361,10 +764,13 @@ describe('persisted session envelope V1', () => {
       throw new Error('Expected confirmed Consort distribution.')
     }
     let session = take(
-      beginSessionFirstNight({
-        stage: 'role-distribution',
-        workflow: fixture.distribution,
-      }),
+      beginSessionFirstNight(
+        {
+          stage: 'role-distribution',
+          workflow: fixture.distribution,
+        },
+        createDependencies().randomSource,
+      ),
     )
 
     while (session.workflow.status === 'collecting') {
@@ -481,6 +887,8 @@ describe('persisted session envelope V1', () => {
     expect(text).not.toContain('collectedActions')
     expect(text).not.toContain('resolution')
     expect(text).not.toContain('acknowledgedResultIds')
+    expect(text).not.toContain('acknowledgedBriefingIds')
+    expect(text).not.toContain('currentBriefingIndex')
     expect(text).not.toContain('attackAttempts')
     expect(text).not.toContain('actualRoleId')
 
@@ -663,6 +1071,34 @@ describe('persisted session envelope V1', () => {
         nightNumber: 2,
       },
     ])
+  })
+
+  it('retains Executioner targets through first Dawn without retaining briefing workflow data', () => {
+    const dawn = buildExecutionerDawn()
+    const target = dawn.workflow.game.executionerTargets[0]
+    if (target === undefined) throw new Error('Expected a retained Executioner target.')
+    const targetPlayer = dawn.workflow.game.players.find(
+      (player) => player.playerId === target.targetPlayerId,
+    )
+    const executioner = dawn.workflow.game.players.find(
+      (player) => player.playerId === target.executionerPlayerId,
+    )
+
+    expect(targetPlayer?.alive).toBe(false)
+    expect(executioner?.role.roleId).toBe(ROLE_IDS.executioner)
+    expect(dawn.workflow.game.executionerBriefingStatus).toBe('completed')
+
+    const persisted = toPersistedAppSessionV1(dawn)
+    if (persisted.stage !== 'dawn') throw new Error('Expected a persisted Executioner Dawn.')
+    expect(persisted).not.toHaveProperty('briefings')
+    expect(persisted).not.toHaveProperty('currentBriefingIndex')
+    expect(persisted).not.toHaveProperty('acknowledgedBriefingIds')
+    expect(JSON.stringify(persisted.dawnAnnouncement)).not.toContain('executionerTargets')
+    expect(JSON.stringify(persisted.dawnAnnouncement)).not.toContain('executionerPlayerId')
+
+    const restored = roundTrip(dawn).session
+    if (restored.stage !== 'dawn') throw new Error('Expected a restored Executioner Dawn.')
+    expect(restored.workflow.game.executionerTargets).toEqual(dawn.workflow.game.executionerTargets)
   })
 
   it('rejects envelope and version failures without interpreting them as V1', () => {
@@ -864,6 +1300,22 @@ describe('persisted session envelope V1', () => {
     }
     stringSettingSession.game.settings.allowFirstNightKills = 'false'
     expectFailure(stringSettingEnvelope, 'INVALID_ROLE_DISTRIBUTION_SESSION')
+
+    for (const count of [-1, 1.5, '1', {}, []]) {
+      const setupEnvelope = mutableEnvelope(
+        createPersistedSessionEnvelopeV1(createActiveAppSession(), SAVED_AT),
+      )
+      const setupSession = getMutableSession(setupEnvelope)
+      if (
+        !isUnknownRecord(setupSession.draft) ||
+        !Array.isArray(setupSession.draft.roleCounts) ||
+        !isUnknownRecord(setupSession.draft.roleCounts[0])
+      ) {
+        throw new Error('Expected a persisted setup role count.')
+      }
+      setupSession.draft.roleCounts[0].count = count
+      expectFailure(setupEnvelope, 'INVALID_SETUP_SESSION')
+    }
   })
 
   it('rejects a collecting night that skipped an earlier required action', () => {
@@ -919,8 +1371,9 @@ function buildPreparedSession(allowFirstNightKills = true): ActiveAppSession {
 function buildNightSession(
   allowFirstNightKills = true,
 ): Extract<ActiveAppSession, Readonly<{ stage: 'night-action' }>> {
+  const dependencies = createDependencies()
   let distribution = take(
-    assignSessionRoles(buildPreparedSession(allowFirstNightKills), createDependencies()),
+    assignSessionRoles(buildPreparedSession(allowFirstNightKills), dependencies),
   )
   if (distribution.workflow.status !== 'distributing') {
     throw new Error('Expected distribution.')
@@ -928,8 +1381,38 @@ function buildNightSession(
   for (const player of distribution.workflow.game.players) {
     distribution = take(setSessionCardDelivered(distribution, player.playerId, true))
   }
-  const confirmed = take(confirmSessionRoleDistribution(distribution))
-  return take(beginSessionFirstNight(confirmed))
+  const started = take(confirmSessionRoleDistribution(distribution, dependencies.randomSource))
+  if (started.stage !== 'night-action') {
+    throw new Error('Expected a game without Executioners to skip briefing.')
+  }
+  return started
+}
+
+function buildExecutionerBriefingSession(
+  randomSource: Parameters<typeof beginSessionFirstNight>[1],
+): Extract<ActiveAppSession, Readonly<{ stage: 'executioner-briefing' }>> {
+  const fixture = createNightFixture(
+    [
+      { roleId: ROLE_IDS.executioner, name: 'Secret Executioner' },
+      { roleId: ROLE_IDS.citizen, name: 'Secret Target' },
+      { roleId: ROLE_IDS.executioner, name: 'Secret Executioner' },
+      { roleId: ROLE_IDS.godfather, name: 'Secret Mafia' },
+    ],
+    { distributionStatus: 'confirmed' },
+  )
+  if (fixture.distribution.status !== 'confirmed') {
+    throw new Error('Expected a confirmed Executioner distribution.')
+  }
+  const session = take(
+    beginSessionFirstNight(
+      { stage: 'role-distribution', workflow: fixture.distribution },
+      randomSource,
+    ),
+  )
+  if (session.stage !== 'executioner-briefing') {
+    throw new Error('Expected an Executioner briefing session.')
+  }
+  return session
 }
 
 function collectToReview(
@@ -968,6 +1451,39 @@ function collectToReview(
 
 function buildCompleteNight() {
   return take(finaliseSessionNightActions(collectToReview(buildNightSession())))
+}
+
+function buildExecutionerCompleteNight(): Extract<
+  ActiveAppSession,
+  Readonly<{ stage: 'night-action' }>
+> {
+  const fixture = createResolutionFixture(
+    [
+      { roleId: ROLE_IDS.godfather },
+      { roleId: ROLE_IDS.citizen },
+      { roleId: ROLE_IDS.executioner },
+    ],
+    [1, null, null],
+    { nightNumber: 1 },
+  )
+  return {
+    stage: 'night-action',
+    workflow: createCompleteNightWorkflow(fixture, ['Mafia', 'Secret Target', 'Executioner']),
+  }
+}
+
+function buildExecutionerDawn() {
+  let presentation = take(resolveSessionNight(buildExecutionerCompleteNight()))
+  while (presentation.workflow.status === 'private-results') {
+    const result = presentation.workflow.results[presentation.workflow.currentResultIndex]
+    presentation = take(
+      acknowledgeSessionPrivateResult(
+        presentation,
+        result?.id ?? missing('Executioner fixture private result'),
+      ),
+    )
+  }
+  return take(prepareSessionDawn(presentation))
 }
 
 function buildReadyForDawn(): NightPresentationAppSession {
@@ -1048,6 +1564,40 @@ function getMutableSession(envelope: Readonly<Record<string, unknown>>): Record<
     throw new Error('Expected mutable session.')
   }
   return envelope.session
+}
+
+function getFirstMutableGamePlayer(session: Record<string, unknown>): Record<string, unknown> {
+  return getMutableGamePlayer(session, 0)
+}
+
+function getMutableGamePlayer(
+  session: Record<string, unknown>,
+  index: number,
+): Record<string, unknown> {
+  if (
+    !isUnknownRecord(session.game) ||
+    !Array.isArray(session.game.players) ||
+    !isUnknownRecord(session.game.players[index])
+  ) {
+    throw new Error(`Expected persisted game player ${String(index + 1)}.`)
+  }
+  return session.game.players[index]
+}
+
+function convertGameToLegacyV1(session: Record<string, unknown>): void {
+  if (!isUnknownRecord(session.game) || !Array.isArray(session.game.players)) {
+    throw new Error('Expected a persisted game to convert to deployed V1.')
+  }
+  delete session.game.neutralStateVersion
+  delete session.game.executionerTargets
+  delete session.game.executionerBriefingStatus
+  for (const player of session.game.players) {
+    if (!isUnknownRecord(player)) {
+      throw new Error('Expected a persisted game player.')
+    }
+    player.executionerTargetId = null
+    player.personalWin = null
+  }
 }
 
 function expectFailure(candidate: unknown, errorType: string): void {

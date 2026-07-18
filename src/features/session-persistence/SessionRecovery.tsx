@@ -259,6 +259,7 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
     case 'UNKNOWN_PERSISTED_STAGE':
     case 'INVALID_SETUP_SESSION':
     case 'INVALID_ROLE_DISTRIBUTION_SESSION':
+    case 'INVALID_EXECUTIONER_BRIEFING_SESSION':
     case 'INVALID_NIGHT_ACTION_SESSION':
     case 'INVALID_NIGHT_PRESENTATION_SESSION':
     case 'INVALID_DAWN_SESSION':
