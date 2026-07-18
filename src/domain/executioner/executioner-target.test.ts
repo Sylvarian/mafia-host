@@ -500,7 +500,6 @@ function createDistributionGame(
       },
       alive: true,
       publiclyRevealedRoleId: null,
-      mayorRevealed: false,
     }
   })
   const roleDefinitions = [...new Set(roleIds)].map((selectedRoleId) => {

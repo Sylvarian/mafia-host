@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7A.1 introduces schema V2 with narrow V1 migration<br>
+**Persistence:** One versioned local active-session save; Phase 7B compatibly extends schema V2 with a first-day stage<br>
 **Backend:** None
 
 ---
@@ -487,9 +487,11 @@ Phase 7A.1 replaces current-night authority with schema V2:
 
 ### Current V2 boundary
 
-V2 recovery is implemented through the first Dawn only. The current Dawn representation requires
-the public announcement to cover every dead player and must not be reused unchanged for later
-Dawns, where that assumption could reannounce deaths from earlier nights or days.
+V2 recovery is implemented through the first Dawn and resulting Day 1 discussion. The Day 1 stage
+contains only the authoritative game and participating display roster. The current Dawn
+representation requires the public announcement to cover every dead player and must not be reused
+unchanged for later Dawns, where that assumption could reannounce deaths from earlier nights or
+days.
 
 Before later-day or later-night persistence is implemented, the session contract must distinguish:
 
@@ -525,7 +527,7 @@ Phase 7E must update the persisted contract deliberately. No generic migration f
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7A.1 implemented; Phase 7B and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7B implemented; Phase 7C and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -642,36 +644,47 @@ recovery only.**
 - Phase 7B, personal wins, conversions, revenge, victory, later nights, and backend behavior remain
   unimplemented.
 
-### Phase 7B — Day controls and Mayor reveal
+### Phase 7B — Day discussion and Mayor reveal
+
+**Status: Implemented.**
 
 #### Work
 
 - Enter day discussion from the first Dawn.
-- Build `features/day-dashboard` with alive/dead state, permitted public roles, host-only role
-  context, and explicit current-phase guidance.
+- Build a public-safe day feature with alive/dead state, permitted public roles, and explicit
+  current-phase guidance.
 - Add deliberate host confirmation of a Mayor's verbal reveal.
 - Keep confirmed Mayor reveal public and permanent, including after death.
 - Display that a living revealed Mayor counts as three in every player vote.
-- Provide only **Execute a player** and **End day without execution** as final-outcome controls.
 - Keep nominations, trial count, voters, individual guilty/innocent votes, totals, and majority
   calculations outside the app.
+- Add no final-outcome controls, execution, end-day transition, personal effects, victory, or
+  next-night loop; stop safely in `day-discussion`.
+- Compatibly extend persistence V2 with the exact first-day game and participants while deriving
+  public rows and Mayor reminders.
 
 #### Tests
 
 - Mayor reveal requires deliberate host confirmation and does not end discussion or the day.
-- A confirmed reveal remains public after later transitions and after death.
+- A confirmed reveal is the authoritative public role and existing death application preserves it.
 - The dashboard shows the three-vote reminder.
 - The app exposes no per-voter entry or app-calculated trial result.
-- Only living players can be selected for execution.
+- Only living, unrevealed Mayor players appear inside the private reveal boundary.
+- Dawn-to-day and successful reveals autosave once under Strict Mode and rapid repeated input.
+- Day persistence rejects stale night authority, malformed reveals, phase mismatches, and
+  incompatible counters.
 
 #### Acceptance criteria
 
-- The host can manage any number of verbal trials and record only the final daytime outcome.
+- The host can manage any number of verbal trials while the app remains safely in day discussion.
+- Final daytime-outcome recording remains Phase 7C work.
 
 ### Phase 7C — Day execution and personal effects
 
 #### Work
 
+- Provide **Execute a player** and **End day without execution** as the only final-outcome controls.
+- Record only the host-confirmed final daytime outcome; never record nominations or vote totals.
 - Apply one confirmed day execution and immediately end the day.
 - Apply `revealRoleOnDeath` to the public execution result.
 - Award every relevant Executioner a permanent personal win for a valid target execution without
@@ -970,9 +983,9 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7A.1 are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7B are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
-When further Phase 7 work is explicitly requested, begin with Phase 7B. Do not start later
-subphases automatically, do not add app-managed voting early, and do not reuse the current
-first-Dawn persistence representation for a multi-day loop.
+When further Phase 7 work is explicitly requested, begin with Phase 7C. Do not start later
+subphases automatically, do not add app-managed voting, and do not reuse the current first-Dawn
+persistence representation for a multi-day loop.

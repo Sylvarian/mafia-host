@@ -407,17 +407,6 @@ function copyGamePlayers(
       })
     }
 
-    if (typeof candidate.mayorRevealed !== 'boolean') {
-      return fail({
-        type: 'INVALID_GAME_STATE',
-        reason: {
-          type: 'INVALID_MAYOR_REVEALED_STATE',
-          playerId: candidate.playerId,
-          value: candidate.mayorRevealed,
-        },
-      })
-    }
-
     if (roleInstanceIds.has(candidate.role.instanceId)) {
       return fail({
         type: 'DUPLICATE_ROLE_ASSIGNMENT',
@@ -492,7 +481,6 @@ function copyGamePlayers(
       role: { ...candidate.role },
       alive: candidate.alive,
       publiclyRevealedRoleId: candidate.publiclyRevealedRoleId,
-      mayorRevealed: candidate.mayorRevealed,
     })
   }
 

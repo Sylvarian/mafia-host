@@ -46,7 +46,6 @@ describe('night resolution application', () => {
     expect(applied.value.game.players.map((player) => player.role)).toEqual(
       fixture.game.players.map((player) => player.role),
     )
-    expect(applied.value.game.players[2]?.mayorRevealed).toBe(false)
     expect(applied.value.game).not.toHaveProperty('personalWins')
     expect(applied.value.game).not.toHaveProperty('factionWinner')
     expect(JSON.stringify(fixture.game)).toBe(originalGame)
@@ -137,6 +136,53 @@ describe('night resolution application', () => {
         { playerId: playerId('player-3'), revealedRoleId: ROLE_IDS.citizen },
         { playerId: playerId('player-4'), revealedRoleId: null },
       ],
+    })
+  })
+
+  it('preserves a voluntary Mayor reveal after death and does not create separate reveal authority', () => {
+    const fixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.mayor }],
+      [1, null],
+      { settings: { revealRoleOnDeath: false } },
+    )
+    const mayor = fixture.game.players[1]
+    if (mayor === undefined) throw new Error('Expected Mayor.')
+    const preRevealedGame = {
+      ...fixture.game,
+      players: fixture.game.players.map((player) =>
+        player.playerId === mayor.playerId
+          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+          : player,
+      ),
+    }
+    const resolution = resolveFixture(fixture)
+    const begun = beginNightResolution(preRevealedGame, resolution, fixture.collectedActions)
+    if (!begun.ok) throw new Error('Expected pre-revealed Mayor entry.')
+    const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
+    if (!applied.ok) throw new Error('Expected revealed Mayor death application.')
+
+    expect(applied.value.game.players[1]).toMatchObject({
+      alive: false,
+      publiclyRevealedRoleId: ROLE_IDS.mayor,
+    })
+    expect(applied.value.game.players[1]).not.toHaveProperty('mayorRevealed')
+  })
+
+  it('keeps a Mayor killed before revealing hidden when death reveal is disabled', () => {
+    const fixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.mayor }],
+      [1, null],
+      { settings: { revealRoleOnDeath: false } },
+    )
+    const resolution = resolveFixture(fixture)
+    const begun = beginNightResolution(fixture.game, resolution, fixture.collectedActions)
+    if (!begun.ok) throw new Error('Expected hidden Mayor entry.')
+    const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
+    if (!applied.ok) throw new Error('Expected hidden Mayor death application.')
+
+    expect(applied.value.game.players[1]).toMatchObject({
+      alive: false,
+      publiclyRevealedRoleId: null,
     })
   })
 

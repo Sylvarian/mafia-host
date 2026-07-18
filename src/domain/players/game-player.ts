@@ -6,5 +6,4 @@ export type GamePlayer = Readonly<{
   role: RoleInstance
   alive: boolean
   publiclyRevealedRoleId: RoleId | null
-  mayorRevealed: boolean
 }>

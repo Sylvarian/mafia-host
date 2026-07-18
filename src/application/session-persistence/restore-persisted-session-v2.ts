@@ -27,6 +27,7 @@ import type { DawnAnnouncement, DawnDeath } from '@/domain/resolution/dawn-annou
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
 
+import { validateDayDiscussionState, type DayDiscussionState } from '../day-discussion/index.ts'
 import {
   acknowledgeExecutionerBriefing,
   createExecutionerBriefingWorkflow,
@@ -57,6 +58,7 @@ import {
 } from '../role-assignment/index.ts'
 import type {
   ActiveAppSession,
+  DayDiscussionAppSession,
   DawnAppSession,
   ExecutionerBriefingAppSession,
   NightResolutionAppSession,
@@ -132,7 +134,17 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-game'
         | 'invalid-participants'
         | 'invalid-announcement'
+        | 'invalid-counters'
         | 'contains-private-night-data'
+    }>
+  | Readonly<{
+      type: 'INVALID_DAY_DISCUSSION_SESSION'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'invalid-counters'
+        | 'contains-stale-night-data'
     }>
   | Readonly<{
       type: 'STAGE_PHASE_MISMATCH'
@@ -228,6 +240,10 @@ function restoreAppSession(
         : restoreNightResolutionSession(candidate)
     case 'dawn':
       return restoreDawnSession(candidate, options)
+    case 'day-discussion':
+      return options.allowLegacyGameShape
+        ? invalidDayDiscussion('invalid-shape')
+        : restoreDayDiscussionSession(candidate)
     default:
       return fail({ type: 'UNKNOWN_PERSISTED_STAGE' })
   }
@@ -724,6 +740,9 @@ function restoreDawnSession(
       phase: gameResult.value.phase,
     })
   }
+  if (gameResult.value.nightNumber !== 1 || gameResult.value.dayNumber !== 0) {
+    return invalidDawn('invalid-counters')
+  }
   const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
   if (!participantsResult.ok) {
     return invalidDawn('invalid-participants')
@@ -745,6 +764,78 @@ function restoreDawnSession(
     !hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? invalidDawn('invalid-shape')
     : succeed(session)
+}
+
+function restoreDayDiscussionSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<DayDiscussionAppSession, RestorePersistedSessionV2Error> {
+  if (
+    hasAnyKey(candidate, [
+      'workflow',
+      'dawnAnnouncement',
+      'completedSteps',
+      'currentOutcome',
+      'currentStepIndex',
+      'steps',
+      'sequentialNight',
+      'nightWorkflow',
+      'immediateNightOutcome',
+      'privateResultQueue',
+      'visitLedger',
+      'actionBatch',
+      'collectedActions',
+      'resolution',
+      'attacks',
+      'protections',
+      'frames',
+      'blocks',
+      'selectedMayorPlayerId',
+      'mayorDialogOpen',
+    ])
+  ) {
+    return invalidDayDiscussion('contains-stale-night-data')
+  }
+  if (
+    !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants']) ||
+    candidate.workflowStatus !== 'day-discussion'
+  ) {
+    return invalidDayDiscussion('invalid-shape')
+  }
+  const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
+  if (!gameResult.ok) {
+    return invalidDayDiscussion('invalid-game')
+  }
+  if (gameResult.value.phase !== 'day-discussion') {
+    return fail({
+      type: 'STAGE_PHASE_MISMATCH',
+      stage: 'day-discussion',
+      phase: gameResult.value.phase,
+    })
+  }
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidDayDiscussion('invalid-participants')
+  }
+  const state: DayDiscussionState = {
+    game: gameResult.value,
+    participants: participantsResult.value,
+  }
+  const stateResult = validateDayDiscussionState(state)
+  if (!stateResult.ok) {
+    return stateResult.error.type === 'INVALID_DAY_DISCUSSION_COUNTERS'
+      ? invalidDayDiscussion('invalid-counters')
+      : stateResult.error.type === 'INVALID_DAY_DISCUSSION_PARTICIPANTS'
+        ? invalidDayDiscussion('invalid-participants')
+        : invalidDayDiscussion('invalid-game')
+  }
+  const session = deepFreeze({
+    stage: 'day-discussion' as const,
+    game: stateResult.value.game,
+    participants: stateResult.value.participants,
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidDayDiscussion('invalid-shape')
 }
 
 function restoreValidatedSetup(
@@ -844,9 +935,14 @@ function restoreGame(
           'executionerTargetId',
           'personalWin',
         ]
-      : ['playerId', 'role', 'alive', 'publiclyRevealedRoleId', 'mayorRevealed']
+      : ['playerId', 'role', 'alive', 'publiclyRevealedRoleId']
+    const compatibilityPlayerKeys = [...expectedPlayerKeys, 'mayorRevealed']
+    const hasLegacyFalseMayorMarker =
+      !legacyShape &&
+      hasExactKeys(playerCandidate, compatibilityPlayerKeys) &&
+      playerCandidate.mayorRevealed === false
     if (
-      !hasExactKeys(playerCandidate, expectedPlayerKeys) ||
+      (!hasExactKeys(playerCandidate, expectedPlayerKeys) && !hasLegacyFalseMayorMarker) ||
       (legacyShape &&
         (playerCandidate.executionerTargetId !== null || playerCandidate.personalWin !== null)) ||
       typeof playerCandidate.playerId !== 'string' ||
@@ -860,7 +956,7 @@ function restoreGame(
       typeof playerCandidate.alive !== 'boolean' ||
       (playerCandidate.publiclyRevealedRoleId !== null &&
         typeof playerCandidate.publiclyRevealedRoleId !== 'string') ||
-      typeof playerCandidate.mayorRevealed !== 'boolean'
+      (legacyShape && playerCandidate.mayorRevealed !== false)
     ) {
       return invalidDistribution('invalid-game')
     }
@@ -881,7 +977,6 @@ function restoreGame(
         playerCandidate.publiclyRevealedRoleId === null
           ? null
           : roleId(playerCandidate.publiclyRevealedRoleId),
-      mayorRevealed: playerCandidate.mayorRevealed,
     })
   }
 
@@ -1186,6 +1281,10 @@ function hasExactKeys(
   return candidateKeys.length === keys.length && keys.every((key) => Object.hasOwn(candidate, key))
 }
 
+function hasAnyKey(candidate: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
+  return keys.some((key) => Object.hasOwn(candidate, key))
+}
+
 function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolean {
   if (Object.is(canonical, candidate)) {
     return true
@@ -1201,12 +1300,31 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
     return false
   }
   const keys = Object.keys(canonical)
+  const candidateKeys = Object.keys(candidate).filter(
+    (key) => !isCompatibleLegacyMayorMarker(canonical, candidate, key),
+  )
   return (
-    Object.keys(candidate).length === keys.length &&
+    candidateKeys.length === keys.length &&
     keys.every(
       (key) =>
         Object.hasOwn(candidate, key) && hasSameCanonicalContent(canonical[key], candidate[key]),
     )
+  )
+}
+
+function isCompatibleLegacyMayorMarker(
+  canonical: Readonly<Record<string, unknown>>,
+  candidate: Readonly<Record<string, unknown>>,
+  key: string,
+): boolean {
+  return (
+    key === 'mayorRevealed' &&
+    candidate.mayorRevealed === false &&
+    !Object.hasOwn(canonical, key) &&
+    Object.hasOwn(canonical, 'playerId') &&
+    Object.hasOwn(canonical, 'role') &&
+    Object.hasOwn(canonical, 'alive') &&
+    Object.hasOwn(canonical, 'publiclyRevealedRoleId')
   )
 }
 
@@ -1280,6 +1398,15 @@ function invalidDawn(
   >['reason'],
 ): DomainResult<never, RestorePersistedSessionV2Error> {
   return fail({ type: 'INVALID_DAWN_SESSION', reason })
+}
+
+function invalidDayDiscussion(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_DAY_DISCUSSION_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_DAY_DISCUSSION_SESSION', reason })
 }
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 import {
+  selectMayorRevealCandidates,
+  selectPublicDayDiscussionView,
+  type ConfirmMayorRevealWorkflowError,
+} from '@/application/day-discussion/index.ts'
+import {
   selectExecutionerBriefingView,
   type CompleteExecutionerBriefingPhaseError,
   type ExecutionerBriefingError,
@@ -23,9 +28,11 @@ import {
   acknowledgeSessionNightOutcome,
   acknowledgeSessionExecutionerBriefing,
   assignSessionRoles,
+  beginSessionDayDiscussion,
   beginSessionFirstNight,
   completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
+  confirmSessionMayorReveal,
   confirmSessionRoleDistribution,
   continueSessionNight,
   createActiveAppSession,
@@ -48,6 +55,10 @@ import {
   type SessionClock,
 } from '@/application/session-persistence/index.ts'
 import { DawnPresentation } from '@/features/dawn/index.ts'
+import {
+  DayDiscussion,
+  getBeginDayDiscussionErrorMessage,
+} from '@/features/day-discussion/index.ts'
 import {
   ExecutionerBriefing,
   getExecutionerBriefingErrorMessage,
@@ -109,14 +120,20 @@ export default function App({
   const [distributionError, setDistributionError] = useState<RoleDistributionError | null>(null)
   const [nightError, setNightError] = useState<NightActionCollectionError | null>(null)
   const [completionError, setCompletionError] = useState<NightCompletionError | null>(null)
+  const [dayTransitionErrorMessage, setDayTransitionErrorMessage] = useState<string | null>(null)
+  const [mayorRevealError, setMayorRevealError] = useState<ConfirmMayorRevealWorkflowError | null>(
+    null,
+  )
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
+  const [dayPrivatePresentationOpen, setDayPrivatePresentationOpen] = useState(false)
   const persistedFingerprintRef = useRef<string | null>(initialState.persistedFingerprint)
   const identityOperationPendingRef = useRef(false)
   const nightOperationPendingRef = useRef(false)
   const briefingOperationPendingRef = useRef(false)
   const completionOperationPendingRef = useRef(false)
+  const dayOperationPendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
   const activeSession = appState.mode === 'active' ? appState.session : null
 
@@ -125,6 +142,7 @@ export default function App({
     nightOperationPendingRef.current = false
     briefingOperationPendingRef.current = false
     completionOperationPendingRef.current = false
+    dayOperationPendingRef.current = false
   }, [activeSession])
 
   function setActiveSession(session: ActiveAppSession): void {
@@ -159,6 +177,8 @@ export default function App({
     setDistributionError(null)
     setNightError(null)
     setCompletionError(null)
+    setDayTransitionErrorMessage(null)
+    setMayorRevealError(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
   }
@@ -425,6 +445,7 @@ export default function App({
           <DawnPresentation
             view={selectNightCompletionView(session.workflow)}
             error={completionError}
+            dayTransitionErrorMessage={dayTransitionErrorMessage}
             onPrepareDawn={() => {
               if (session.stage !== 'night-resolution') {
                 return
@@ -443,6 +464,51 @@ export default function App({
                 return true
               })
             }}
+            onBeginDayDiscussion={() => {
+              if (session.stage !== 'dawn') {
+                return
+              }
+              runCompletionOperation(() => {
+                const result = beginSessionDayDiscussion(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setDayTransitionErrorMessage(getBeginDayDiscussionErrorMessage(result.error))
+                  return false
+                }
+                clearErrors()
+                setActiveSession(result.value)
+                return true
+              })
+            }}
+          />
+        )
+      case 'day-discussion':
+        return (
+          <DayDiscussion
+            view={selectPublicDayDiscussionView(session)}
+            privateMayorCandidates={selectMayorRevealCandidates(session)}
+            revealError={mayorRevealError}
+            onClearRevealError={() => {
+              setMayorRevealError(null)
+            }}
+            onPrivatePresentationChange={setDayPrivatePresentationOpen}
+            onConfirmMayorReveal={(selectedPlayerId) =>
+              runDayOperation(() => {
+                const result = confirmSessionMayorReveal(session, selectedPlayerId)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setMayorRevealError(result.error)
+                  return false
+                }
+                setMayorRevealError(null)
+                setActiveSession(result.value)
+                return true
+              })
+            }
           />
         )
     }
@@ -572,6 +638,23 @@ export default function App({
     }
   }
 
+  function runDayOperation(operation: () => boolean): boolean {
+    if (dayOperationPendingRef.current) {
+      return false
+    }
+    dayOperationPendingRef.current = true
+    try {
+      const succeeded = operation()
+      if (!succeeded) {
+        dayOperationPendingRef.current = false
+      }
+      return succeeded
+    } catch (error: unknown) {
+      dayOperationPendingRef.current = false
+      throw error
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -579,13 +662,13 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7A.1 · Sequential night resolution</p>
+        <p>Phase 7B · Day discussion and Mayor reveal</p>
       </header>
 
       <main className="app-main">
         <section className="app-intro" aria-labelledby="page-heading">
-          <p className="app-intro__eyebrow">Run tonight’s table</p>
-          <h1 id="page-heading">Set up, resolve, and announce Dawn</h1>
+          <p className="app-intro__eyebrow">Run the table safely</p>
+          <h1 id="page-heading">Set up, resolve, announce, and discuss</h1>
           <p>
             This host-only app keeps one active session locally in this browser so a refresh can
             resume at the exact authoritative stage.
@@ -633,21 +716,26 @@ export default function App({
             >
               {renderActiveSession(appState.session)}
             </div>
-            <SessionSaveStatus
-              saveStatus={appState.saveStatus}
-              hasStoredSave={appState.hasStoredSave}
-              gameActive={appState.session.stage !== 'setup'}
-              clearError={appState.clearError}
-              confirmationOpen={clearConfirmationOpen}
-              onRetrySave={retrySave}
-              onRequestClear={() => {
-                setClearConfirmationOpen(true)
-              }}
-              onCancelClear={() => {
-                setClearConfirmationOpen(false)
-              }}
-              onClear={clearSavedSession}
-            />
+            <div
+              aria-hidden={dayPrivatePresentationOpen || undefined}
+              inert={dayPrivatePresentationOpen ? true : undefined}
+            >
+              <SessionSaveStatus
+                saveStatus={appState.saveStatus}
+                hasStoredSave={appState.hasStoredSave}
+                gameActive={appState.session.stage !== 'setup'}
+                clearError={appState.clearError}
+                confirmationOpen={clearConfirmationOpen}
+                onRetrySave={retrySave}
+                onRequestClear={() => {
+                  setClearConfirmationOpen(true)
+                }}
+                onCancelClear={() => {
+                  setClearConfirmationOpen(false)
+                }}
+                onClear={clearSavedSession}
+              />
+            </div>
           </>
         )}
       </main>

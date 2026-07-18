@@ -53,3 +53,14 @@ immediate application outcomes and final resolution. Detective actions are delib
 from the trackable visit ledger; blocked actors and first-night-skipped killers likewise have no
 visit. Dawn history records an unblocked Doctor's confirmed target even if the Doctor or target
 dies, but records nothing for a blocked Doctor.
+
+Phase 7B adds two narrow pure operations under `day/`. The Dawn-to-day boundary validates the
+active game, public Dawn announcement, and established Night 1/Day 1 counter relationship before
+atomically entering `day-discussion`. It changes no death, assignment, reveal, Executioner target,
+Doctor-history, neutral, or winner state.
+
+Voluntary Mayor reveal is valid only for a living participating Mayor during day discussion. It
+sets `publiclyRevealedRoleId` to the canonical Mayor role and changes nothing else. An already
+revealed Mayor returns a structured error. `GamePlayer` has no second Mayor-reveal authority, so
+ordinary death reveal can expose a dead Mayor without being confused with a voluntary living
+action, and a prior public reveal remains intact when death reveal is disabled.

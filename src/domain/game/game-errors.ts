@@ -108,11 +108,6 @@ export type InvalidGameStateError = Readonly<{
         value: unknown
       }>
     | Readonly<{
-        type: 'INVALID_MAYOR_REVEALED_STATE'
-        playerId: PlayerId
-        value: unknown
-      }>
-    | Readonly<{
         type: 'INVALID_ROLE_ORDINAL'
         roleInstanceId: RoleInstanceId
         ordinal: number

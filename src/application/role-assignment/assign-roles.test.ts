@@ -147,7 +147,6 @@ describe('role assignment and active game creation', () => {
       expect(player).toMatchObject({
         alive: true,
         publiclyRevealedRoleId: null,
-        mayorRevealed: false,
       })
       expect(player).not.toHaveProperty('executionerTargetId')
       expect(player).not.toHaveProperty('personalWin')

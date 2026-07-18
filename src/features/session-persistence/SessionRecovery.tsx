@@ -100,9 +100,11 @@ export function SessionRecovery(props: SessionRecoveryProps) {
         <h2 id="session-recovery-heading">Saved game found</h2>
         <div className="session-recovery__summary">
           <strong>
-            {summary.nightNumber === null
-              ? summary.stage
-              : `Night ${String(summary.nightNumber)} — ${summary.stage}`}
+            {summary.stage === 'Day discussion' && summary.dayNumber !== null
+              ? `Day ${String(summary.dayNumber)} — ${summary.stage}`
+              : summary.nightNumber === null
+                ? summary.stage
+                : `Night ${String(summary.nightNumber)} — ${summary.stage}`}
           </strong>
           <span>
             {summary.playerCount} participating {summary.playerCount === 1 ? 'player' : 'players'}
@@ -277,6 +279,7 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
     case 'INVALID_SEQUENTIAL_NIGHT_SESSION':
     case 'INVALID_NIGHT_RESOLUTION_SESSION':
     case 'INVALID_DAWN_SESSION':
+    case 'INVALID_DAY_DISCUSSION_SESSION':
     case 'STAGE_PHASE_MISMATCH':
     case 'MULTIPLE_AUTHORITATIVE_GAMES':
       return 'The local save appears to be damaged or incomplete.'

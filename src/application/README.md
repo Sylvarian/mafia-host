@@ -44,6 +44,18 @@ Executioner-briefing, sequential-night, night-resolution, or Dawn workflow is au
 Completing the sequential workflow atomically creates final night resolution; preparing Dawn
 atomically creates the public-only Dawn session.
 
+Phase 7B adds `day-discussion` and an explicit `DayDiscussionAppSession`. Entering day atomically
+replaces the Dawn session with only one authoritative game plus the participating display roster.
+No Dawn workflow, night workflow, resolution, immediate outcome, private queue, or copied
+assignment map survives as day-session authority.
+
+`day-discussion` constructs two separate views. The public view contains Day 1, stable player
+labels, alive/dead status, legitimate public role labels, and revealed-Mayor reminder booleans. It
+contains no hidden role IDs, factions, Executioner targets, or night data. The private candidate
+selector contains only player IDs and stable labels for living unrevealed Mayors, ordered by
+role-instance ordinal then roster position. It is consumed only inside the deliberate host privacy
+boundary.
+
 The slice defines schema V2, envelope validation, stage-specific restoration, canonical
 reconstruction, deep freezing, public-safe summaries, and narrow V1 migration. V2 persists
 canonical sequential records, current immediate outcome and acknowledgement state, and the final
@@ -57,7 +69,9 @@ randomness. Safe V1 setup, distribution, Executioner briefing, and valid first-D
 to V2. Old in-progress night-action and private-result-replay saves fail closed because revealed
 information cannot be reconstructed without guessing. No generic migration framework exists.
 
-The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. V2 Dawn
-recovery remains intentionally limited to the first-Dawn product boundary. Phase 7E must
-deliberately distinguish current from historical deaths and announcements before later nights are
-added.
+The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. Phase 7B
+compatibly extends V2 with the exact first-day stage and derives all public rows. New saves omit
+the obsolete `mayorRevealed` value; restoration narrowly accepts its former generated `false`
+value for earlier V2 compatibility. It is never domain authority. Recovery remains limited to the
+first Dawn and Day 1. Phase 7E must deliberately distinguish current from historical deaths and
+announcements before later nights are added.

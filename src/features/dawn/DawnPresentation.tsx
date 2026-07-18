@@ -12,10 +12,18 @@ import './DawnPresentation.css'
 type DawnPresentationProps = Readonly<{
   view: NightCompletionView
   error: NightCompletionError | null
+  dayTransitionErrorMessage: string | null
   onPrepareDawn: () => void
+  onBeginDayDiscussion: () => void
 }>
 
-export function DawnPresentation({ view, error, onPrepareDawn }: DawnPresentationProps) {
+export function DawnPresentation({
+  view,
+  error,
+  dayTransitionErrorMessage,
+  onPrepareDawn,
+  onBeginDayDiscussion,
+}: DawnPresentationProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const prepareButtonRef = useRef<HTMLButtonElement>(null)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
@@ -61,8 +69,16 @@ export function DawnPresentation({ view, error, onPrepareDawn }: DawnPresentatio
         )}
         <div className="dawn-public__boundary">
           <strong>Dawn complete</strong>
-          <span>Day discussion is not part of Phase 7A.1.</span>
+          <span>Begin the public daytime stage when the table is ready.</span>
         </div>
+        {dayTransitionErrorMessage === null ? null : (
+          <p className="dawn-error" role="alert">
+            {dayTransitionErrorMessage}
+          </p>
+        )}
+        <button type="button" className="button button--primary" onClick={onBeginDayDiscussion}>
+          Begin day discussion
+        </button>
       </section>
     )
   }

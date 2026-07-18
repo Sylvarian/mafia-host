@@ -33,7 +33,8 @@
 }
 
 .dawn-ready .button,
-.dawn-confirmation .button {
+.dawn-confirmation .button,
+.dawn-public .button {
   min-height: 2.75rem;
 }
 

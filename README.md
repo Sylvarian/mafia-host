@@ -6,11 +6,21 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7A.1 — sequential night resolution and host UX corrections — is implemented on top of the
-Phase 7A Executioner briefing. Physical card distribution includes one reversible **Mark all cards
-delivered** operation; individual delivery controls remain available until final confirmation.
-Night target rows show the host each player’s stable display label, assigned role, faction text,
-alive/availability state, and a subtle accessible faction treatment.
+Phase 7B — Day discussion and host-confirmed Mayor reveal — is implemented on top of the Phase
+7A.1 sequential-night workflow. After the public first Dawn, the host explicitly selects **Begin
+day discussion**. The transition atomically increments the established day counter from Day 0 to
+Day 1, drops Dawn/night workflow authority, persists one `day-discussion` session, and stops there.
+
+The public day screen separates living and dead players, shows only authoritative public role
+reveals, and never receives hidden assignments, factions, Executioner targets, or night data.
+Duplicate player names use stable labels such as `Alex (Player 1)`. Trials, nominations, verdict
+votes, and majority counting remain verbal and are not recorded by the app.
+
+A private host-only dialog lists only living, unrevealed Mayor players. A deliberate confirmation
+sets the existing `publiclyRevealedRoleId` authority to Mayor; there is no second Mayor-reveal
+authority. Multiple Mayor copies reveal independently. Every living revealed Mayor has a persistent
+public reminder that the player counts as three votes, while the host remains responsible for all
+vote counting.
 
 The first night is now one sealed canonical sequence: Mafia overview, Consorts, Framers,
 Godfathers, Serial Killers, Doctors, Sheriffs, Investigators, Consiglieres, and Detectives. Duplicate
@@ -39,11 +49,11 @@ every briefing before the application creates the Night 1 action workflow. Games
 Executioner skip the briefing.
 
 One authoritative application session spans setup, role distribution, Executioner briefing,
-sequential night, final night resolution, and public Dawn. Each successful authoritative transition
-is saved under `mafia-host:active-session:v2`. Restoration rebuilds the canonical actor sequence and
-immediate results from game authority and rejects forged order, actions, blocks, visits, outcomes,
-extra fields, and stage/phase combinations. Recovery shows only a public-safe summary until the host
-chooses **Continue saved game**.
+sequential night, final night resolution, public Dawn, and first-day discussion. Each successful
+authoritative transition and Mayor reveal is saved under `mafia-host:active-session:v2`.
+Restoration rebuilds or validates the exact stage, rejects forged order, actions, outcomes, public
+reveals, stale night data, extra fields, and stage/phase/counter combinations. Day recovery shows
+only generic Day 1 metadata until the host chooses **Continue saved game**.
 
 When first-night killing is disabled, living Godfathers and Serial Killers are omitted entirely, so
 they do not wake or create an action, outcome, visit, or attack. Consorts remain immune to Consort
@@ -58,12 +68,11 @@ final distribution confirmation, are never stored on `GamePlayer`, and survive r
 rerandomization. Defensive validation still rejects any later-phase game with a missing, duplicate,
 cross-game, unknown, or non-Town target.
 
-R-006 through R-012 now finalize the future daytime, neutral-role, death-resolution, and victory
-rules. Except for the Phase 7A portion of R-008 described above, those decisions are documentation,
-not implemented gameplay. Mayor daytime reveal, host day controls, day execution, end-day flow,
-Executioner personal-win awarding and conversion, Jester personal wins and revenge, faction
-victory calculation, game-over presentation, and the subsequent-night loop remain planned work.
-The whole Executioner role is not complete.
+R-006 through R-012 finalize daytime, neutral-role, death-resolution, and victory rules. Phase 7B
+implements only entry to public day discussion and voluntary Mayor reveal. Final execution
+selection, day execution, end-day flow, Executioner personal-win awarding and conversion, Jester
+personal wins and revenge, faction victory calculation, game-over presentation, and the
+subsequent-night loop remain planned work. The whole Executioner role is not complete.
 
 ## Local save and privacy
 
@@ -88,10 +97,12 @@ rejected with a clear incompatible-save message because safely restoring it woul
 which information players already saw. Such a V1 save is not silently deleted. On safe migration,
 V2 is written before the legacy key is removed; a failed V2 write preserves V1.
 
-V2 recovery remains intentionally limited to the first Dawn. Before later days and nights can be
-persisted, the session contract must distinguish deaths newly announced at the current Dawn from
-earlier deaths, pending Jester revenge obligations, permanent personal wins, Executioner
-conversions, and current versus historical announcements.
+V2 recovery remains intentionally limited to the first Dawn and its resulting Day 1 discussion.
+The Day 1 session persists only the authoritative game and participating display roster; public
+rows and Mayor reminders are derived. Before later days and nights can be persisted, the session
+contract must distinguish deaths newly announced at the current Dawn from earlier deaths, pending
+Jester revenge obligations, permanent personal wins, Executioner conversions, and current versus
+historical announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
 announce earlier deaths again. Phase 7E must update the contract deliberately. There is no generic
@@ -202,6 +213,14 @@ bounded canonical position while deriving blocks, frames, visits, and investigat
 shared domain mechanics. `night-completion` owns the final resolution and deliberate Dawn boundary.
 Session persistence owns schema V2, narrow V1 migration, and canonical reconstruction. React owns
 only temporary unconfirmed target selection, focus, errors, dialogs, and repeated-operation guards.
+
+Phase 7B adds one pure domain transition from the matching first Dawn into Day 1 and one narrow
+voluntary-Mayor reveal operation. `application/day-discussion` owns the sanitized public roster and
+the separate private candidate selector. The day feature never receives `GameState`; React owns
+only the private dialog, temporary candidate selection, focus, and operation guards. V2 is extended
+compatibly with an exact `day-discussion` stage. New saves omit the obsolete `mayorRevealed`
+property; restoration narrowly accepts its former generated `false` value so earlier V2 saves
+remain compatible. It is never domain authority.
 
 ## Project authorities
 

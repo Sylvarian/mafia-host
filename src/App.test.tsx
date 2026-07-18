@@ -19,6 +19,7 @@ import type {
   SequentialNightAppSession,
   SessionClock,
 } from '@/application/session-persistence/index.ts'
+import { restorePersistedSessionEnvelopeV2 } from '@/application/session-persistence/index.ts'
 import { createNightFixture } from '../tests/support/night-action-fixtures.ts'
 import { SequentialRoleAssignmentIdentitySource } from '../tests/support/sequential-role-assignment-identity-source.ts'
 import App from './App.tsx'
@@ -95,6 +96,29 @@ function activeWorkflow(
     throw new Error('Expected an active actor after overview.')
   }
   return advanced.value
+}
+
+function dawnSession() {
+  const fixture = createNightFixture(
+    [
+      { roleId: ROLE_IDS.mayor, name: 'Morgan' },
+      { roleId: ROLE_IDS.citizen, name: 'Casey' },
+      { roleId: ROLE_IDS.mayor, name: 'Riley' },
+    ],
+    {
+      phase: 'dawn-announcement',
+      nightNumber: 1,
+    },
+  )
+  return {
+    stage: 'dawn' as const,
+    workflow: {
+      status: 'dawn' as const,
+      game: fixture.game,
+      participants: fixture.participants,
+      dawnAnnouncement: { outcome: 'no-deaths' as const, nightNumber: 1 },
+    },
+  }
 }
 
 afterEach(() => {
@@ -277,5 +301,131 @@ describe('Phase 7A.1 App integration', () => {
     expect(screen.getByRole('heading', { name: 'A quiet Dawn' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /Acknowledge result/ })).toBeNull()
     expect(screen.queryByText(/Sheriff result|Detective result|Investigator result/)).toBeNull()
+  })
+})
+
+describe('Phase 7B App integration', () => {
+  it('guards the Dawn-to-day transition in Strict Mode and saves it exactly once', () => {
+    const { store } = renderLoaded(dawnSession())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByRole('heading', { name: 'A quiet Dawn' })).toHaveFocus()
+
+    const beginButton = screen.getByRole('button', { name: 'Begin day discussion' })
+    act(() => {
+      beginButton.click()
+      beginButton.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Day discussion' })).toHaveFocus()
+    expect(screen.getByText('Day 1 · Public-safe display')).toBeVisible()
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByText('Casey').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.queryByRole('button', { name: /execute|end day/i })).toBeNull()
+  })
+
+  it('keeps Mayor candidates private, reveals independently, and guards rapid confirmation', () => {
+    const { store, container } = renderLoaded(dawnSession())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    expect(store.saveCount).toBe(1)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(container.innerHTML).not.toMatch(/private-player|role-instance/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
+    const firstDialog = screen.getByRole('alertdialog')
+    expect(screen.getByLabelText('Local save status').parentElement).toHaveAttribute('inert')
+    expect(within(firstDialog).getByRole('radio', { name: /Morgan/ })).toBeVisible()
+    expect(within(firstDialog).getByRole('radio', { name: /Riley/ })).toBeVisible()
+    expect(within(firstDialog).queryByRole('radio', { name: /Casey/ })).toBeNull()
+    fireEvent.click(within(firstDialog).getByRole('radio', { name: /Morgan/ }))
+    const firstConfirm = within(firstDialog).getByRole('button', {
+      name: 'Publicly reveal as Mayor',
+    })
+    act(() => {
+      firstConfirm.click()
+      firstConfirm.click()
+    })
+
+    expect(store.saveCount).toBe(2)
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
+      'Mayor 1 — publicly revealed',
+    )
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
+      'this player counts as 3 votes',
+    )
+    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByLabelText('Local save status').parentElement).not.toHaveAttribute('inert')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
+    const secondDialog = screen.getByRole('alertdialog')
+    expect(within(secondDialog).queryByRole('radio', { name: /Morgan/ })).toBeNull()
+    expect(within(secondDialog).getByRole('radio', { name: /Riley/ })).toBeVisible()
+    fireEvent.click(within(secondDialog).getByRole('radio', { name: /Riley/ }))
+    fireEvent.click(within(secondDialog).getByRole('button', { name: 'Publicly reveal as Mayor' }))
+    expect(store.saveCount).toBe(3)
+    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Mayor 2 — publicly revealed')
+  })
+
+  it('keeps day recovery generic until Continue and restores the exact public reveal', () => {
+    const store = new MemorySessionStore()
+    const firstRender = renderLoaded(dawnSession(), store)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Morgan/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publicly reveal as Mayor' }))
+    const saved = store.lastSuccessfulEnvelope
+    if (saved === null) throw new Error('Expected saved revealed Mayor.')
+    const restored = restorePersistedSessionEnvelopeV2(JSON.parse(JSON.stringify(saved)) as unknown)
+    if (!restored.ok) throw new Error('Expected day restoration.')
+
+    firstRender.unmount()
+    const title = document.title
+    const url = window.location.href
+    const logSpy = vi.spyOn(console, 'log')
+    const recovered = renderLoaded(restored.value.session)
+    expect(screen.getByText('Day 1 — Day discussion')).toBeVisible()
+    expect(recovered.container).not.toHaveTextContent('Morgan')
+    expect(recovered.container).not.toHaveTextContent('Casey')
+    expect(recovered.container).not.toHaveTextContent('Riley')
+    expect(recovered.container.innerHTML).not.toMatch(
+      /role-instance|player-1|publiclyRevealedRoleId|executionerTarget/,
+    )
+    expect(document.title).toBe(title)
+    expect(window.location.href).toBe(url)
+    expect(logSpy).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
+      'Mayor 1 — publicly revealed',
+    )
+    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Role hidden')
+  })
+
+  it('keeps an in-memory reveal after save failure and retries the identical authority', () => {
+    const store = new MemorySessionStore()
+    renderLoaded(dawnSession(), store)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    store.failSave = true
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Morgan/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publicly reveal as Mayor' }))
+
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
+      'Mayor 1 — publicly revealed',
+    )
+    expect(screen.getByText(/Unable to save locally/)).toBeVisible()
+    const failedPayload = JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)).toBe(failedPayload)
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
+      'Mayor 1 — publicly revealed',
+    )
   })
 })

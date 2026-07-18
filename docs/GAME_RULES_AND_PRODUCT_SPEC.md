@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7A.1<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7B<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -34,21 +34,22 @@ The implemented product currently includes:
 - Sequential first-night action confirmation and immediate private outcomes.
 - Deterministic ordinary night resolution.
 - The first public Dawn.
-- Browser-local refresh recovery through setup, Executioner briefing, and that first Dawn.
+- Day 1 discussion with a public-safe living/dead roster.
+- Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
+- Browser-local refresh recovery through setup, Executioner briefing, the first Dawn, and Day 1.
 
 The following rules are finalized but their gameplay is not implemented:
 
 - Executioner-to-Jester conversion.
 - Executioner personal-win awarding.
 - Jester personal wins and pending revenge.
-- Mayor daytime reveal.
-- Host-managed day controls.
+- Final daytime outcome controls.
 - Day execution and ending a day without execution.
 - Later nights and Dawns.
 - Faction victory calculation.
 - Game-over presentation.
 
-These features are planned for Phase 7B or later. A finalized
+These features are planned for Phase 7C or later. A finalized
 rule must not be read as evidence that its feature is already available.
 
 The application does **not** initially provide:
@@ -122,9 +123,11 @@ explicit incompatible-save errors because which private information was already 
 cannot be reconstructed safely. A rejected V1 save is not silently deleted. A safe migration writes
 V2 before removing V1 and preserves V1 if the V2 write fails.
 
-Current V2 persistence supports recovery only through the first Dawn. Its Dawn representation
-requires the public announcement to account for every currently dead player. Before supporting
-later days and nights, persistence must distinguish:
+Current V2 persistence supports recovery only through the first Dawn and its resulting Day 1
+discussion. Day persistence stores only the authoritative game and participating display roster;
+the public roster and revealed-Mayor reminders are derived. Its Dawn representation requires the
+public announcement to account for every currently dead player. Before supporting later days and
+nights, persistence must distinguish:
 
 - Deaths newly announced at the current Dawn.
 - Players who died on earlier nights or days.
@@ -151,7 +154,6 @@ Each roster entry contains:
 - Current-game role assignment
 - Alive/dead status
 - Publicly revealed role, when applicable
-- Mayor reveal status
 - Executioner target, when applicable
 - Converted role, when applicable
 
@@ -813,9 +815,10 @@ The source text contained “quiet now”; this specification assumes “quiet n
 
 If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
 
-Phase 6 stops at the first `dawn-announcement`. Entering day discussion, resolving Jester revenge,
-checking victory, and reaching later Dawns are Phase 7-sequence work and are not currently
-available.
+Phase 7B adds an explicit **Begin day discussion** operation after this public first-Dawn screen.
+It validates the authoritative Dawn/game/night match, increments only the existing day counter,
+drops Dawn and night workflow authority, and stops in `day-discussion`. Resolving Jester revenge,
+checking victory, and reaching later Dawns remain unavailable.
 
 The persisted V2 Dawn announcement is safe only at this first-Dawn boundary. Later-Dawn support
 must introduce an explicit current-announcement boundary so deaths from earlier nights or days are
@@ -825,29 +828,34 @@ not announced again.
 
 ## 14. Day discussion
 
-Rule finalized; implementation planned for the Phase 7 delivery sequence.
+Implemented for the first daytime discussion in Phase 7B.
 
-During day discussion, the host dashboard shows every player with:
+During day discussion, the public-safe screen shows every player with:
 
 - Name
 - Alive/dead state
 - Publicly revealed role, if any
 - Confirmed Mayor badge
 - A visible reminder that each living revealed Mayor has three votes
-- Host-only actual role
-- Any host-only status relevant to the current game
 
 Available controls:
 
 - Deliberately confirm a Mayor's verbal public reveal.
-- Execute a living player after the host has manually determined a guilty verdict.
-- End the day without an execution.
+
+Opening the Mayor control crosses a deliberate host-only privacy boundary and lists only living,
+unrevealed Mayor players. The public view never receives hidden assignments, factions, Executioner
+targets, or night state. Multiple Mayor copies reveal independently. The existing
+`publiclyRevealedRoleId` field is the only Mayor-reveal authority.
+
+Phase 7B provides no final daytime-outcome control. **Execute a player** and **End day without
+execution** belong to Phase 7C.
 
 ---
 
 ## 15. Trial, voting, and execution
 
-Rule finalized; implementation planned for the Phase 7 delivery sequence.
+Rules finalized. Verbal trial guidance is shown in Phase 7B; final outcome recording and
+consequences are planned for Phase 7C.
 
 Any number of trials may occur during a day. Players manage nominations, discussion, and voting
 verbally, while the host counts votes manually. A nomination requires a majority, but the host is
@@ -871,8 +879,9 @@ The app does not record:
 - Vote totals.
 - Majority calculations.
 
-The host records only the final outcome in the app by selecting **Execute a player** or **End day
-without execution**. The app must not provide an app-managed trial or vote-counting workflow.
+In Phase 7C, the host will record only the final outcome by selecting **Execute a player** or **End
+day without execution**. Phase 7B deliberately exposes neither control and provides no app-managed
+trial or vote-counting workflow.
 
 ### 15.1 Daytime execution timing
 
@@ -1057,7 +1066,6 @@ type GamePlayer = {
   role: RoleInstance;
   alive: boolean;
   publiclyRevealedRoleId: RoleId | null;
-  mayorRevealed: boolean;
 };
 
 type ExecutionerTarget = {
@@ -1167,9 +1175,10 @@ Minimum scenarios:
 
 ## 22. Rule decisions
 
-R-001 through R-012 are finalized and authoritative. Phase 7A implements only the target
-eligibility, assignment, and private-briefing portion of R-008. The remaining R-006 through R-012
-gameplay is not implemented.
+R-001 through R-012 are finalized and authoritative. Phase 7A implements the target eligibility,
+assignment, and private-briefing portion of R-008. Phase 7B implements first-day discussion and
+voluntary Mayor reveal only. R-006 through R-012 personal effects, execution consequences, revenge,
+victory, and later-loop gameplay remain unimplemented.
 
 ### R-001 — Mutual killing disabled
 
@@ -1289,7 +1298,8 @@ personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-010 — Day discussion, trials, voting, and execution
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized. Phase 7B implements discussion guidance only; final outcome controls and
+execution remain planned for Phase 7C.**
 
 - Any number of trials may occur during a day.
 - Trial nominations and votes are managed verbally by the players and manually by the host.
@@ -1297,9 +1307,9 @@ personal win and performs no conversion, revenge, or victory evaluation.
 - Trial verdict options are guilty and innocent.
 - A player is executed when guilty votes exceed innocent votes.
 - A tie means innocent.
-- The app records only the final outcome and does not record nomination attempts, nomination
+- In Phase 7C, the app will record only the final outcome and will not record nomination attempts,
   voters, trial count, individual votes, vote totals, or majority calculations.
-- The app provides **Execute a player** and **End day without execution**.
+- Phase 7C will provide **Execute a player** and **End day without execution**.
 - The host may end the day without an execution.
 - Executing a player immediately ends the day.
 - An execution uses `revealRoleOnDeath` for public role reveal.
@@ -1312,7 +1322,8 @@ The app must not implement a managed trial or vote-counting workflow.
 
 ### Mayor — daytime reveal and vote weight
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized. Voluntary reveal, public persistence, duplicate copies, and the three-vote
+reminder are implemented in Phase 7B. Vote tracking is deliberately absent.**
 
 - The Mayor may publicly reveal at any time during the day.
 - The player verbally asks the host to confirm the reveal.

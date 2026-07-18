@@ -41,14 +41,12 @@ const aliceGamePlayer: GamePlayerCandidate = {
   role: aliceRole,
   alive: true,
   publiclyRevealedRoleId: null,
-  mayorRevealed: false,
 }
 const bobGamePlayer: GamePlayerCandidate = {
   playerId: bobId,
   role: bobRole,
   alive: true,
   publiclyRevealedRoleId: null,
-  mayorRevealed: false,
 }
 const roster: readonly Player[] = [
   { id: aliceId, name: 'Alice', playing: true },

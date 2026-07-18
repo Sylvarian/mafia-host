@@ -83,7 +83,6 @@ export function createNightFixture(
       },
       alive: role.alive ?? true,
       publiclyRevealedRoleId: null,
-      mayorRevealed: false,
     }
   })
   const selectedRoleIds = new Set(roles.map((role) => role.roleId))

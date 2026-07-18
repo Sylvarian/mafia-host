@@ -28,7 +28,6 @@ function createTestGame(): GameState {
         },
         alive: true,
         publiclyRevealedRoleId: null,
-        mayorRevealed: false,
       },
     ],
     roleDefinitions: [{ id: participatingRoleId, name: 'Citizen', faction: 'town' }],
@@ -68,7 +67,6 @@ function createExecutionerTestGame(): GameState {
         },
         alive: true,
         publiclyRevealedRoleId: null,
-        mayorRevealed: false,
       },
       {
         playerId: townPlayerId,
@@ -79,7 +77,6 @@ function createExecutionerTestGame(): GameState {
         },
         alive: true,
         publiclyRevealedRoleId: null,
-        mayorRevealed: false,
       },
     ],
     roleDefinitions: [

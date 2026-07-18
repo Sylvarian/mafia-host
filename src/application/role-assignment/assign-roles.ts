@@ -107,7 +107,6 @@ export function assignRolesToValidatedSetup(
     role: assignment.role,
     alive: true,
     publiclyRevealedRoleId: null,
-    mayorRevealed: false,
   }))
   const selectedRoleIds = new Set(ordinalResult.value.map((assignment) => assignment.role.roleId))
   const roleDefinitions = ROLE_REGISTRY.filter((role) => selectedRoleIds.has(role.id)).map(

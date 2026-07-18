@@ -51,7 +51,6 @@ export type PersistedGameV2 = Readonly<{
     }>
     alive: boolean
     publiclyRevealedRoleId: string | null
-    mayorRevealed: boolean
   }>[]
   neutralStateVersion: 1
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
@@ -285,6 +284,12 @@ export type PersistedAppSessionV2 =
       participants: readonly PersistedPlayerV2[]
       dawnAnnouncement: PersistedDawnAnnouncementV2
     }>
+  | Readonly<{
+      stage: 'day-discussion'
+      workflowStatus: 'day-discussion'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+    }>
 
 export type PersistedSessionEnvelopeV2 = Readonly<{
   schemaVersion: 2
@@ -308,6 +313,7 @@ export type SessionStageSummary = Readonly<{
     | 'Night actions'
     | 'Night resolution'
     | 'Dawn announcement'
+    | 'Day discussion'
   playerCount: number
   nightNumber: number | null
   dayNumber: number | null
@@ -402,6 +408,13 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
                 })),
               },
       })
+    case 'day-discussion':
+      return deepFreeze({
+        stage: 'day-discussion',
+        workflowStatus: 'day-discussion',
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+      })
   }
 }
 
@@ -489,6 +502,13 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
       })
+    case 'day-discussion':
+      return Object.freeze({
+        stage: 'Day discussion',
+        playerCount: session.game.players.length,
+        nightNumber: session.game.nightNumber,
+        dayNumber: session.game.dayNumber,
+      })
   }
 }
 
@@ -522,7 +542,6 @@ function copyGame(game: GameState): PersistedGameV2 {
       role: { ...player.role },
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
-      mayorRevealed: player.mayorRevealed,
     })),
     neutralStateVersion: 1,
     executionerBriefingStatus: game.executionerBriefingStatus,

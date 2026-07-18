@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { createExecutionerBriefingWorkflow } from '@/application/executioner-briefing/index.ts'
 import {
+  confirmMayorRevealDuringDay,
+  createDayDiscussionState,
+  selectPublicDayDiscussionView,
+} from '@/application/day-discussion/index.ts'
+import {
   beginFinalNightResolution,
   prepareDawnAnnouncement,
 } from '@/application/night-completion/index.ts'
@@ -30,10 +35,11 @@ const SAVED_AT = '2026-07-18T10:00:00.000Z'
 
 function startedWorkflow(
   roles: Parameters<typeof createNightFixture>[0],
+  nightNumber = 2,
 ): ActiveNightActionCollectionWorkflow {
   const fixture = createNightFixture(roles, {
     phase: 'night-action-collection',
-    nightNumber: 2,
+    nightNumber,
     settings: { allowFirstNightKills: true, doctorCanSelfProtect: true },
   })
   const result = createNightActionCollectionForStartedNight(fixture.game, fixture.participants)
@@ -115,15 +121,49 @@ function roundTrip(session: ActiveAppSession): ActiveAppSession {
   return result.value.session
 }
 
-function completeDoctorNight() {
+function completeDoctorNight(nightNumber = 2) {
   let workflow = continueSuccessfully(
-    startedWorkflow([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }]),
+    startedWorkflow([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }], nightNumber),
   )
   workflow = confirmSuccessfully(workflow, 1)
   workflow = acknowledgeSuccessfully(workflow)
   workflow = continueSuccessfully(workflow)
   if (workflow.status !== 'complete') throw new Error('Expected completed workflow.')
   return workflow
+}
+
+function createDaySession(revealIndexes: readonly number[] = []): ActiveAppSession {
+  const fixture = createNightFixture(
+    [
+      { roleId: ROLE_IDS.mayor, name: 'Hidden Mayor' },
+      { roleId: ROLE_IDS.citizen, name: 'Hidden Citizen' },
+      { roleId: ROLE_IDS.mayor, name: 'Second Mayor' },
+    ],
+    {
+      phase: 'dawn-announcement',
+      nightNumber: 1,
+    },
+  )
+  const stateResult = createDayDiscussionState({
+    status: 'dawn',
+    game: fixture.game,
+    participants: fixture.participants,
+    dawnAnnouncement: { outcome: 'no-deaths', nightNumber: 1 },
+  })
+  if (!stateResult.ok) throw new Error(`Expected day state: ${stateResult.error.type}`)
+  let state = stateResult.value
+  for (const revealIndex of revealIndexes) {
+    const selected = state.game.players[revealIndex]
+    if (selected === undefined) throw new Error('Expected selected Mayor.')
+    const revealResult = confirmMayorRevealDuringDay(state, selected.playerId)
+    if (!revealResult.ok) throw new Error(`Expected Mayor reveal: ${revealResult.error.type}`)
+    state = revealResult.value
+  }
+  return {
+    stage: 'day-discussion',
+    game: state.game,
+    participants: state.participants,
+  }
 }
 
 describe('persisted sequential session V2', () => {
@@ -262,7 +302,7 @@ describe('persisted sequential session V2', () => {
   })
 
   it('round-trips the final resolution boundary and public-only Dawn', () => {
-    const complete = completeDoctorNight()
+    const complete = completeDoctorNight(1)
     const readyResult = beginFinalNightResolution(complete)
     if (!readyResult.ok) throw new Error('Expected final night resolution.')
     const readySession: ActiveAppSession = {
@@ -286,6 +326,33 @@ describe('persisted sequential session V2', () => {
     expect(JSON.stringify(persistedDawn)).not.toMatch(
       /sheriffResults|investigationResults|detectiveResults|privateResult/,
     )
+  })
+
+  it.each([
+    ['dayNumber', 1],
+    ['nightNumber', 2],
+  ] as const)('rejects a first-Dawn save with incompatible %s', (counter, value) => {
+    const complete = completeDoctorNight(1)
+    const readyResult = beginFinalNightResolution(complete)
+    if (!readyResult.ok) throw new Error('Expected final night resolution.')
+    const dawnResult = prepareDawnAnnouncement(readyResult.value)
+    if (!dawnResult.ok) throw new Error('Expected Dawn.')
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'dawn', workflow: dawnResult.value }, SAVED_AT),
+      ),
+    ) as {
+      session: { game: { dayNumber: number; nightNumber: number } }
+    }
+    envelope.session.game[counter] = value
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAWN_SESSION',
+        reason: 'invalid-counters',
+      },
+    })
   })
 })
 
@@ -325,7 +392,7 @@ describe('narrow V1 migration', () => {
       workflow: briefingWorkflow.value,
     }
 
-    const ready = beginFinalNightResolution(completeDoctorNight())
+    const ready = beginFinalNightResolution(completeDoctorNight(1))
     if (!ready.ok) throw new Error('Expected resolution.')
     const dawn = prepareDawnAnnouncement(ready.value)
     if (!dawn.ok) throw new Error('Expected Dawn.')
@@ -367,5 +434,153 @@ describe('narrow V1 migration', () => {
       ok: false,
       error: { type: 'STALE_OLD_PRIVATE_RESULT_WORKFLOW' },
     })
+  })
+})
+
+describe('persisted Phase 7B day discussion V2', () => {
+  it('round-trips the exact day session and multiple public Mayor reveals', () => {
+    const session = createDaySession([0, 2])
+    const restored = roundTrip(session)
+
+    expect(restored).toEqual(session)
+    expect(restored).not.toBe(session)
+    expect(Object.isFrozen(restored)).toBe(true)
+    if (restored.stage !== 'day-discussion') {
+      throw new Error('Expected restored day session.')
+    }
+    const view = selectPublicDayDiscussionView(restored)
+    expect(view.dayLabel).toBe('Day 1')
+    expect(view.livingPlayers.filter((row) => row.hasThreeVoteReminder)).toHaveLength(2)
+  })
+
+  it('persists only the canonical day game and participants', () => {
+    const persisted = toPersistedAppSessionV2(createDaySession([0]))
+    const serialized = JSON.stringify(persisted)
+
+    expect(persisted).toMatchObject({
+      stage: 'day-discussion',
+      workflowStatus: 'day-discussion',
+      game: { phase: 'day-discussion', nightNumber: 1, dayNumber: 1 },
+    })
+    expect(persisted).not.toHaveProperty('workflow')
+    expect(serialized).not.toMatch(
+      /dawnAnnouncement|resolution|completedSteps|currentOutcome|collectedActions|selectedMayor|dialog|focus|voteCount|trial/,
+    )
+  })
+
+  it('rejects stage/phase and counter mismatches', () => {
+    const envelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: { game: { phase: string; dayNumber: number } }
+    }
+    envelope.session.game.phase = 'dawn-announcement'
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'STAGE_PHASE_MISMATCH',
+        stage: 'day-discussion',
+        phase: 'dawn-announcement',
+      },
+    })
+
+    const counterEnvelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: { game: { dayNumber: number } }
+    }
+    counterEnvelope.session.game.dayNumber = 2
+    expect(restorePersistedSessionEnvelopeV2(counterEnvelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'invalid-counters',
+      },
+    })
+  })
+
+  it.each([
+    ['completedSteps', []],
+    ['currentOutcome', null],
+    ['resolution', {}],
+    ['dawnAnnouncement', { outcome: 'no-deaths', nightNumber: 1 }],
+    ['mayorDialogOpen', true],
+    ['selectedMayorPlayerId', 'player-1'],
+  ] as const)('rejects stale or private day field %s', (field, value) => {
+    const envelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: Record<string, unknown>
+    }
+    envelope.session[field] = value
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'contains-stale-night-data',
+      },
+    })
+  })
+
+  it('rejects a forged public reveal and the obsolete Mayor authority marker', () => {
+    const forgedReveal = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: {
+        game: {
+          players: {
+            publiclyRevealedRoleId: string | null
+            mayorRevealed: boolean
+          }[]
+        }
+      }
+    }
+    const firstPlayer = forgedReveal.session.game.players[0]
+    if (firstPlayer === undefined) throw new Error('Expected first player.')
+    firstPlayer.publiclyRevealedRoleId = ROLE_IDS.citizen
+    expect(restorePersistedSessionEnvelopeV2(forgedReveal)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+
+    const obsoleteMarker = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: { game: { players: { mayorRevealed: boolean }[] } }
+    }
+    const obsoletePlayer = obsoleteMarker.session.game.players[0]
+    if (obsoletePlayer === undefined) throw new Error('Expected first player.')
+    obsoletePlayer.mayorRevealed = true
+    expect(restorePersistedSessionEnvelopeV2(obsoleteMarker)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+  })
+
+  it('restores the former generated false Mayor marker without retaining it', () => {
+    const compatibleEnvelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: {
+        game: { players: (Record<string, unknown> & { mayorRevealed?: boolean })[] }
+      }
+    }
+    for (const player of compatibleEnvelope.session.game.players) {
+      player.mayorRevealed = false
+    }
+
+    const restored = restorePersistedSessionEnvelopeV2(compatibleEnvelope)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error('Expected prior V2 compatibility.')
+    expect(JSON.stringify(toPersistedAppSessionV2(restored.value.session))).not.toContain(
+      'mayorRevealed',
+    )
   })
 })

@@ -9,7 +9,15 @@ describe('public Dawn presentation', () => {
   it('keeps deaths hidden behind a deliberate confirmation boundary', () => {
     const onPrepareDawn = vi.fn()
     const view: NightCompletionView = { status: 'ready-for-dawn' }
-    render(<DawnPresentation view={view} error={null} onPrepareDawn={onPrepareDawn} />)
+    render(
+      <DawnPresentation
+        view={view}
+        error={null}
+        dayTransitionErrorMessage={null}
+        onPrepareDawn={onPrepareDawn}
+        onBeginDayDiscussion={() => undefined}
+      />,
+    )
 
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
     expect(screen.queryByText(/died during the night/i)).toBeNull()
@@ -21,6 +29,7 @@ describe('public Dawn presentation', () => {
   })
 
   it('renders only public Dawn data and no private-result replay controls', () => {
+    const onBeginDayDiscussion = vi.fn()
     const view: NightCompletionView = {
       status: 'dawn',
       announcement: {
@@ -35,7 +44,15 @@ describe('public Dawn presentation', () => {
         ],
       },
     }
-    render(<DawnPresentation view={view} error={null} onPrepareDawn={() => undefined} />)
+    render(
+      <DawnPresentation
+        view={view}
+        error={null}
+        dayTransitionErrorMessage={null}
+        onPrepareDawn={() => undefined}
+        onBeginDayDiscussion={onBeginDayDiscussion}
+      />,
+    )
 
     expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toHaveFocus()
     const deaths = screen.getByRole('list', {
@@ -46,5 +63,7 @@ describe('public Dawn presentation', () => {
     )
     expect(screen.queryByRole('button', { name: /Acknowledge result/i })).toBeNull()
     expect(screen.queryByText(/Sheriff result|Investigator result|Detective result/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    expect(onBeginDayDiscussion).toHaveBeenCalledTimes(1)
   })
 })

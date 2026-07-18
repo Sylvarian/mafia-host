@@ -29,10 +29,23 @@ coordinating app guards rapid repeated operations and saves each canonical trans
 Phase 7A.1 removes the old private-result replay from `dawn`. That slice now renders only the
 hidden-death `ready-for-dawn` boundary and public Dawn announcement. Its deliberate confirmation
 dialog supports Escape cancellation and focus restoration. The public view has no day-discussion
-transition.
+data beyond the announcement. Phase 7B adds the deliberate **Begin day discussion** transition.
+
+`day-discussion` renders a public-safe Day 1 display with semantic living/dead sections, only
+authoritative public role reveals, verbal trial guidance, and textual three-vote reminders for
+each living revealed Mayor. It contains no nomination, vote, execution, end-day, winner, or
+next-night controls.
+
+Opening **Confirm Mayor reveal** makes the public background inert and enters a host-only dialog
+with a strong privacy warning. The dialog receives only sanitized candidate IDs and duplicate-safe
+labels, never a game, role map, faction, or Executioner target. Radio selection, dialog openness,
+focus, and operation guards are temporary React state. Escape and Cancel restore focus; rapid
+confirmation is guarded.
 
 `session-persistence` renders public-safe V2 recovery summaries and local-save status. Night
 summaries expose only the night number, general stage, player count, and save time. Current actor,
 role, target, blocked state, role composition, action progress, and results are absent from text,
 attributes, and accessible labels until the host explicitly continues. Errors, dialog openness,
-focus, save status, and operation guards remain transient.
+focus, save status, and operation guards remain transient. Day recovery similarly exposes only
+generic Day 1 discussion, player count, and save time; revealed or hidden Mayor identities appear
+only after Continue.

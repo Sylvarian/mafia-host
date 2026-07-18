@@ -11,6 +11,13 @@ import type { Player } from '@/domain/players/player.ts'
 import type { RandomSource } from '@/domain/randomness/random-source.ts'
 
 import {
+  confirmMayorRevealDuringDay,
+  createDayDiscussionState,
+  type BeginDayDiscussionWorkflowError,
+  type ConfirmMayorRevealWorkflowError,
+  type DayDiscussionState,
+} from '../day-discussion/index.ts'
+import {
   acknowledgeExecutionerBriefing,
   createExecutionerBriefingWorkflow,
   nextExecutionerBriefing,
@@ -87,6 +94,12 @@ export type DawnAppSession = Readonly<{
   workflow: DawnWorkflow
 }>
 
+export type DayDiscussionAppSession = Readonly<{
+  stage: 'day-discussion'
+  game: GameState
+  participants: readonly Player[]
+}>
+
 export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
@@ -94,6 +107,7 @@ export type ActiveAppSession =
   | SequentialNightAppSession
   | NightResolutionAppSession
   | DawnAppSession
+  | DayDiscussionAppSession
 
 export type ActiveAppSessionStage = ActiveAppSession['stage']
 
@@ -113,6 +127,8 @@ export type ActiveAppSessionOperation =
   | 'acknowledge-night-outcome'
   | 'continue-night'
   | 'prepare-dawn'
+  | 'begin-day-discussion'
+  | 'confirm-mayor-reveal'
 
 export type InvalidActiveAppSessionStageError = Readonly<{
   type: 'INVALID_ACTIVE_APP_SESSION_STAGE'
@@ -128,6 +144,8 @@ export type ActiveAppSessionError =
   | CompleteExecutionerBriefingPhaseError
   | NightActionCollectionError
   | NightCompletionError
+  | BeginDayDiscussionWorkflowError
+  | ConfirmMayorRevealWorkflowError
   | InvalidActiveAppSessionStageError
 
 export function createActiveAppSession(): SetupAppSession {
@@ -394,6 +412,56 @@ export function prepareSessionDawn(
   }
   const result = prepareDawnAnnouncement(session.workflow)
   return result.ok ? succeed(Object.freeze({ stage: 'dawn', workflow: result.value })) : result
+}
+
+export function beginSessionDayDiscussion(
+  session: ActiveAppSession,
+): DomainResult<
+  DayDiscussionAppSession,
+  BeginDayDiscussionWorkflowError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage === 'day-discussion') {
+    return fail({ type: 'DAY_TRANSITION_ALREADY_COMPLETED' })
+  }
+  if (session.stage !== 'dawn') {
+    return invalidStage('begin-day-discussion', session.stage)
+  }
+  const result = createDayDiscussionState(session.workflow)
+  return result.ok
+    ? succeed(
+        Object.freeze({
+          stage: 'day-discussion',
+          game: result.value.game,
+          participants: result.value.participants,
+        }),
+      )
+    : result
+}
+
+export function confirmSessionMayorReveal(
+  session: ActiveAppSession,
+  selectedPlayerId: PlayerId,
+): DomainResult<
+  DayDiscussionAppSession,
+  ConfirmMayorRevealWorkflowError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'day-discussion') {
+    return invalidStage('confirm-mayor-reveal', session.stage)
+  }
+  const state: DayDiscussionState = {
+    game: session.game,
+    participants: session.participants,
+  }
+  const result = confirmMayorRevealDuringDay(state, selectedPlayerId)
+  return result.ok
+    ? succeed(
+        Object.freeze({
+          stage: 'day-discussion',
+          game: result.value.game,
+          participants: result.value.participants,
+        }),
+      )
+    : result
 }
 
 function startFirstNightStage(

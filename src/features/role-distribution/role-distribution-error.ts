@@ -148,8 +148,6 @@ function getInvalidGameStateMessage(
       return `The active game rejected an invalid ${error.field} identity.`
     case 'INVALID_PLAYER_ALIVE_STATE':
       return `Player ID ${error.playerId} has an invalid alive state; expected an explicit boolean.`
-    case 'INVALID_MAYOR_REVEALED_STATE':
-      return `Player ID ${error.playerId} has an invalid Mayor reveal state; expected an explicit boolean.`
     case 'INVALID_ROLE_ORDINAL':
       return `Role instance ${error.roleInstanceId} has invalid ordinal ${String(error.ordinal)}.`
     case 'ROLE_ORDINAL_MISMATCH':
