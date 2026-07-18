@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Initial product authority  
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 6.5<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -13,7 +13,7 @@
 
 Mafia Host replaces the host's pen-and-paper bookkeeping while preserving an in-person Mafia game.
 
-The application:
+The completed product:
 
 - Maintains the player roster.
 - Lets the host configure a fixed set of roles for the next game.
@@ -23,6 +23,33 @@ The application:
 - Resolves blocking, framing, investigations, protection, attacks, conversions, deaths, and win conditions.
 - Supports daytime discussion, trials, voting, executions, and Mayor vote weighting.
 - Shows only private information to the host. Players continue using physical role and result cards.
+
+### Current implementation boundary
+
+The implemented product currently includes:
+
+- Setup.
+- Role assignment and physical distribution.
+- First-night action collection.
+- Deterministic ordinary night resolution.
+- Private result presentation.
+- The first public Dawn.
+- Browser-local refresh recovery through that first Dawn.
+
+The following rules are finalized but their gameplay is not implemented:
+
+- Executioner target assignment and briefing.
+- Executioner-to-Jester conversion.
+- Jester personal wins and pending revenge.
+- Mayor daytime reveal.
+- Host-managed day controls.
+- Day execution and ending a day without execution.
+- Later nights and Dawns.
+- Faction victory calculation.
+- Game-over presentation.
+
+These features are planned for the Phase 7 delivery sequence or a prerequisite subphase. A finalized
+rule must not be read as evidence that its feature is already available.
 
 The application does **not** initially provide:
 
@@ -45,7 +72,8 @@ The application does **not** initially provide:
 4. **Deterministic rules engine:** Game outcomes are calculated by pure domain logic, not inside React components.
 5. **Explicit phases:** The game always occupies one defined phase.
 6. **Reversible host mistakes:** The design should allow correction before finalising a phase and should eventually support undo of the most recent committed step.
-7. **No silent rule invention:** Unresolved rules in Section 16 must be decided before the corresponding mechanics are considered complete.
+7. **No silent rule invention:** Any rule still marked unresolved in Section 22 must be decided
+   before the corresponding mechanic is considered complete. R-001 through R-012 are finalized.
 
 ---
 
@@ -79,6 +107,22 @@ The save is local to one browser profile and device and is not encrypted. It may
 assignments, actions, investigative results, alive/dead state, and public reveals. It is crash and
 refresh recovery, not a backup or cloud sync. Clearing site data removes it, private browsing may
 not retain it, and one host tab is recommended because tabs are not synchronised.
+
+Current V1 persistence supports recovery only through the first Dawn. Its Dawn representation
+requires the public announcement to account for every currently dead player. Before supporting
+later days and nights, persistence must distinguish:
+
+- Deaths newly announced at the current Dawn.
+- Players who died on earlier nights or days.
+- Pending Jester revenge obligations.
+- Permanent Jester and Executioner personal wins.
+- Executioner targets and conversions.
+- Current versus historical public announcements.
+
+The current first-Dawn representation must not be reused unchanged for later Dawns because it could
+reannounce earlier deaths. Phase 7 must update the persisted session contract deliberately. This
+may require a new schema version, or an explicit compatible V1 extension only when validation
+remains unambiguous. No migration system currently exists.
 
 ---
 
@@ -324,12 +368,17 @@ Example: if the Godfather and Serial Killer both attack Alice and one unblocked 
 
 - Faction: Town
 - No ordinary night ability.
-- During the day, the player may publicly announce they are Mayor.
-- The host must confirm the reveal in the app.
-- Once confirmed, Mayor status is public and permanent.
-- The living revealed Mayor's vote counts as three votes.
-- An unrevealed Mayor's vote counts as one.
-- A dead Mayor does not vote.
+- May publicly reveal at any time during the day.
+- The player verbally asks the host to confirm the reveal.
+- The app records the reveal only after deliberate host confirmation.
+- Revealing does not consume an action, end discussion, or automatically end the day.
+- Once revealed, the Mayor remains publicly revealed, including after death.
+- A living revealed Mayor's vote counts as three votes in every player vote, including trial
+  nominations, guilty/innocent verdicts, and any other player vote.
+- An unrevealed Mayor's vote counts as one. A dead Mayor does not vote.
+- The app does not calculate or record the Mayor's weighted votes. The host counts the Mayor as
+  three.
+- The day UI visibly reminds the host that a revealed Mayor has three votes.
 
 ### Citizen
 
@@ -345,35 +394,55 @@ Example: if the Godfather and Serial Killer both attack Alice and one unblocked 
 
 - Faction: Neutral
 - No ordinary night ability.
-- Wins personally by being executed/lynched during a trial.
-- The main game continues after the Jester wins.
-- After a Jester is executed, one eligible random living player commits suicide overnight.
-- The pending suicide must resolve before a Mafia victory is finalised because it may change faction counts.
-- Suicide eligibility, preventability, and timing require confirmation in **R-006**.
+- Earns a permanent personal win only when executed during the day.
+- Does not personally win when killed at night, by revenge, or by another non-execution cause.
+- A Jester personal win does not end the main game and may coexist with later Town, Mafia, Serial
+  Killer, or Executioner wins.
+- Execution creates a pending revenge obligation; no victim is selected at execution time.
+- The executed Jester is dead and does not act during the following night.
+- Pending revenge prevents every faction victory until it resolves at the next Dawn.
+- A living Jester prevents Mafia victory but does not prevent Town victory.
+- A Jester is Neutral and is not counted as Town for Mafia parity.
+- Duplicate Jesters retain separate stable identities and may earn personal wins independently.
+- A Jester killed by another Jester's revenge does not personally win.
 
 ### Executioner
 
 - Faction: Neutral
-- At game setup, receives one random target other than themselves.
-- At the beginning of the first night, the host privately tells the Executioner their target.
-- Wins personally if that target is executed/lynched.
-- The main game continues after the Executioner wins.
-- If the target is killed by the Godfather or Serial Killer, the Executioner converts into a Jester.
-- Behaviour when the target dies by another cause requires confirmation in **R-007**.
-- Target eligibility requires confirmation in **R-008**.
+- Receives one randomly selected participating player with a Town role as their target.
+- Mafia, Jester, Executioner, Serial Killer, and every other non-Town role are ineligible.
+- Target selection uses the injected random source, happens before the first-night briefing, and is
+  stored independently for each Executioner.
+- Multiple Executioners may share one target.
+- At the beginning of the first night, the host privately tells each Executioner their target.
+- Earns a permanent personal win if that target is executed during the day.
+- A valid target execution does not convert the Executioner. They remain an Executioner, remain in
+  the game, and retain their personal win.
+- Multiple Executioners sharing one target all earn their personal wins from the same valid
+  execution.
+- Personal wins do not end the main game and may coexist with later faction and other personal wins.
+- If the target dies for any reason other than daytime execution, the Executioner converts into a
+  Jester after that death is applied. This includes ordinary night death, a Godfather or Serial
+  Killer attack, Jester revenge, and any future non-execution death mechanic.
+- Conversion does not revive the Executioner, does not retroactively grant a Jester personal win,
+  and clears the previous Executioner target.
+- Multiple Executioners with the same target convert independently after a non-execution target
+  death.
+- A living or personally victorious Executioner remains Neutral, does not prevent Mafia victory,
+  and is not counted as Town for Mafia parity.
 
 ### Serial Killer
-
-This role is inferred from the stated settings and interactions and must be explicitly confirmed.
-
-Provisional behaviour:
 
 - Faction: Neutral killing
 - Night ability: Select one living player to attack.
 - Attack may be prevented by Doctor protection.
 - Appears suspicious to Sheriff.
 - Interaction with Godfather follows the mutual-attack setting.
-- Personal victory condition requires confirmation in **R-009**.
+- Wins only when exactly one player remains alive and that player is a Serial Killer.
+- Pending Jester revenge prevents Serial Killer victory.
+- Multiple living Serial Killers do not win yet.
+- No Serial Killer victory occurs when nobody remains alive.
+- Previously earned personal wins remain valid alongside a later Serial Killer victory.
 
 ---
 
@@ -468,6 +537,12 @@ When the host presses **Start Game**:
 
 Role assignments must use a testable injected random source rather than calling `Math.random()` throughout the domain.
 
+Executioner target eligibility and assignment behaviour are finalized, but steps 6 and the
+Executioner briefing are not implemented. In the current Phase 6.5 product, Executioner targets
+remain `null` and a living Executioner with no target blocks first-night entry. A future
+prerequisite subphase must implement target assignment before games containing an Executioner can
+continue beyond distribution.
+
 ---
 
 ## 10. Game phases
@@ -482,8 +557,6 @@ type GamePhase =
   | "night-resolution"
   | "dawn-announcement"
   | "day-discussion"
-  | "trial"
-  | "trial-voting"
   | "execution-resolution"
   | "game-over";
 ```
@@ -499,8 +572,8 @@ Roster
 → First night
 → Dawn
 → Day discussion
-→ Optional trial/vote
-→ Execution or return to discussion
+→ Any number of verbally managed trials and votes
+→ Host records an execution, or ends the day without one
 → Next night
 → Repeat
 → Game over
@@ -512,7 +585,9 @@ Roster
 
 ## 11.1 First-night Executioner briefing
 
-Before ordinary first-night actions:
+Rule finalized; implementation planned for a Phase 7 prerequisite subphase.
+
+After Executioner targets have been assigned and before ordinary first-night actions:
 
 1. Tell everyone to close their eyes.
 2. If one or more Executioners exist, call each Executioner separately.
@@ -591,34 +666,69 @@ These defaults must be covered by tests.
 
 The app collects actions first and resolves them as one deterministic batch.
 
-Recommended resolution pipeline:
+### 12.1 Ordinary night resolution
+
+Recommended ordinary-action pipeline:
 
 1. Validate all submitted actions.
 2. Apply role blocks.
 3. Apply redirects, if redirecting roles are added later.
-4. Apply frame and apparent-role effects.
-5. Establish final visit map.
+4. Apply frames and apparent-role effects.
+5. Establish the final visit map.
 6. Apply protections.
-7. Apply Godfather attack.
-8. Apply Serial Killer attack.
-9. Apply pending Jester suicide.
-10. Determine deaths.
-11. Resolve Sheriff results.
-12. Resolve Investigator and Consigliere groups.
-13. Resolve Detective tracking results from the visit map.
-14. Apply Executioner-to-Jester conversion where triggered.
-15. Expire one-night effects.
-16. Evaluate personal neutral wins.
-17. Evaluate faction win conditions only when no pending death can change them.
-18. Generate private host results and public dawn announcement.
+7. Resolve ordinary Godfather and Serial Killer attacks.
+8. Determine all ordinary night deaths without applying them one at a time.
+9. Resolve Sheriff results.
+10. Resolve Investigator and Consigliere groups.
+11. Resolve Detective tracking results from the visit map.
+12. Expire one-night effects.
 
 The pipeline should produce structured events and results, not directly mutate React UI state.
 
+### 12.2 Authoritative Dawn death and victory timing
+
+At Dawn:
+
+1. Resolve ordinary night actions.
+2. Determine all ordinary night deaths.
+3. Apply all ordinary night deaths simultaneously.
+4. Resolve every Executioner-to-Jester conversion caused by those ordinary deaths.
+5. Build the survivor list from players still alive.
+6. If Jester revenge is pending, randomly select one survivor using the injected random source.
+7. Apply the selected victim's unavoidable revenge death.
+8. Resolve every Executioner-to-Jester conversion caused by the revenge death.
+9. Clear the resolved pending revenge.
+10. Check faction victory once, using the final post-Dawn state.
+
+Do not run faction victory checks after individual ordinary deaths. The single final check prevents
+victory from depending on arbitrary death-processing order.
+
+The revenge victim:
+
+- Is chosen only after ordinary night deaths are known.
+- Must be alive after ordinary night deaths and cannot already be dying from an ordinary night
+  cause.
+- May have any role or faction.
+- Completes their night action normally before Dawn.
+- Is selected using the injected random source.
+- Cannot be protected by a Doctor.
+- Cannot avoid the death through role-blocking.
+- Cannot avoid it through Godfather/Serial Killer mutual-kill immunity.
+- Cannot avoid it through ordinary attack immunity.
+- Uses `revealRoleOnDeath` for public role reveal.
+
+Jester revenge is an unavoidable death obligation, not an ordinary attack.
+
+If ordinary night deaths leave no survivors, no revenge victim is selected, the pending revenge is
+cleared, and no faction wins. If exactly one player survives ordinary night deaths, that player is
+selected and dies from revenge, leaving no faction winner. Existing personal wins remain recorded
+in both cases.
+
 The currently implemented Phase 5 result stops after structured provisional deaths and
 investigative results. Phase 6 applies those provisional deaths only after all private
-investigative results have been acknowledged. Conversion, personal-win, faction-win, and later
-pending-death stages remain outside Phase 6 and are not inferred while R-006 through R-012 remain
-unresolved.
+investigative results have been acknowledged. The conversion, revenge, personal-win, faction-win,
+and later-Dawn stages above are finalized rules but remain outside the implemented Phase 6
+boundary.
 
 ---
 
@@ -671,11 +781,19 @@ The source text contained “quiet now”; this specification assumes “quiet n
 
 If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
 
-Phase 6 stops at `dawn-announcement`. Entering day discussion is Phase 7 work.
+Phase 6 stops at the first `dawn-announcement`. Entering day discussion, resolving Jester revenge,
+checking victory, and reaching later Dawns are Phase 7-sequence work and are not currently
+available.
+
+The persisted V1 Dawn announcement is safe only at this first-Dawn boundary. Later-Dawn support
+must introduce an explicit current-announcement boundary so deaths from earlier nights or days are
+not announced again.
 
 ---
 
 ## 14. Day discussion
+
+Rule finalized; implementation planned for the Phase 7 delivery sequence.
 
 During day discussion, the host dashboard shows every player with:
 
@@ -683,100 +801,147 @@ During day discussion, the host dashboard shows every player with:
 - Alive/dead state
 - Publicly revealed role, if any
 - Confirmed Mayor badge
-- Trial button for living players
+- A visible reminder that each living revealed Mayor has three votes
 - Host-only actual role
 - Any host-only status relevant to the current game
 
 Available controls:
 
-- Put living player on trial
-- Confirm Mayor reveal
-- Advance directly to next night
-- Inspect private game history
-- Correct an obvious host input before it is locked
+- Deliberately confirm a Mayor's verbal public reveal.
+- Execute a living player after the host has manually determined a guilty verdict.
+- End the day without an execution.
 
 ---
 
 ## 15. Trial, voting, and execution
 
-When **Trial** is selected:
+Rule finalized; implementation planned for the Phase 7 delivery sequence.
 
-1. Open a trial modal for the accused player.
-2. Allow discussion outside the app.
-3. Enter each living eligible player's vote:
-   - Guilty
-   - Innocent
-   - Abstain
-4. Normal vote weight is 1.
-5. Confirmed living Mayor vote weight is 3.
-6. The accused does not vote by default.
-7. The app totals weighted votes.
-8. Guilty must exceed Innocent to execute.
-9. A tie results in acquittal.
-10. Host confirms the calculated result.
+Any number of trials may occur during a day. Players manage nominations, discussion, and voting
+verbally, while the host counts votes manually. A nomination requires a majority, but the host is
+responsible for determining that majority.
 
-On execution:
+Trial verdict options are guilty and innocent. A player is executed only when guilty votes exceed
+innocent votes; a tie means innocent. The host may conduct another verbal trial after an innocent
+verdict or end the day without an execution.
 
-- Mark the accused dead.
-- Reveal role publicly only when configured.
-- Resolve Jester or Executioner personal wins.
-- Schedule Jester suicide when applicable.
-- Check whether an immediate faction result is allowed.
-- Move to the next night unless game over is final.
+A revealed Mayor counts as three votes in nomination voting, guilty/innocent verdict voting, and
+every other player vote. The app displays the reminder but does not calculate or record the
+weighted vote.
 
-On acquittal:
+The app does not record:
 
-- Return to day discussion.
-- The host may start another trial or move to night.
+- Nomination attempts.
+- Nomination voters.
+- Trial count.
+- Individual guilty votes.
+- Individual innocent votes.
+- Vote totals.
+- Majority calculations.
 
-The “multiple trials per day” behaviour is provisional and must be confirmed in **R-010**.
+The host records only the final outcome in the app by selecting **Execute a player** or **End day
+without execution**. The app must not provide an app-managed trial or vote-counting workflow.
+
+### 15.1 Daytime execution timing
+
+Executing a player immediately ends the day. The authoritative order is:
+
+1. Apply the execution death.
+2. Apply public role reveal according to `revealRoleOnDeath`.
+3. Award a permanent personal win to every Executioner whose target was validly executed.
+4. If the executed player was a Jester:
+   - Award that Jester's permanent personal win.
+   - Create a pending revenge obligation without selecting a victim.
+5. If the executed player was an Executioner target and the death was not a valid execution for
+   some relevant Executioner, apply conversions as appropriate.
+6. Check faction victory unless pending revenge blocks it.
+7. If no faction victory exists, proceed toward the next night.
+
+A valid daytime execution of an Executioner's target awards that Executioner's personal win rather
+than converting them. Multiple Executioners who share the target each win from the same valid
+execution.
+
+An execution announcement uses `revealRoleOnDeath` to decide whether the dead player's role is
+publicly revealed. Personal-win and victory effects are evaluated immediately after the execution
+death and its consequences. If executing a Jester creates pending revenge, every faction victory is
+blocked and play proceeds toward the next night.
 
 ---
 
 ## 16. Win conditions
 
-Personal neutral wins do not automatically end the main game.
+Rule finalized; implementation planned for the Phase 7 delivery sequence.
+
+Personal wins are permanent records attached to the winning player/role instance. They do not end
+the main game and may coexist with other personal wins and a later Town, Mafia, or Serial Killer
+victory.
 
 ### 16.1 Town
 
-Provisional Town victory:
+Town wins only when all of these are true:
 
-- No living Mafia remain.
-- No living Serial Killer or other hostile killing neutral remains.
-- No pending Jester suicide or other pending death can reverse the result.
+- At least one Town player remains alive.
+- No Mafia player remains alive.
+- No Serial Killer remains alive.
+- No Jester revenge remains pending.
 
-Confirm in **R-011**.
+Living Jesters and living Executioners do not prevent Town victory. Neutral players do not become
+Town for counting purposes. If nobody remains alive, Town does not win. Previously earned personal
+wins coexist with Town victory.
 
 ### 16.2 Mafia
 
-The supplied rule states that Mafia win when Town can no longer win and living Mafia outnumber living Town. Jester is excluded because a pending Jester suicide may change the numbers.
+Mafia wins only when all of these are true:
 
-A precise implementation rule is still required.
+- At least one Mafia player remains alive.
+- No Serial Killer remains alive.
+- Living Mafia equal or outnumber living Town.
+- No living Jester remains.
+- No Jester revenge remains pending.
 
-Questions include:
+Count living Mafia only against living Town. Exclude living Executioners, living Jesters, and all
+dead players from parity. A personally victorious Executioner remains Neutral and excluded. A
+living Jester is excluded from parity but independently blocks Mafia victory. If nobody remains
+alive, Mafia does not win. Previously earned personal wins coexist with Mafia victory.
 
-- Is victory at strict majority (`mafia > town`) or parity (`mafia >= town`)?
-- Are unrevealed/revealed neutral players excluded from both counts?
-- Can Mafia win while Serial Killer is alive?
-- Is the result delayed until all pending suicides resolve?
+```text
+2 Mafia + 2 Town + 1 Executioner
+→ Mafia wins, assuming no Serial Killer, living Jester, or pending revenge.
+```
 
-Tracked as **R-012**.
+```text
+2 Mafia + 2 Town + 1 Jester
+→ Mafia does not win because a living Jester remains.
+```
 
 ### 16.3 Jester
 
-- Personal win occurs immediately when executed.
-- Main game continues.
-- A random suicide is scheduled for the next night/dawn.
+- A Jester earns a personal win only through daytime execution.
+- The win is recorded immediately and permanently.
+- Execution creates pending revenge for the next Dawn.
+- Night death, revenge death, and every other non-execution death do not grant a Jester win.
 
 ### 16.4 Executioner
 
-- Personal win occurs immediately when their target is executed.
-- Main game continues.
-- If the target dies to Godfather or Serial Killer first, Executioner converts to Jester.
+- Each Executioner earns a permanent personal win when their target is executed during the day.
+- Multiple Executioners may win from one shared target's execution.
+- A target's non-execution death converts each affected Executioner to Jester after the death is
+  applied.
+- Conversion never retroactively grants a Jester win.
 
 ### 16.5 Serial Killer
 
-Not yet defined. See **R-009**.
+Serial Killer victory occurs only when exactly one player remains alive and that player is a Serial
+Killer. Pending Jester revenge blocks that victory. Multiple surviving Serial Killers do not win
+yet, and no Serial Killer wins when nobody survives.
+
+### 16.6 No survivors
+
+When nobody remains alive after all required ordinary and revenge deaths:
+
+- No Town, Mafia, or Serial Killer faction wins.
+- Previously earned Jester and Executioner personal wins remain recorded.
+- The game ends with no faction winner.
 
 ---
 
@@ -785,7 +950,7 @@ Not yet defined. See **R-009**.
 Minimum initial correction support:
 
 - Before night resolution, the host can go back and change any submitted target.
-- Before confirming execution, the host can change votes.
+- Before confirming execution, the host can cancel or change the selected player.
 - Before entering the next phase, the host receives a summary confirmation.
 
 Recommended later support:
@@ -821,7 +986,6 @@ src/
 │  ├─ night-runner/
 │  ├─ dawn/
 │  ├─ day-dashboard/
-│  ├─ trial/
 │  └─ game-over/
 └─ shared/
    └─ ui/
@@ -857,7 +1021,12 @@ type GamePlayer = {
   publiclyRevealedRoleId: RoleId | null;
   mayorRevealed: boolean;
   executionerTargetId: PlayerId | null;
-  personalWin: "jester" | "executioner" | null;
+};
+
+type PersonalWinRecord = {
+  playerId: PlayerId;
+  roleInstanceId: string;
+  kind: "jester" | "executioner";
 };
 
 type GameSettings = {
@@ -879,11 +1048,16 @@ Additional types are required for:
 - Attacks
 - Investigation results
 - Death causes
-- Trial votes
-- Pending Jester suicide
+- Pending Jester revenge obligations
 - Role conversion
 - Game events
 - Faction and personal win results
+
+Personal wins must be durable per player and stable role instance, not represented as one global
+neutral-win flag. Multiple Jesters and Executioners keep independent records. Pending revenge must
+also identify the Jester role/player instance that created it. Stable duplicate-role ordinals and
+role-instance identity continue to apply after conversions; this requirement does not introduce a
+generic effect engine.
 
 ---
 
@@ -906,16 +1080,22 @@ Minimum scenarios:
 - Detective sees final visit.
 - First-night Godfather and Serial Killer actors are omitted when configured.
 - Godfather and Serial mutual attack setting behaves correctly.
-- Mayor reveal permanently changes vote weight to 3.
-- Jester wins when executed but not when killed overnight.
-- Jester suicide occurs before Mafia victory is finalised.
-- Executioner receives a valid target.
-- Executioner wins when target is executed.
-- Executioner converts when target is killed by Godfather.
-- Executioner converts when target is killed by Serial Killer.
+- Mayor reveal remains public and reminds the host to count every vote as three.
+- The app records no trial nominations, voters, verdict votes, totals, or majority calculations.
+- Jester wins when executed but not when killed overnight or by revenge.
+- Jester revenge selects only from post-ordinary-death survivors using injected randomness.
+- Jester revenge is unavoidable and blocks every faction victory until resolved.
+- Zero- and one-survivor revenge boundaries produce no faction winner.
+- Executioner receives an eligible participating Town target.
+- Multiple Executioners may independently share one target.
+- Multiple Executioners win when their shared target is executed.
+- Executioner converts when their target dies from an ordinary night cause or Jester revenge.
+- Conversion does not revive the Executioner or retroactively grant a Jester win.
 - Role reveal setting changes only public output.
 - Dead role instances no longer act.
-- Mafia and Town victory checks use the approved counting rule.
+- Simultaneous ordinary deaths produce one final post-Dawn victory check.
+- Town, Mafia, and Serial Killer checks use the finalized R-009, R-011, and R-012 rules.
+- Durable personal wins survive later faction victory and no-survivor game over.
 
 ---
 
@@ -937,7 +1117,8 @@ Minimum scenarios:
 
 ## 22. Rule decisions
 
-R-001 through R-005 are decided and authoritative. R-006 and later decisions remain unresolved until explicitly updated here.
+R-001 through R-012 are finalized and authoritative. R-006 through R-012 finalize rules only;
+their gameplay remains unimplemented at the Phase 6.5 product boundary.
 
 ### R-001 — Mutual killing disabled
 
@@ -959,64 +1140,172 @@ R-001 through R-005 are decided and authoritative. R-006 and later decisions rem
 
 **Status: Decided.** One successful, unblocked Doctor protection protects the selected player from every ordinary Godfather and Serial Killer attack during that night. Additional Doctors are not required to stop multiple ordinary attacks.
 
-### R-006 — Jester suicide
+### R-006 — Jester personal win and revenge
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Confirm:
+- A Jester earns a permanent personal win only when executed during the day.
+- A Jester killed at night, through revenge, or through another non-execution cause does not earn a
+  personal win.
+- A Jester personal win does not end the main game.
+- Personal wins may coexist with later Town, Mafia, Serial Killer, or Executioner wins.
+- Executing a Jester creates a pending revenge obligation.
+- No revenge victim is selected at execution time.
+- The executed Jester is dead and does not act during the following night.
+- Pending revenge prevents all faction victories from being declared until it resolves at the next
+  Dawn.
+- A living Jester prevents Mafia victory.
+- A living Jester does not prevent Town victory.
+- A Jester is Neutral and is not counted as Town for Mafia parity.
+- Duplicate Jesters remain independently identifiable and may each earn a personal win
+  independently.
 
-- Eligible target pool
-- Whether the Jester is excluded
-- Whether suicide can target any faction
-- Whether Doctor can prevent it
-- Whether it occurs alongside ordinary night deaths or before them
+At the next Dawn:
 
-### R-007 — Executioner target other death
+1. Resolve ordinary night actions.
+2. Determine all ordinary night deaths.
+3. Apply ordinary night deaths simultaneously.
+4. Resolve any Executioner-to-Jester conversions caused by those ordinary deaths.
+5. Build the survivor list from players still alive.
+6. Randomly select one surviving player as the Jester revenge victim.
+7. Apply the unavoidable revenge death.
+8. Resolve any Executioner-to-Jester conversions caused by the revenge death.
+9. Clear the pending revenge.
+10. Check faction victory using the final post-Dawn state.
 
-**Status: Unresolved.**
+The revenge victim is selected using the injected random source only after ordinary night deaths
+are known. The victim must be alive after those deaths, cannot already be dying from an ordinary
+night cause, may have any role or faction, and completes their night action normally before Dawn.
+Doctor protection, role-blocking, Godfather/Serial Killer mutual-kill immunity, and ordinary attack
+immunity cannot prevent the death. Public role reveal follows `revealRoleOnDeath`. Revenge is not
+an ordinary attack.
 
-What happens if the target dies from Jester suicide, another future killing role, or a manual host correction?
+If ordinary deaths leave no survivors, no victim is selected, pending revenge is cleared, nobody
+wins a faction victory, and existing personal wins remain recorded. If exactly one player survives,
+that player is selected and dies from revenge; nobody remains alive, no faction wins, and existing
+personal wins remain recorded.
 
-### R-008 — Executioner target eligibility
+### R-007 — Executioner target non-execution death
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Can the target be:
+- If an Executioner's target dies for any reason other than daytime execution, that Executioner
+  converts into a Jester.
+- This includes ordinary night death, a Serial Killer or Godfather attack, Jester revenge, and any
+  future non-execution death mechanic.
+- Conversion occurs after the relevant death is applied.
+- The converted player remains alive or dead according to their own state; conversion does not
+  revive anyone.
+- Their previous Executioner target is no longer active after conversion.
+- They follow normal Jester rules from that point onward.
+- Conversion does not retroactively grant a Jester personal win.
+- Multiple Executioners with the same target convert independently if that target dies through a
+  non-execution cause.
 
-- Mafia?
-- Neutral?
-- Mayor?
-- Another Executioner?
-- Any other player except self?
+### R-008 — Executioner target eligibility and assignment
+
+**Status: Finalized. Rule finalized; implementation planned for a Phase 7 prerequisite subphase.**
+
+- An Executioner target must be a participating player with a Town role.
+- Mafia, Jester, Executioner, Serial Killer, and other non-Town roles are ineligible.
+- The target is selected randomly using the injected random source.
+- Multiple Executioners may receive the same target.
+- Each Executioner's target is stored independently.
+- Target assignment occurs before the Executioner briefing.
+- If the target is executed during the day, the Executioner earns a permanent personal win, remains
+  an Executioner, and remains in the game.
+- Multiple Executioners sharing the target may all win from the same execution.
+- The win does not end the main game and may coexist with later faction and personal wins.
+- A living Executioner does not prevent Mafia victory.
+- An Executioner remains Neutral and is not counted as Town for Mafia parity.
+
+Target assignment and briefing are not implemented. Current Executioner targets remain `null`, and
+the first night remains blocked when a living Executioner has no target. Once the future assignment
+and briefing work exists, games containing Executioners will no longer be permanently blocked for
+that reason.
 
 ### R-009 — Serial Killer victory
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Define the Serial Killer's exact win condition.
+- Serial Killer victory occurs only when exactly one player remains alive and that player is a
+  Serial Killer.
+- Pending Jester revenge prevents Serial Killer victory.
+- If multiple Serial Killers remain alive, no Serial Killer victory occurs yet.
+- If nobody remains alive, no Serial Killer victory occurs.
+- Personal wins already earned remain valid.
 
-### R-010 — Trials per day
+### R-010 — Day discussion, trials, voting, and execution
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Can the Town hold multiple trials after acquittals, or only one trial per day?
+- Any number of trials may occur during a day.
+- Trial nominations and votes are managed verbally by the players and manually by the host.
+- A nomination requires a majority, but the host is responsible for counting it.
+- Trial verdict options are guilty and innocent.
+- A player is executed when guilty votes exceed innocent votes.
+- A tie means innocent.
+- The app records only the final outcome and does not record nomination attempts, nomination
+  voters, trial count, individual votes, vote totals, or majority calculations.
+- The app provides **Execute a player** and **End day without execution**.
+- The host may end the day without an execution.
+- Executing a player immediately ends the day.
+- An execution uses `revealRoleOnDeath` for public role reveal.
+- Victory and personal-win effects are evaluated immediately after the execution death and its
+  consequences.
+- If executing a Jester creates pending revenge, faction victory remains blocked and play proceeds
+  toward the next night.
+
+The app must not implement a managed trial or vote-counting workflow.
+
+### Mayor — daytime reveal and vote weight
+
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+
+- The Mayor may publicly reveal at any time during the day.
+- The player verbally asks the host to confirm the reveal.
+- The app records the reveal only after deliberate host confirmation.
+- Revealing does not consume an action, end discussion, or automatically end the day.
+- Once revealed, the Mayor remains publicly revealed, including after death.
+- A revealed Mayor's vote counts as three in all player voting, including trial nominations,
+  guilty/innocent verdicts, and any other player vote.
+- The app does not calculate or record the Mayor's weighted votes.
+- The host is responsible for counting the Mayor as three.
+- The day UI visibly reminds the host that a revealed Mayor has three votes.
 
 ### R-011 — Town victory
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Confirm whether Town must eliminate both Mafia and Serial Killer.
+Town wins only when at least one Town player remains alive, no Mafia player remains alive, no
+Serial Killer remains alive, and no Jester revenge remains pending.
+
+Living Jesters and living Executioners do not prevent Town victory. Neutral players do not become
+Town for counting purposes. If nobody remains alive, Town does not win. Previously earned personal
+wins coexist with Town victory.
 
 ### R-012 — Mafia victory count
 
-**Status: Unresolved.**
+**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
 
-Define:
+Mafia wins only when at least one Mafia player remains alive, no Serial Killer remains alive,
+living Mafia equal or outnumber living Town, no living Jester remains, and no Jester revenge
+remains pending.
 
-- Strict majority or parity
-- Which neutral roles count, if any
-- Interaction with living Serial Killer
-- Timing relative to pending Jester suicide
+Compare living Mafia only against living Town. Living Executioners are excluded from parity.
+Living Jesters are excluded from parity but independently block Mafia victory. Dead players are
+excluded. A personally victorious Executioner remains Neutral and excluded from parity. If nobody
+remains alive, Mafia does not win. Previously earned personal wins coexist with Mafia victory.
+
+```text
+2 Mafia + 2 Town + 1 Executioner
+→ Mafia wins, assuming no Serial Killer, living Jester, or pending revenge.
+```
+
+```text
+2 Mafia + 2 Town + 1 Jester
+→ Mafia does not win because a living Jester remains.
+```
 
 ---
 

@@ -106,7 +106,6 @@ Implement domain types for:
 - Game settings
 - Game phase
 - Night number/day number
-- Trial vote
 - Death record
 - Personal and faction win records
 
@@ -130,11 +129,14 @@ type GameCommand =
   | { type: "SUBMIT_NIGHT_ACTION"; payload: NightActionInput }
   | { type: "RESOLVE_NIGHT" }
   | { type: "ENTER_DAY" }
-  | { type: "START_TRIAL"; accusedId: PlayerId }
-  | { type: "SUBMIT_TRIAL_VOTE"; payload: TrialVoteInput }
-  | { type: "RESOLVE_TRIAL" }
+  | { type: "CONFIRM_MAYOR_REVEAL"; mayorId: PlayerId }
+  | { type: "EXECUTE_PLAYER"; playerId: PlayerId }
+  | { type: "END_DAY_WITHOUT_EXECUTION" }
   | { type: "ADVANCE_TO_NEXT_NIGHT" };
 ```
+
+Day commands record only deliberate host-confirmed outcomes. The domain and application do not
+record nominations, voters, individual verdict votes, totals, or majority calculations.
 
 ### Tests
 
@@ -212,7 +214,8 @@ Randomly assign selected fixed roles to participating players.
 - Shuffle using injected random source.
 - Assign one role instance per participating player.
 - Assign duplicate ordinals.
-- Assign Executioner targets provisionally behind a feature flag.
+- Leave Executioner target assignment for its finalized prerequisite phase; do not hide an
+  incomplete assignment path behind a feature flag.
 - Build host-only assignment screen.
 - Add “Card given” confirmation per player.
 - Require all cards confirmed before Enter Night is enabled.
@@ -254,7 +257,8 @@ Create generic role-action metadata:
 
 Build `features/night-runner`:
 
-- Executioner briefing step placeholder
+- Keep first-night entry explicitly blocked for a living Executioner with no assigned target; do
+  not add a fake or skipped briefing.
 - Mafia group overview
 - Godfather action
 - Framer action
@@ -359,7 +363,8 @@ deaths are not applied, every active-game `alive` value remains unchanged, and t
 
 - Implement decided R-001 through R-005 exactly as recorded in the rules specification.
 - Use the decided permanent Groups A through D; Group D contains four roles.
-- R-006 through R-012 are outside Phase 5 and must remain unresolved.
+- R-006 through R-012 are finalized but outside Phase 5. Do not infer or implement those later
+  effects inside the ordinary-night result.
 
 ### Tests
 
@@ -458,6 +463,25 @@ refresh, tab/browser restart, or return to the deployed GitHub Pages site.
 - Discard action, resolution, private-result, and acknowledgement material from Dawn saves.
 - Document unencrypted local privacy, one-tab operation, and the lack of backend/cloud sync.
 
+### Current V1 boundary
+
+V1 recovery is implemented through the first Dawn only. The current Dawn representation requires
+the public announcement to cover every dead player and must not be reused unchanged for later
+Dawns, where that assumption could reannounce deaths from earlier nights or days.
+
+Before later-day or later-night persistence is implemented, the session contract must distinguish:
+
+- Deaths newly announced at the current Dawn.
+- Players who died on earlier nights or days.
+- Pending Jester revenge obligations.
+- Permanent Jester and Executioner personal wins.
+- Executioner targets and conversions.
+- Current versus historical public announcements.
+
+The Phase 7 delivery sequence must update the persisted contract deliberately. It may introduce a
+new schema version, or an explicit compatible V1 extension only if validation remains unambiguous.
+No migration system currently exists.
+
 ### Tests
 
 - Envelope version, timestamp, shape, extra-field, immutability, and canonical ownership tests.
@@ -473,181 +497,207 @@ refresh, tab/browser restart, or return to the deployed GitHub Pages site.
 
 - A valid saved session resumes the exact authoritative stage only after host acknowledgement.
 - Invalid and unsupported saves never become authoritative or disappear automatically.
-- Dawn persistence contains only its active game, participants, and structured public announcement.
+- First-Dawn persistence contains only its active game, participants, and structured current public
+  announcement.
 - The app remains a static Vite/GitHub Pages application with no backend or Phase 7 behavior.
 
 ---
 
-## Phase 7 — Day dashboard, Mayor, trial, and voting
+## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
+
+**Status: Planned; not started. R-006 through R-012 and the Mayor rules are finalized.**
 
 ### Goal
 
-Run the public daytime process.
+Extend the implemented first-Dawn boundary into a correct multi-day game without combining every
+new rule, UI workflow, and persistence change into one review unit.
 
-### Work
+### Required delivery order
 
-Build `features/day-dashboard`:
+The Phase 7 program must implement or deliberately sequence:
 
-- Player list
-- Alive/dead status
-- Public role reveal where applicable
-- Trial buttons
-- Confirm Mayor reveal
-- Advance to Night
+1. Executioner target assignment and briefing.
+2. Durable personal-win records.
+3. Executioner conversion to Jester.
+4. Pending Jester revenge state.
+5. Mayor public reveal.
+6. Host-managed day controls.
+7. Day execution.
+8. End day without execution.
+9. Victory evaluation.
+10. Transition to subsequent nights.
+11. Later-Dawn death-announcement boundaries.
+12. Persistence changes for multi-day state.
 
-Build `features/trial`:
+Deliver this program as the focused subphases below. Do not expose a partial workflow that can enter
+a state the next subphase cannot resolve safely.
 
-- Accused-player modal
-- Guilty/Innocent/Abstain vote entry per eligible living voter
-- Vote weights
-- Mayor weight of 3 after confirmation
-- Weighted totals
-- Tie handling
-- Execute/Acquit result
-- Host confirmation
+### Phase 7A — Neutral foundations and Executioner briefing
 
-On execution:
+#### Work
 
-- Mark player dead
-- Reveal role according to setting
-- Produce execution announcement
-- Trigger neutral personal-win checks
-- Continue to next night or game-over review
+- Assign each Executioner one participating Town target using the injected random source before
+  the first-night briefing.
+- Permit multiple Executioners to share a target while storing each assignment independently.
+- Add the private per-Executioner briefing and deliberate host acknowledgement.
+- Replace a missing target with explicit validation failure; do not retain a permanent block once
+  assignment exists.
+- Model durable personal-win records per player and stable role instance, not one global
+  neutral-win flag.
+- Model Executioner-to-Jester conversion after any non-execution target death without reviving the
+  Executioner or retaining the old target.
+- Model pending Jester revenge as an explicit obligation without selecting its future victim.
+- Preserve duplicate role-instance identity and ordinals through independent wins and conversions.
+- Do not introduce a generic effect engine.
 
-### Required rule decisions
+#### Tests
 
-- R-010
-- Whether accused votes
-- Tie rule confirmation
+- Every Executioner target is a participating Town player.
+- Non-Town and non-participating players are ineligible.
+- Injected randomness makes assignment deterministic in tests.
+- Multiple Executioners may share one target and retain independent assignments.
+- Briefing follows assignment and covers every Executioner instance.
+- Multiple affected Executioners convert independently after one non-execution target death.
+- Conversion preserves the player's alive/dead state, clears the target, and grants no retroactive
+  Jester win.
 
-### Tests
+#### Acceptance criteria
 
-- Unrevealed Mayor counts as 1.
-- Revealed Mayor counts as 3.
-- Dead Mayor cannot vote.
-- Guilty > Innocent executes.
-- Tie acquits.
-- Role reveal setting affects public result.
-- Acquittal returns to day.
-- Execution moves to next night unless a final win is confirmed.
+- Games containing an Executioner can pass a complete, private target briefing.
+- The domain can represent independent permanent wins, conversions, and pending revenge before day
+  controls are exposed.
 
-### Acceptance criteria
+### Phase 7B — Day controls and Mayor reveal
 
-- Host can run a complete trial with app-calculated vote totals.
+#### Work
 
----
+- Enter day discussion from the first Dawn.
+- Build `features/day-dashboard` with alive/dead state, permitted public roles, host-only role
+  context, and explicit current-phase guidance.
+- Add deliberate host confirmation of a Mayor's verbal reveal.
+- Keep confirmed Mayor reveal public and permanent, including after death.
+- Display that a living revealed Mayor counts as three in every player vote.
+- Provide only **Execute a player** and **End day without execution** as final-outcome controls.
+- Keep nominations, trial count, voters, individual guilty/innocent votes, totals, and majority
+  calculations outside the app.
 
-## Phase 8 — Jester and Executioner
+#### Tests
 
-### Goal
+- Mayor reveal requires deliberate host confirmation and does not end discussion or the day.
+- A confirmed reveal remains public after later transitions and after death.
+- The dashboard shows the three-vote reminder.
+- The app exposes no per-voter entry or app-calculated trial result.
+- Only living players can be selected for execution.
 
-Implement personal neutral victories and conversions.
+#### Acceptance criteria
 
-### Work
+- The host can manage any number of verbal trials and record only the final daytime outcome.
 
-Executioner:
+### Phase 7C — Day execution and personal effects
 
-- Assign valid target at game creation.
-- First-night private briefing.
-- Detect target execution.
-- Record Executioner personal win.
-- Convert to Jester when target is killed by specified sources.
-- Update future role label/action state.
+#### Work
 
-Jester:
+- Apply one confirmed day execution and immediately end the day.
+- Apply `revealRoleOnDeath` to the public execution result.
+- Award every relevant Executioner a permanent personal win for a valid target execution without
+  converting them or removing them from play.
+- Award an executed Jester a permanent personal win and create pending revenge without selecting a
+  victim.
+- Never award a Jester win for a night, revenge, or other non-execution death.
+- Resolve ordinary Dawn deaths simultaneously, then conversions caused by those deaths.
+- Select a pending revenge victim only from the post-ordinary-death survivor list using the injected
+  random source.
+- Apply revenge as an unavoidable death, resolve conversions caused by it, and clear the obligation.
+- Preserve the zero- and one-survivor outcomes with no faction winner.
 
-- Detect execution.
-- Record personal win without ending main game.
-- Choose pending random suicide target using injected random source.
-- Resolve suicide at approved point.
-- Delay final Mafia victory while suicide is pending.
+#### Tests
 
-### Required rule decisions
+- Multiple Executioners sharing an executed target all win independently.
+- A valid target execution wins rather than converts the Executioner.
+- Duplicate Jesters retain independent personal-win records.
+- A Jester killed by another Jester's revenge does not win.
+- A revenge victim acts normally before Dawn and is selected only after ordinary deaths.
+- Doctor protection, role-blocking, mutual-kill immunity, and ordinary attack immunity do not stop
+  revenge.
+- Revenge public reveal follows `revealRoleOnDeath`.
+- No-survivor and one-survivor boundaries clear revenge and preserve existing personal wins.
 
-- R-006
-- R-007
-- R-008
+#### Acceptance criteria
 
-### Tests
+- Execution and Dawn consequences follow one explicit order and cannot declare faction victory
+  while revenge remains pending.
 
-- Executioner never targets self.
-- Target follows approved eligibility.
-- Executioner wins on target execution.
-- Godfather target death converts Executioner.
-- Serial target death converts Executioner.
-- Converted Executioner behaves as Jester.
-- Jester wins only by execution.
-- Suicide target is deterministic under seeded random source.
-- Pending suicide delays Mafia win.
-- Suicide follows approved protection/eligibility rules.
+### Phase 7D — Victory evaluation and game over
 
-### Acceptance criteria
-
-- Personal wins coexist with continuing faction play.
-- No final faction win is announced too early.
-
----
-
-## Phase 9 — Serial Killer and complete faction win engine
-
-### Goal
-
-Finish neutral killing and authoritative game-over evaluation.
-
-### Work
-
-Implement Serial Killer:
-
-- Night target
-- Attack result
-- Sheriff result
-- Doctor interaction
-- Godfather interaction
-- Approved personal victory
+#### Work
 
 Implement faction evaluation as a pure module:
 
 ```ts
-evaluateGameOutcome(gameState, pendingEffects): GameOutcome
+evaluateGameOutcome(gameState): GameOutcome
 ```
 
-Evaluation must account for:
+- Check once after the complete daytime execution consequence sequence.
+- At Dawn, check once against the final state after simultaneous ordinary deaths, conversions,
+  revenge, further conversions, and clearing the obligation.
+- Implement R-009 Serial Killer victory exactly.
+- Implement R-011 Town victory exactly.
+- Implement R-012 Mafia victory and parity counting exactly.
+- Preserve all permanent personal wins alongside faction outcomes.
+- End with no faction winner when nobody remains alive.
+- Add game-over presentation that distinguishes faction outcomes, permanent personal wins, and no
+  faction winner.
 
-- Living Mafia
-- Living Town
-- Living Serial Killer
-- Jester/Executioner personal wins
-- Pending Jester suicide
-- Role conversions
-- Simultaneous deaths
+#### Tests
 
-### Required rule decisions
+- Use table-driven coverage for Town, Mafia, Serial Killer, living Jester, living Executioner,
+  pending revenge, parity, multiple Serial Killers, and no-survivor combinations.
+- Verify `2 Mafia + 2 Town + 1 Executioner` is a Mafia win when no independent blocker exists.
+- Verify `2 Mafia + 2 Town + 1 Jester` is not a Mafia win.
+- Verify living Jesters and Executioners do not block Town.
+- Verify a living Jester and pending revenge independently block Mafia.
+- Verify pending revenge blocks every faction, including Serial Killer.
+- Verify simultaneous deaths cannot produce an order-dependent intermediate victory.
+- Verify personal wins remain recorded after faction victory or no-faction game over.
 
-- Implement the already-decided R-001 interaction.
-- R-009
-- R-011
-- R-012
+#### Acceptance criteria
 
-### Tests
+- Every reachable final state produces one authoritative faction result, no faction winner, or
+  “game continues,” without an order-dependent intermediate result.
 
-Create table-driven tests for all approved count combinations.
+### Phase 7E — Subsequent-night loop and persistence upgrade
 
-Include:
+#### Work
 
-- Town eliminates Mafia and Serial.
-- Mafia majority/parity according to final rule.
-- Living Serial prevents or permits Mafia victory according to final rule.
-- Pending suicide prevents premature game over.
-- Simultaneous Godfather/Serial deaths.
-- Jester and Executioner wins remain recorded after faction game over.
+- Transition from day completion to the next night when no final outcome exists.
+- Reuse the ordinary action collection and resolution rules with incremented night/day counters.
+- Define current-Dawn deaths separately from deaths on earlier nights or days.
+- Keep current public announcements separate from historical announcements.
+- Extend persistence for pending revenge, permanent personal wins, Executioner targets and
+  conversions, later-night workflow state, and announcement boundaries.
+- Deliberately choose a new schema version or an explicit compatible V1 extension only when
+  validation remains unambiguous.
+- Do not claim or invent a migration system.
+- Retain browser-local, device/profile-specific, unencrypted, single-tab-oriented recovery with no
+  backup or cloud synchronization.
 
-### Acceptance criteria
+#### Tests
 
-- Every reachable end state produces one clear authoritative faction result or “game continues.”
+- Earlier deaths are not reannounced at a later Dawn.
+- Current and historical announcements cannot be confused during restoration.
+- Targets, conversions, permanent wins, and pending revenge survive a valid refresh.
+- Invalid cross-stage and cross-night combinations are rejected.
+- Existing first-Dawn saves remain accepted only under the deliberately chosen version contract.
+- Later-night killing actors follow `allowFirstNightKills` only on night one.
+
+#### Acceptance criteria
+
+- A game can complete repeated day/night cycles and recover the exact current state without
+  reannouncing historical deaths.
 
 ---
 
-## Phase 10 — Undo, correction safety, and game history
+## Phase 8 — Undo, correction safety, and game history
 
 ### Goal
 
@@ -658,7 +708,7 @@ Protect live games from host misclicks.
 - Represent committed changes as domain events or reversible command records.
 - Add:
   - Edit submitted night actions before resolution
-  - Edit votes before trial resolution
+  - Cancel or change a selected execution before confirmation
   - Confirmation screens
   - Undo last committed transition
   - Host-only chronological history
@@ -668,7 +718,7 @@ Protect live games from host misclicks.
 ### Tests
 
 - Undo night resolution restores alive status, roles, effects, and previous targets.
-- Undo execution removes personal win and pending suicide generated by it.
+- Undo execution removes every personal win and pending revenge obligation generated by it.
 - Redo is optional and not required initially.
 - History records host correction events.
 
@@ -678,7 +728,7 @@ Protect live games from host misclicks.
 
 ---
 
-## Phase 11 — UX hardening and accessibility
+## Phase 9 — UX hardening and accessibility
 
 ### Goal
 
@@ -710,7 +760,7 @@ Make the app usable in a noisy social setting.
 
 ---
 
-## Phase 12 — End-to-end tests, GitHub Pages, and release
+## Phase 10 — End-to-end tests, GitHub Pages, and release
 
 ### Goal
 
@@ -724,8 +774,8 @@ Add Playwright scenarios:
 2. Assign and confirm role cards.
 3. Run a night with Godfather, Framer, Doctor, Sheriff, Investigator, and Detective.
 4. Resolve dawn.
-5. Run Mayor-weighted trial.
-6. Execute Jester and resolve pending suicide.
+5. Confirm Mayor reveal, manually count the verbal vote, and record only the final day outcome.
+6. Execute Jester and resolve pending revenge.
 7. Reach Town victory.
 8. Reach Mafia victory after approved count rules.
 
@@ -750,7 +800,7 @@ GitHub:
 
 ---
 
-## Phase 13 — Optional crash recovery, not saved games
+## Phase 11 — Optional crash recovery, not saved games
 
 **Status: Superseded by the implemented Phase 6.5 local active-session recovery.**
 
@@ -789,9 +839,11 @@ feature/role-assignment
 feature/night-action-collection
 feature/night-resolution-core
 feature/dawn-results
-feature/day-trial-mayor
-feature/jester-executioner
-feature/serial-win-engine
+feature/neutral-foundations
+feature/day-controls-mayor
+feature/execution-personal-effects
+feature/victory-game-over
+feature/multiday-persistence
 feature/undo-history
 feature/ux-hardening
 feature/pages-deployment
@@ -843,11 +895,9 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Before a later phase implements behaviour governed by these decisions, decide:
+Phases 0 through 6.5 are implemented. R-001 through R-012, the permanent investigation groups, and
+the Mayor/daytime rules are authoritative and no longer block planning.
 
-- R-006 through R-012 in the rules document; they do not block the result-only Phase 5 scope.
-- No permanent-group decision remains: Groups A through D are authoritative and setup-independent.
-- Whether Serial Killer is definitely included in the first release.
-- Whether vote entry is per player as specified or host-decided manually.
-
-Phases 0–4 can begin while most later rule decisions remain open, provided unresolved roles are not marked complete.
+When Phase 7 is explicitly requested, begin with Phase 7A. Do not start later subphases
+automatically, do not add app-managed voting, and do not reuse the current first-Dawn persistence
+representation for a multi-day loop.

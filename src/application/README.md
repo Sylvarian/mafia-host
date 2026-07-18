@@ -17,8 +17,10 @@ The setup owns all six settings. `godfatherAppearsSuspiciousToSheriff` has the a
 `true`; the other five current form defaults are `false`. Validation copies every selected boolean
 without treating missing values as disabled.
 
-Executioner targets remain `null` because R-008 is unresolved. Confirming physical distribution
-does not invoke a phase transition or enter night-action collection.
+R-008 now finalizes Executioner target eligibility, but target assignment and briefing are not
+implemented. Executioner targets therefore remain `null`, and confirming physical distribution
+does not invoke a phase transition or enter night-action collection. A future prerequisite phase
+must assign eligible Town targets with the injected random source before the first-night briefing.
 
 `night-actions` owns the explicit `beginFirstNight` use case, deterministic living-role wake
 sequence, per-role-instance previous-target context, one authoritative submitted-action list,
@@ -60,6 +62,13 @@ only until Dawn; Dawn persistence has no field for the completed action batch, f
 private queue, or acknowledgements. The `GameSessionStore` and `SessionClock` contracts contain no
 browser implementation.
 
-The V1 Dawn restorer is intentionally limited to the current first-Dawn product boundary: it
-requires the structured announcement to cover every dead player. A later phase must replace that
-assumption before another-night recovery exists so earlier deaths are never announced twice.
+The V1 Dawn restorer is intentionally limited to recovery through the current first-Dawn product
+boundary: it requires the structured announcement to cover every dead player. Before later-day or
+later-night recovery exists, the persisted session contract must distinguish newly announced Dawn
+deaths from earlier deaths, pending Jester revenge, permanent Jester and Executioner personal wins,
+Executioner targets and conversions, and current from historical public announcements.
+
+The first-Dawn representation cannot be reused unchanged because it could announce earlier deaths
+again. Phase 7 must deliberately update the contract, either with a new schema version or an
+explicit compatible V1 extension whose validation remains unambiguous. No migration system
+currently exists.

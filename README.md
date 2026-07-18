@@ -36,10 +36,17 @@ permanent Investigator/Consigliere group resolver without changing the target's 
 unblocked Doctor protection prevents every ordinary Godfather and Serial Killer attack against its
 target for that night.
 
-Executioner role instances may still be distributed, but their target remains unset because target
-eligibility is unresolved under R-008. Any living Executioner with a null target blocks first-night
-entry with an explicit host message. Phase 4 does not assign a target, enter or skip the private
-briefing, or claim Executioner support is complete.
+Executioner target eligibility is finalized under R-008, but target assignment and briefing are not
+implemented. Executioner role instances may still be distributed, but their target remains `null`.
+Any living Executioner with a null target blocks first-night entry with an explicit host message.
+The current product does not assign a target, enter or skip the private briefing, or claim
+Executioner support is complete.
+
+R-006 through R-012 now finalize the future daytime, neutral-role, death-resolution, and victory
+rules. Those decisions are documentation, not implemented gameplay. Mayor daytime reveal, host
+day controls, day execution, end-day flow, Executioner target assignment and conversion, Jester
+personal wins and revenge, faction victory calculation, game-over presentation, and the
+subsequent-night loop remain planned work.
 
 ## Local save and privacy
 
@@ -57,9 +64,16 @@ recovery, not a backup:
 - Use one host tab. Tabs are not synchronised, merged, or locked.
 - There is no account, backend, database, cloud sync, export/import, or remote API.
 
-V1 stops at the first Dawn and deliberately requires that Dawn announcement to account for every
-currently dead player. That validation must be revised before later-night persistence is added;
-reusing it after Phase 7 would be unsafe because it could announce deaths from earlier nights again.
+V1 supports recovery through the first Dawn and deliberately requires that Dawn announcement to
+account for every currently dead player. Before later days and nights can be persisted, the session
+contract must distinguish deaths newly announced at the current Dawn from deaths on earlier nights
+or days, pending Jester revenge obligations, permanent Jester and Executioner personal wins,
+Executioner targets and conversions, and current versus historical public announcements.
+
+The current first-Dawn representation must not be reused unchanged for later Dawns because it could
+announce earlier deaths again. The Phase 7 delivery sequence must update the persisted session
+contract deliberately. That may require a new schema version, or an explicit compatible V1
+extension only if validation remains unambiguous. No migration system currently exists.
 
 The production Vite base remains `/mafia-host/` for GitHub Pages. The application has no nested
 client-side routes or refresh-fallback dependency: every workflow stage renders from that project
