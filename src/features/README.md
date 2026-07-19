@@ -62,7 +62,8 @@ no-execution control has its own irreversible confirmation. Both make the backgr
 support Escape/cancel and focus restoration, keep selection and guards in React only, and guard
 rapid confirmation. `day-outcome` renders a focused public summary with only the executed name and
 authorized role reveal, or “No player was executed,” followed by an explicit not-yet-implemented
-boundary. It has no Phase 7D/7E action.
+boundary. Corrected Phase 7D extends that summary with either private-safe next-Dawn deferral or a
+no-faction-yet message. It has no next-night or revenge action.
 
 `session-persistence` renders public-safe V2 recovery summaries and local-save status. Night
 summaries expose only the night number, general stage, player count, and save time. Current actor,
@@ -72,3 +73,13 @@ focus, save status, and operation guards remain transient. Day recovery similarl
 generic Day 1 discussion, player count, and save time; revealed or hidden Mayor identities appear
 only after Continue. Post-day recovery likewise shows only generic “Day complete” metadata until
 Continue and never exposes personal wins, conversions, pending revenge, or targets.
+
+`game-over` renders a focused public `Game over` heading plus Town, Mafia, Serial Killer, or Draw.
+Its responsive roster contains only duplicate-safe names, alive/dead state, and roles already
+legitimately public. Hidden roles are not automatically revealed; targets, conversions, pending
+revenge, personal wins, and raw IDs never enter its props or DOM. The feature has no next-night,
+revenge, or role-reveal control and remains usable without horizontal overflow at 320px and 390px.
+
+Waiting recovery remains generic `Day complete` even when private pending revenge exists. Game-over
+recovery may show only `Game over`, its public faction/draw, Day number, player count, and saved
+time before Continue.

@@ -47,6 +47,19 @@
 }
 
 .day-outcome__boundary {
-  margin: 0;
   color: var(--text-muted);
+}
+
+.day-outcome__boundary p,
+.day-outcome__error {
+  margin: 0;
+}
+
+.day-outcome__boundary p + p {
+  margin-top: 0.35rem;
+}
+
+.day-outcome__error {
+  color: var(--danger-strong);
+  font-weight: 750;
 }

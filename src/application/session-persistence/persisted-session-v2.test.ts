@@ -27,6 +27,7 @@ import {
 } from '../../../tests/support/night-action-fixtures.ts'
 import {
   createActiveAppSession,
+  settleSessionAfterDayOutcome,
   type ActiveAppSession,
   type SequentialNightAppSession,
 } from './active-app-session.ts'
@@ -190,6 +191,12 @@ function createDayOutcomeSession(
     game: result.value.game,
     participants: result.value.participants,
   }
+}
+
+function settleDayOutcome(session: ActiveAppSession): ActiveAppSession {
+  const result = settleSessionAfterDayOutcome(session)
+  if (!result.ok) throw new Error(`Expected Phase 7D settlement: ${result.error.type}`)
+  return result.value
 }
 
 function toPriorNeutralGame(
@@ -1284,5 +1291,271 @@ describe('persisted Phase 7C final day outcome V2', () => {
     if (result.value.session.stage !== 'dawn') throw new Error('Expected restored Dawn.')
     expect(result.value.session.workflow.game.deathRecords).toHaveLength(1)
     expect(result.value.session.workflow.game.executionerConversions).toHaveLength(1)
+  })
+})
+
+describe('persisted corrected Phase 7D sessions in schema V2', () => {
+  it.each([
+    {
+      name: 'Town',
+      roles: [{ roleId: ROLE_IDS.citizen }, { roleId: ROLE_IDS.godfather, alive: false }],
+      expectedKind: 'town-victory',
+    },
+    {
+      name: 'Mafia',
+      roles: [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      expectedKind: 'mafia-victory',
+    },
+    {
+      name: 'Serial Killer',
+      roles: [{ roleId: ROLE_IDS.serialKiller }, { roleId: ROLE_IDS.citizen, alive: false }],
+      expectedKind: 'serial-killer-victory',
+    },
+    {
+      name: 'no-survivors draw',
+      roles: [
+        { roleId: ROLE_IDS.godfather, alive: false },
+        { roleId: ROLE_IDS.citizen, alive: false },
+      ],
+      expectedKind: 'draw',
+    },
+  ] as const)('round-trips $name game over', ({ roles, expectedKind }) => {
+    const session = settleDayOutcome(createDayOutcomeSession('no-execution', roles))
+    const persisted = toPersistedAppSessionV2(session)
+    const restored = roundTrip(session)
+
+    expect(restored).toEqual(session)
+    expect(persisted).toMatchObject({
+      stage: 'game-over',
+      workflowStatus: 'game-over',
+      game: { phase: 'game-over', nightNumber: 1, dayNumber: 1 },
+      result: { kind: expectedKind, gameId: 'night-fixture-game' },
+    })
+    expect(JSON.stringify(persisted)).not.toMatch(
+      /displayLabel|roleLabel|summaryProse|hostRoleView|showHostRoles|nextNight|revengeResolution/,
+    )
+  })
+
+  it('round-trips non-terminal waiting without next-night authority', () => {
+    const session = settleDayOutcome(
+      createDayOutcomeSession('no-execution', [
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    expect(session.stage).toBe('post-day-waiting')
+    expect(roundTrip(session)).toEqual(session)
+    expect(JSON.stringify(toPersistedAppSessionV2(session))).not.toMatch(/result|nextNight/)
+  })
+
+  it('round-trips pending-revenge waiting without selecting a victim or evaluating victory', () => {
+    const session = settleDayOutcome(
+      createDayOutcomeSession('execution', [
+        { roleId: ROLE_IDS.jester },
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    expect(session.stage).toBe('pending-revenge-waiting')
+    const persisted = toPersistedAppSessionV2(session)
+    const restored = roundTrip(session)
+
+    expect(restored).toEqual(session)
+    if (restored.stage !== 'pending-revenge-waiting') {
+      throw new Error('Expected restored pending waiting.')
+    }
+    expect(restored.game.pendingJesterRevenges).toHaveLength(1)
+    expect(restored.game.pendingJesterRevenges[0]).not.toHaveProperty('victimPlayerId')
+    expect(restored.game.phase).toBe('execution-resolution')
+    expect(persisted).not.toHaveProperty('result')
+    expect(JSON.stringify(persisted)).not.toMatch(/victimPlayerId|revengeResolution|nextNight/)
+  })
+
+  it('rejects partial, forged, unknown, duplicate, reordered, and cross-game terminal results', () => {
+    const session = settleDayOutcome(
+      createDayOutcomeSession('no-execution', [
+        { roleId: ROLE_IDS.framer },
+        { roleId: ROLE_IDS.consort },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
+    if (envelope.session.stage !== 'game-over') throw new Error('Expected game over envelope.')
+
+    const partialResult = Object.fromEntries(
+      Object.entries(envelope.session.result).filter(([key]) => key !== 'winnerPlayerIds'),
+    )
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: { ...envelope.session, result: partialResult },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          result: { kind: 'town-victory', gameId: envelope.session.game.id },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+
+    if (envelope.session.result.kind !== 'mafia-victory') {
+      throw new Error('Expected persisted Mafia result.')
+    }
+    const winner = envelope.session.result.winnerPlayerIds[0]
+    const secondWinner = envelope.session.result.winnerPlayerIds[1]
+    if (winner === undefined || secondWinner === undefined) {
+      throw new Error('Expected duplicate Mafia winners.')
+    }
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          result: { ...envelope.session.result, winnerPlayerIds: ['unknown-player'] },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          result: { ...envelope.session.result, winnerPlayerIds: [winner, winner] },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          result: { ...envelope.session.result, winnerPlayerIds: [secondWinner, winner] },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          result: { ...envelope.session.result, gameId: 'other-game' },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+  })
+
+  it('rejects waiting/result mismatches and terminal state with pending revenge', () => {
+    const waiting = settleDayOutcome(
+      createDayOutcomeSession('no-execution', [
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    const waitingEnvelope = createPersistedSessionEnvelopeV2(waiting, SAVED_AT)
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...waitingEnvelope,
+        session: {
+          ...waitingEnvelope.session,
+          stage: 'pending-revenge-waiting',
+          workflowStatus: 'pending-revenge-waiting',
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_POST_DAY_WAITING_SESSION',
+        reason: 'waiting-stage-result-mismatch',
+      },
+    })
+
+    const pending = settleDayOutcome(
+      createDayOutcomeSession('execution', [
+        { roleId: ROLE_IDS.jester },
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    const pendingEnvelope = createPersistedSessionEnvelopeV2(pending, SAVED_AT)
+    if (pendingEnvelope.session.stage !== 'pending-revenge-waiting') {
+      throw new Error('Expected persisted pending-revenge waiting.')
+    }
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...pendingEnvelope,
+        session: {
+          ...pendingEnvelope.session,
+          stage: 'game-over',
+          workflowStatus: 'game-over',
+          game: { ...pendingEnvelope.session.game, phase: 'game-over' },
+          result: {
+            kind: 'mafia-victory',
+            gameId: pendingEnvelope.session.game.id,
+            winnerPlayerIds: [],
+          },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+    })
+  })
+
+  it('rejects a game-over result outside the supported Day 1 counter boundary', () => {
+    const session = settleDayOutcome(
+      createDayOutcomeSession('no-execution', [
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.godfather, alive: false },
+      ]),
+    )
+    const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
+    if (envelope.session.stage !== 'game-over' || envelope.session.game.dayOutcome === null) {
+      throw new Error('Expected persisted Day 1 game over.')
+    }
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          game: {
+            ...envelope.session.game,
+            nightNumber: 2,
+            dayNumber: 2,
+            dayOutcome: { ...envelope.session.game.dayOutcome, dayNumber: 2 },
+          },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_OVER_SESSION',
+        reason: 'game-over-result-mismatch',
+      },
+    })
   })
 })

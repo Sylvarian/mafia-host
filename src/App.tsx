@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   selectMayorRevealCandidates,
@@ -22,6 +22,7 @@ import type {
   GameSetupEditError,
   GameSetupWorkflowCommand,
 } from '@/application/game-setup/index.ts'
+import { selectPublicGameOverView } from '@/application/game-over/index.ts'
 import type { NightActionCollectionError } from '@/application/night-actions/index.ts'
 import type { NightCompletionError } from '@/application/night-completion/index.ts'
 import { selectNightCompletionView } from '@/application/night-completion/index.ts'
@@ -50,6 +51,7 @@ import {
   previousSessionExecutionerBriefing,
   reassignSessionRoles,
   setSessionCardDelivered,
+  settleSessionAfterDayOutcome,
   toPersistedAppSessionV2,
   updateSetupSession,
   type ActiveAppSession,
@@ -60,6 +62,7 @@ import {
   type LoadPersistedSessionResult,
   type RestoredSessionEnvelopeV2,
   type SessionClock,
+  type SettlePostDaySessionError,
 } from '@/application/session-persistence/index.ts'
 import { DawnPresentation } from '@/features/dawn/index.ts'
 import {
@@ -72,6 +75,7 @@ import {
   getExecutionerBriefingErrorMessage,
 } from '@/features/executioner-briefing/index.ts'
 import { GameSetup } from '@/features/game-setup/index.ts'
+import { GameOver } from '@/features/game-over/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import {
   getRoleDistributionErrorMessage,
@@ -135,6 +139,7 @@ export default function App({
   const [dayOutcomeError, setDayOutcomeError] = useState<CompleteDayOutcomeWorkflowError | null>(
     null,
   )
+  const [postDayErrorMessage, setPostDayErrorMessage] = useState<string | null>(null)
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
@@ -145,6 +150,7 @@ export default function App({
   const briefingOperationPendingRef = useRef(false)
   const completionOperationPendingRef = useRef(false)
   const dayOperationPendingRef = useRef(false)
+  const recoveryContinuePendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
   const activeSession = appState.mode === 'active' ? appState.session : null
 
@@ -154,34 +160,38 @@ export default function App({
     briefingOperationPendingRef.current = false
     completionOperationPendingRef.current = false
     dayOperationPendingRef.current = false
+    recoveryContinuePendingRef.current = false
   }, [activeSession])
 
-  function setActiveSession(session: ActiveAppSession): void {
-    if (appState.mode !== 'active') {
-      throw new Error('An active session update was attempted during recovery.')
-    }
+  const setActiveSession = useCallback(
+    (session: ActiveAppSession): void => {
+      if (appState.mode !== 'active') {
+        throw new Error('An active session update was attempted during recovery.')
+      }
 
-    const fingerprint = createSessionFingerprint(session)
-    if (fingerprint === persistedFingerprintRef.current) {
-      setAppState({ ...appState, session, clearError: null })
-      return
-    }
+      const fingerprint = createSessionFingerprint(session)
+      if (fingerprint === persistedFingerprintRef.current) {
+        setAppState({ ...appState, session, clearError: null })
+        return
+      }
 
-    const envelope = createPersistedSessionEnvelopeV2(session, sessionClock.now())
-    const saveResult = sessionStore.save(envelope)
-    if (saveResult.ok) {
-      persistedFingerprintRef.current = fingerprint
-    }
-    setAppState({
-      ...appState,
-      session,
-      saveStatus: saveResult.ok
-        ? { status: 'saved', savedAt: envelope.savedAt }
-        : { status: 'failed', error: saveResult.error },
-      hasStoredSave: saveResult.ok ? true : appState.hasStoredSave,
-      clearError: null,
-    })
-  }
+      const envelope = createPersistedSessionEnvelopeV2(session, sessionClock.now())
+      const saveResult = sessionStore.save(envelope)
+      if (saveResult.ok) {
+        persistedFingerprintRef.current = fingerprint
+      }
+      setAppState({
+        ...appState,
+        session,
+        saveStatus: saveResult.ok
+          ? { status: 'saved', savedAt: envelope.savedAt }
+          : { status: 'failed', error: saveResult.error },
+        hasStoredSave: saveResult.ok ? true : appState.hasStoredSave,
+        clearError: null,
+      })
+    },
+    [appState, sessionClock, sessionStore],
+  )
 
   function clearErrors(): void {
     setSetupError(null)
@@ -191,6 +201,7 @@ export default function App({
     setDayTransitionErrorMessage(null)
     setMayorRevealError(null)
     setDayOutcomeError(null)
+    setPostDayErrorMessage(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
   }
@@ -245,6 +256,55 @@ export default function App({
         ? { status: 'saved', savedAt: envelope.savedAt }
         : { status: 'failed', error: saveResult.error },
       hasStoredSave: saveResult.ok ? true : appState.hasStoredSave,
+    })
+  }
+
+  function continueSavedSession(): void {
+    if (appState.mode !== 'saved-session-found' || recoveryContinuePendingRef.current) {
+      return
+    }
+    recoveryContinuePendingRef.current = true
+    const restoredSession = appState.envelope.session
+    if (restoredSession.stage !== 'day-outcome') {
+      persistedFingerprintRef.current = createSessionFingerprint(restoredSession)
+      setAppState({
+        mode: 'active',
+        session: restoredSession,
+        saveStatus: { status: 'saved', savedAt: appState.envelope.savedAt },
+        hasStoredSave: true,
+        clearError: null,
+      })
+      return
+    }
+
+    const settlement = settleSessionAfterDayOutcome(restoredSession)
+    if (!settlement.ok) {
+      setPostDayErrorMessage(getPostDaySettlementErrorMessage(settlement.error))
+      persistedFingerprintRef.current = createSessionFingerprint(restoredSession)
+      setAppState({
+        mode: 'active',
+        session: restoredSession,
+        saveStatus: { status: 'saved', savedAt: appState.envelope.savedAt },
+        hasStoredSave: true,
+        clearError: null,
+      })
+      return
+    }
+
+    setPostDayErrorMessage(null)
+    const envelope = createPersistedSessionEnvelopeV2(settlement.value, sessionClock.now())
+    const saveResult = sessionStore.save(envelope)
+    if (saveResult.ok) {
+      persistedFingerprintRef.current = createSessionFingerprint(settlement.value)
+    }
+    setAppState({
+      mode: 'active',
+      session: settlement.value,
+      saveStatus: saveResult.ok
+        ? { status: 'saved', savedAt: envelope.savedAt }
+        : { status: 'failed', error: saveResult.error },
+      hasStoredSave: true,
+      clearError: null,
     })
   }
 
@@ -536,7 +596,13 @@ export default function App({
                 }
                 clearErrors()
                 setDayPrivatePresentationOpen(false)
-                setActiveSession(result.value)
+                const settlement = settleSessionAfterDayOutcome(result.value)
+                if (!settlement.ok) {
+                  setPostDayErrorMessage(getPostDaySettlementErrorMessage(settlement.error))
+                  setActiveSession(result.value)
+                  return true
+                }
+                setActiveSession(settlement.value)
                 return true
               })
             }
@@ -552,7 +618,13 @@ export default function App({
                 }
                 clearErrors()
                 setDayPrivatePresentationOpen(false)
-                setActiveSession(result.value)
+                const settlement = settleSessionAfterDayOutcome(result.value)
+                if (!settlement.ok) {
+                  setPostDayErrorMessage(getPostDaySettlementErrorMessage(settlement.error))
+                  setActiveSession(result.value)
+                  return true
+                }
+                setActiveSession(settlement.value)
                 return true
               })
             }
@@ -564,6 +636,32 @@ export default function App({
             view={selectPublicDayOutcomeView({
               game: session.game,
               participants: session.participants,
+            })}
+            status="evaluation-pending"
+            errorMessage={postDayErrorMessage}
+          />
+        )
+      case 'post-day-waiting':
+      case 'pending-revenge-waiting':
+        return (
+          <DayOutcomeSummary
+            view={selectPublicDayOutcomeView({
+              game: session.game,
+              participants: session.participants,
+            })}
+            status={
+              session.stage === 'pending-revenge-waiting' ? 'pending-revenge' : 'no-faction-victory'
+            }
+            errorMessage={null}
+          />
+        )
+      case 'game-over':
+        return (
+          <GameOver
+            view={selectPublicGameOverView({
+              game: session.game,
+              participants: session.participants,
+              result: session.result,
             })}
           />
         )
@@ -714,13 +812,13 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7C.1 · Streamlined night, Dawn, and host day controls</p>
+        <p>Corrected Phase 7D · Faction victory and game over</p>
       </header>
 
       <main className="app-main">
         <section className="app-intro" aria-labelledby="page-heading">
           <p className="app-intro__eyebrow">Run the table safely</p>
-          <h1 id="page-heading">Set up, resolve, announce, discuss, and conclude the day</h1>
+          <h1 id="page-heading">Run the game from setup to a safe final result</h1>
           <p>
             This host-only app keeps one active session locally in this browser so a refresh can
             resume at the exact authoritative stage.
@@ -739,17 +837,7 @@ export default function App({
             state="saved"
             envelope={appState.envelope}
             clearError={appState.clearError}
-            onContinue={() => {
-              const fingerprint = createSessionFingerprint(appState.envelope.session)
-              persistedFingerprintRef.current = fingerprint
-              setAppState({
-                mode: 'active',
-                session: appState.envelope.session,
-                saveStatus: { status: 'saved', savedAt: appState.envelope.savedAt },
-                hasStoredSave: true,
-                clearError: null,
-              })
-            }}
+            onContinue={continueSavedSession}
             onClear={clearSavedSession}
           />
         ) : appState.mode === 'recovery-failed' ? (
@@ -838,6 +926,16 @@ function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialA
 
 function createSessionFingerprint(session: ActiveAppSession): string {
   return JSON.stringify(toPersistedAppSessionV2(session))
+}
+
+function getPostDaySettlementErrorMessage(error: SettlePostDaySessionError): string {
+  if (error.type === 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY') {
+    return 'Final victory evaluation is deferred until the next Dawn.'
+  }
+  if (error.type === 'RESULT_ALREADY_FINALIZED') {
+    return 'The final game result is already recorded and cannot be replaced.'
+  }
+  return 'The completed day was preserved, but final victory evaluation could not be completed safely.'
 }
 
 type FirstNightTransitionError =

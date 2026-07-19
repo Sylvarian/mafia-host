@@ -9,6 +9,12 @@ import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
 import type { RandomSource } from '@/domain/randomness/random-source.ts'
+import type { TerminalFactionResult } from '@/domain/win-conditions/faction-result.ts'
+import {
+  evaluateAndFinalizeFactionVictory,
+  type FactionVictoryEvaluationError,
+  type FinalizeFactionVictoryError,
+} from '@/domain/win-conditions/faction-victory.ts'
 
 import {
   confirmMayorRevealDuringDay,
@@ -20,6 +26,7 @@ import {
 import {
   completeDayWithoutExecution,
   executePlayerAndCompleteDay,
+  validateDayOutcomeState,
   type CompleteDayOutcomeWorkflowError,
   type DayOutcomeState,
 } from '../day-outcome/index.ts'
@@ -40,6 +47,8 @@ import {
   type GameSetupWorkflowCommand,
   type GameSetupWorkflowState,
 } from '../game-setup/index.ts'
+import { type InvalidGameOverStateError } from '../game-over/index.ts'
+import { createTrustedGameOverStateFromEvaluation } from '../game-over/game-over.ts'
 import {
   beginFinalNightResolution,
   prepareDawnAnnouncement,
@@ -111,6 +120,25 @@ export type DayOutcomeAppSession = Readonly<{
   participants: readonly Player[]
 }>
 
+export type PostDayWaitingAppSession = Readonly<{
+  stage: 'post-day-waiting'
+  game: GameState
+  participants: readonly Player[]
+}>
+
+export type PendingRevengeWaitingAppSession = Readonly<{
+  stage: 'pending-revenge-waiting'
+  game: GameState
+  participants: readonly Player[]
+}>
+
+export type GameOverAppSession = Readonly<{
+  stage: 'game-over'
+  game: GameState
+  participants: readonly Player[]
+  result: TerminalFactionResult
+}>
+
 export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
@@ -120,6 +148,9 @@ export type ActiveAppSession =
   | DawnAppSession
   | DayDiscussionAppSession
   | DayOutcomeAppSession
+  | PostDayWaitingAppSession
+  | PendingRevengeWaitingAppSession
+  | GameOverAppSession
 
 export type ActiveAppSessionStage = ActiveAppSession['stage']
 
@@ -142,6 +173,7 @@ export type ActiveAppSessionOperation =
   | 'confirm-mayor-reveal'
   | 'execute-day-player'
   | 'end-day-without-execution'
+  | 'settle-post-day'
 
 export type InvalidActiveAppSessionStageError = Readonly<{
   type: 'INVALID_ACTIVE_APP_SESSION_STAGE'
@@ -160,7 +192,18 @@ export type ActiveAppSessionError =
   | BeginDayDiscussionWorkflowError
   | ConfirmMayorRevealWorkflowError
   | CompleteDayOutcomeWorkflowError
+  | FactionVictoryEvaluationError
+  | FinalizeFactionVictoryError
+  | InvalidGameOverStateError
   | InvalidActiveAppSessionStageError
+
+export type SettlePostDaySessionError =
+  | CompleteDayOutcomeWorkflowError
+  | FactionVictoryEvaluationError
+  | FinalizeFactionVictoryError
+  | InvalidGameOverStateError
+  | InvalidActiveAppSessionStageError
+  | Readonly<{ type: 'RESULT_ALREADY_FINALIZED' }>
 
 export function createActiveAppSession(): SetupAppSession {
   return Object.freeze({
@@ -499,6 +542,63 @@ export function endSessionDayWithoutExecution(
   }
   const result = completeDayWithoutExecution(state)
   return result.ok ? succeed(toDayOutcomeSession(result.value)) : result
+}
+
+export function settleSessionAfterDayOutcome(
+  session: ActiveAppSession,
+): DomainResult<
+  PostDayWaitingAppSession | PendingRevengeWaitingAppSession | GameOverAppSession,
+  SettlePostDaySessionError
+> {
+  if (session.stage === 'game-over') {
+    return fail({ type: 'RESULT_ALREADY_FINALIZED' })
+  }
+  if (session.stage !== 'day-outcome') {
+    return invalidStage('settle-post-day', session.stage)
+  }
+  const dayStateResult = validateDayOutcomeState({
+    game: session.game,
+    participants: session.participants,
+  })
+  if (!dayStateResult.ok) {
+    return dayStateResult
+  }
+  const evaluationResult = evaluateAndFinalizeFactionVictory(dayStateResult.value.game)
+  if (!evaluationResult.ok) {
+    if (evaluationResult.error.type === 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY') {
+      return succeed(
+        Object.freeze({
+          stage: 'pending-revenge-waiting',
+          game: dayStateResult.value.game,
+          participants: dayStateResult.value.participants,
+        }),
+      )
+    }
+    return evaluationResult
+  }
+  if (evaluationResult.value.status === 'non-terminal') {
+    return succeed(
+      Object.freeze({
+        stage: 'post-day-waiting',
+        game: evaluationResult.value.game,
+        participants: dayStateResult.value.participants,
+      }),
+    )
+  }
+  const gameOverResult = createTrustedGameOverStateFromEvaluation(
+    evaluationResult.value,
+    dayStateResult.value.participants,
+  )
+  return gameOverResult.ok
+    ? succeed(
+        Object.freeze({
+          stage: 'game-over',
+          game: gameOverResult.value.game,
+          participants: gameOverResult.value.participants,
+          result: gameOverResult.value.result,
+        }),
+      )
+    : gameOverResult
 }
 
 function toDayOutcomeSession(state: DayOutcomeState): DayOutcomeAppSession {

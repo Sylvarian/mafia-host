@@ -80,7 +80,8 @@ prior Mayor reveal, applies `revealRoleOnDeath`, awards all shared-target Execut
 of owner alive/dead state, and creates one Jester win/revenge where applicable. Proven
 non-execution deaths convert all affected Executioners exactly once. Selectors derive active
 Jester behavior without changing the immutable original Executioner assignment. Revenge
-resolution, faction victory, game over, and the next night remain outside the domain boundary.
+resolution, faction victory, game over, and the next night remain outside the Phase 7C domain
+boundary.
 
 Phase 7C.1 changes host workflow only and adds no domain state or game rule. Non-informational
 night actions remain ordinary authoritative submitted actions, blocked actors still produce no
@@ -88,3 +89,18 @@ action or visit, and Dawn still uses the same one-time night-application boundar
 host-role selector reuses the canonical active-role derivation, so a converted Executioner is
 displayed as active Jester while the original Executioner assignment remains immutable. Host-role
 visibility is not represented in `GameState`.
+
+Corrected Phase 7D adds the narrow `win-conditions/faction-victory` module. Its gate requires the
+canonical `execution-resolution` post-day outcome, matching positive day/night counters, valid
+invariants, and no pending Jester revenge before any predicate is derived. The application’s
+evaluate-and-finalize operation derives the predicates once at that boundary. Town follows R-011;
+Mafia follows R-012 using living Mafia versus
+living Town while active Jesters block it; Serial Killer follows R-009 and wins only as the sole
+survivor. Converted Executioners count as active Jesters. The only draw is the documented
+no-survivors state. Winner IDs are stable and roster-ordered, and mutually true predicates fail
+closed instead of gaining check-order precedence.
+
+Terminal finalization changes only the phase to `game-over`; deaths, conversions, targets,
+personal wins, counters, and public reveal authority remain unchanged. Pending revenge cannot be
+finalized and is never selected, resolved, or cleared here. Revenge and the next Dawn remain Phase
+7E work. No generic winner or effect framework was added.

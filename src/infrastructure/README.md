@@ -32,6 +32,13 @@ selection, derived summaries, focus, and operation guards never reach the adapte
 retains the exact completed in-memory session, and retry transports that same canonical payload
 without reapplying domain consequences.
 
+Corrected Phase 7D retains the V2 key and transport. The application envelope may now contain
+ordinary post-day waiting, pending-revenge waiting, or game over with one canonical faction/draw
+result. The browser adapter does not evaluate victories, inspect winner IDs, resolve revenge, or
+advance counters. New day completion and restored legacy day-outcome settlement each produce one
+atomic stable save; a failed write leaves the exact settled in-memory session available for an
+identical retry.
+
 Direct non-informational night advancement, one-button result/blocked advancement, and direct Dawn
 each produce one ordinary application save after their authoritative transition. Showing or hiding
 host-only day roles never calls the adapter because that state is React-only.

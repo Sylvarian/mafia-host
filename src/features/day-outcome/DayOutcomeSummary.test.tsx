@@ -16,10 +16,12 @@ describe('public day-outcome summary', () => {
             revealedRoleDisplayName: 'Citizen',
           },
         }}
+        status="no-faction-victory"
+        errorMessage={null}
       />,
     )
 
-    const heading = screen.getByRole('heading', { name: 'Day 1 complete' })
+    const heading = screen.getByRole('heading', { name: 'Day complete' })
     expect(heading).toHaveFocus()
     expect(screen.getByText('Alex (Player 1) was executed.')).toBeVisible()
     expect(screen.getByText('Their role was Citizen.')).toBeVisible()
@@ -35,6 +37,8 @@ describe('public day-outcome summary', () => {
           dayLabel: 'Day 1',
           outcome: { kind: 'no-execution' },
         }}
+        status="pending-revenge"
+        errorMessage={null}
       />,
     )
 

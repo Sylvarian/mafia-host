@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7C.1<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through corrected Phase 7D<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -41,15 +41,15 @@ The implemented product currently includes:
   Executioner-to-Jester conversion after proven non-execution target death.
 - Browser-local refresh recovery through setup, Executioner briefing, the first Dawn, Day 1, and
   its final outcome.
+- A pending-revenge gate, faction victory when no revenge is pending, safe post-day waiting, and
+  public-safe game over.
 
 The following rules are finalized but their gameplay is not implemented:
 
 - Jester revenge victim selection and revenge death.
 - Later nights and Dawns.
-- Faction victory calculation.
-- Game-over presentation.
 
-These features are planned for Phase 7D or later. A finalized
+These features are planned for Phase 7E or later. A finalized
 rule must not be read as evidence that its feature is already available.
 
 The application does **not** initially provide:
@@ -131,8 +131,8 @@ explicit incompatible-save errors because which private information was already 
 cannot be reconstructed safely. A rejected V1 save is not silently deleted. A safe migration writes
 V2 before removing V1 and preserves V1 if the V2 write fails.
 
-Current V2 persistence supports recovery through the first Dawn, its Day 1 discussion, and the
-final Day 1 outcome. Neutral-state sub-version `2` persists explicit death causes, permanent
+Current V2 persistence supports recovery through the first Dawn, its Day 1 discussion, the final
+Day 1 outcome, corrected Phase 7D waiting, and game over. Neutral-state sub-version `2` persists explicit death causes, permanent
 personal wins, conversions, pending revenge, and the singular day outcome together. Public rows,
 revealed-Mayor reminders, living execution candidates, and post-day prose remain derived. A prior
 neutral-state Dawn save can be upgraded from the exact death identities in its announcement. A
@@ -771,10 +771,11 @@ selected and dies from revenge, leaving no faction winner. Existing personal win
 in both cases.
 
 The current implementation stops after the deliberate first-Dawn application, Day 1 discussion,
-and one final day outcome. Immediate investigative outcomes are cross-checked against the same
-shared mechanics used by final resolution and are not replayed. Proven first-Dawn deaths now
-receive explicit night-death records and trigger every qualifying Executioner conversion exactly
-once. Revenge resolution, faction victory, and later-Dawn stages remain outside the implemented
+one final day outcome, and corrected Phase 7D settlement. Immediate investigative outcomes are
+cross-checked against the same shared mechanics used by final resolution and are not replayed.
+Proven first-Dawn deaths receive explicit night-death records and trigger every qualifying
+Executioner conversion exactly once. When no revenge is pending, the completed day may enter safe
+waiting or game over. Revenge resolution and later-Dawn stages remain outside the implemented
 boundary.
 
 ---
@@ -937,17 +938,25 @@ publicly revealed. Personal-win and victory effects are evaluated immediately af
 death and its consequences. If executing a Jester creates pending revenge, every faction victory is
 blocked and play proceeds toward the next night.
 
-Phase 7C atomically implements steps 1 through 5, records one immutable `DayOutcome`, transitions
-to `execution-resolution`, and stops. It does not perform steps 6 or 7. The post-day summary shows
-only the public outcome and an authorized role reveal; personal wins, conversions, and pending
-revenge remain private.
+Phase 7C atomically implements steps 1 through 5 and records one immutable `DayOutcome` in
+`execution-resolution`. Corrected Phase 7D implements step 6 only when no pending revenge exists.
+If revenge is pending, it stops without evaluating any faction predicate. If no faction wins, it
+stops without performing step 7 because Night 2 is Phase 7E work. The post-day summary shows only
+the public outcome and an authorized role reveal; personal wins, conversions, and pending revenge
+remain private.
 
 ---
 
 ## 16. Win conditions
 
-Personal-win recording is implemented in Phase 7C. Faction victory and game-over presentation
-remain planned for Phase 7D.
+Personal-win recording is implemented in Phase 7C. Corrected Phase 7D implements faction victory
+and game-over presentation only when no Jester revenge is pending.
+
+The Phase 7D game-over disclosure policy is deliberately conservative: the winning faction or
+draw is public, existing public role reveals remain public, and hidden roles are not automatically
+revealed. Executioner targets, conversions beyond existing public reveal authority, pending
+revenge, and private neutral/personal-win state remain hidden. The temporary host-only day role
+view is not persisted game-over disclosure authority.
 
 Personal wins are permanent records attached to the winning player/role instance. They do not end
 the main game and may coexist with other personal wins and a later Town, Mafia, or Serial Killer
@@ -1019,6 +1028,13 @@ When nobody remains alive after all required ordinary and revenge deaths:
 - No Town, Mafia, or Serial Killer faction wins.
 - Previously earned Jester and Executioner personal wins remain recorded.
 - The game ends with no faction winner.
+
+Corrected Phase 7D represents this documented no-faction-winner terminal state as a `draw` with
+reason `no-survivors`. It is the only implemented draw. A state with only non-killing Neutral
+players alive is not documented as a draw and therefore remains non-terminal. Town, Mafia, and
+Serial Killer predicates are derived together; their finalized requirements make them mutually
+exclusive. If a future rules change makes more than one true, evaluation fails closed as a
+structured contradiction instead of selecting the first checked faction.
 
 ---
 
@@ -1217,7 +1233,8 @@ R-001 through R-012 are finalized and authoritative. Phase 7A implements the tar
 assignment, and private-briefing portion of R-008. Phase 7B implements first-day discussion and
 voluntary Mayor reveal. Phase 7C implements the final day outcome, execution consequences,
 permanent Jester and Executioner personal wins, pending-revenge creation, and proven
-non-execution-death conversions. Revenge resolution, faction victory, and later-loop gameplay
+non-execution-death conversions. Corrected Phase 7D implements faction victory only when pending
+revenge is absent, plus safe waiting and game over. Revenge resolution and later-loop gameplay
 remain unimplemented.
 
 ### R-001 — Mutual killing disabled
@@ -1242,7 +1259,8 @@ remain unimplemented.
 
 ### R-006 — Jester personal win and revenge
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized. Personal win and pending-obligation creation are implemented in Phase 7C;
+the corrected Phase 7D gate is implemented; next-Dawn revenge resolution remains Phase 7E.**
 
 - A Jester earns a permanent personal win only when executed during the day.
 - A Jester killed at night, through revenge, or through another non-execution cause does not earn a
@@ -1287,7 +1305,8 @@ personal wins remain recorded.
 
 ### R-007 — Executioner target non-execution death
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized. Conversion after proven ordinary deaths is implemented in Phase 7C;
+conversion after a future revenge death remains Phase 7E.**
 
 - If an Executioner's target dies for any reason other than daytime execution, that Executioner
   converts into a Jester.
@@ -1305,8 +1324,9 @@ personal wins remain recorded.
 
 ### R-008 — Executioner target eligibility and assignment
 
-**Status: Finalized. Eligibility, assignment, and private briefing implemented in Phase 7A;
-personal-win and later outcome rules remain planned.**
+**Status: Finalized. Eligibility, assignment, and private briefing are implemented in Phase 7A;
+personal wins are implemented in Phase 7C; faction integration is implemented in corrected Phase
+7D when no revenge is pending.**
 
 - An Executioner target must be a participating player with a Town role.
 - Mafia, Jester, Executioner, Serial Killer, and other non-Town roles are ineligible.
@@ -1328,7 +1348,7 @@ personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-009 — Serial Killer victory
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized and implemented in corrected Phase 7D when no revenge is pending.**
 
 - Serial Killer victory occurs only when exactly one player remains alive and that player is a
   Serial Killer.
@@ -1354,7 +1374,7 @@ personal win and performs no conversion, revenge, or victory evaluation.
 - Executing a player immediately ends the day.
 - An execution uses `revealRoleOnDeath` for public role reveal.
 - Phase 7C records personal-win effects immediately after the execution death and its
-  consequences; Phase 7D will evaluate faction victory.
+  consequences; corrected Phase 7D evaluates faction victory only when no revenge is pending.
 - If executing a Jester creates pending revenge, faction victory remains blocked and play proceeds
   toward the next night.
 
@@ -1378,7 +1398,7 @@ reminder are implemented in Phase 7B. Vote tracking is deliberately absent.**
 
 ### R-011 — Town victory
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized and implemented in corrected Phase 7D when no revenge is pending.**
 
 Town wins only when at least one Town player remains alive, no Mafia player remains alive, no
 Serial Killer remains alive, and no Jester revenge remains pending.
@@ -1389,7 +1409,7 @@ wins coexist with Town victory.
 
 ### R-012 — Mafia victory count
 
-**Status: Finalized. Rule finalized; implementation planned for the Phase 7 delivery sequence.**
+**Status: Finalized and implemented in corrected Phase 7D when no revenge is pending.**
 
 Mafia wins only when at least one Mafia player remains alive, no Serial Killer remains alive,
 living Mafia equal or outnumber living Town, no living Jester remains, and no Jester revenge

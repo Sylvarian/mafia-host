@@ -17,6 +17,7 @@ export {
   previousSessionExecutionerBriefing,
   reassignSessionRoles,
   setSessionCardDelivered,
+  settleSessionAfterDayOutcome,
   updateSetupSession,
 } from './active-app-session.ts'
 export type {
@@ -27,12 +28,16 @@ export type {
   DawnAppSession,
   DayDiscussionAppSession,
   DayOutcomeAppSession,
+  GameOverAppSession,
   ExecutionerBriefingAppSession,
   InvalidActiveAppSessionStageError,
   NightResolutionAppSession,
+  PendingRevengeWaitingAppSession,
+  PostDayWaitingAppSession,
   RoleDistributionAppSession,
   SequentialNightAppSession,
   SetupAppSession,
+  SettlePostDaySessionError,
 } from './active-app-session.ts'
 export type {
   ClearFailureError,
@@ -72,6 +77,7 @@ export type {
   PersistedSessionEnvelopeV2,
   PersistedSetupDraftV2,
   PersistedSubmittedNightActionV2,
+  PersistedTerminalFactionResultV2,
   PersistedValidatedSetupV2,
   RestoredSessionEnvelopeV2,
   SessionStageSummary,

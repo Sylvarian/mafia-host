@@ -26,9 +26,14 @@ import { ROLE_IDS, ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role
 import type { DawnAnnouncement, DawnDeath } from '@/domain/resolution/dawn-announcement.ts'
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
+import {
+  evaluateFactionVictory,
+  validateFactionVictoryEvaluationGate,
+} from '@/domain/win-conditions/faction-victory.ts'
 
 import { validateDayDiscussionState, type DayDiscussionState } from '../day-discussion/index.ts'
 import { validateDayOutcomeState, type DayOutcomeState } from '../day-outcome/index.ts'
+import { validateGameOverState } from '../game-over/index.ts'
 import {
   acknowledgeExecutionerBriefing,
   createExecutionerBriefingWorkflow,
@@ -64,7 +69,10 @@ import type {
   DayOutcomeAppSession,
   DawnAppSession,
   ExecutionerBriefingAppSession,
+  GameOverAppSession,
   NightResolutionAppSession,
+  PendingRevengeWaitingAppSession,
+  PostDayWaitingAppSession,
   RoleDistributionAppSession,
   SequentialNightAppSession,
   SetupAppSession,
@@ -159,6 +167,25 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-game'
         | 'invalid-participants'
         | 'invalid-outcome'
+        | 'contains-stale-day-data'
+    }>
+  | Readonly<{
+      type: 'INVALID_POST_DAY_WAITING_SESSION'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'waiting-stage-result-mismatch'
+        | 'contains-stale-day-data'
+    }>
+  | Readonly<{
+      type: 'INVALID_GAME_OVER_SESSION'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'invalid-result'
+        | 'game-over-result-mismatch'
         | 'contains-stale-day-data'
     }>
   | Readonly<{
@@ -270,6 +297,18 @@ function restoreAppSession(
       return options.allowLegacyGameShape
         ? invalidDayOutcome('invalid-shape')
         : restoreDayOutcomeSession(candidate)
+    case 'post-day-waiting':
+      return options.allowLegacyGameShape
+        ? invalidPostDayWaiting('invalid-shape')
+        : restorePostDayWaitingSession(candidate, 'post-day-waiting')
+    case 'pending-revenge-waiting':
+      return options.allowLegacyGameShape
+        ? invalidPostDayWaiting('invalid-shape')
+        : restorePostDayWaitingSession(candidate, 'pending-revenge-waiting')
+    case 'game-over':
+      return options.allowLegacyGameShape
+        ? invalidGameOver('invalid-shape')
+        : restoreGameOverSession(candidate)
     default:
       return fail({ type: 'UNKNOWN_PERSISTED_STAGE' })
   }
@@ -1332,6 +1371,144 @@ function restoreDayOutcomeSession(
     : invalidDayOutcome('invalid-shape')
 }
 
+function restorePostDayWaitingSession(
+  candidate: Readonly<Record<string, unknown>>,
+  stage: PostDayWaitingAppSession['stage'] | PendingRevengeWaitingAppSession['stage'],
+): DomainResult<
+  PostDayWaitingAppSession | PendingRevengeWaitingAppSession,
+  RestorePersistedSessionV2Error
+> {
+  if (containsStalePostDayData(candidate)) {
+    return invalidPostDayWaiting('contains-stale-day-data')
+  }
+  if (
+    !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants']) ||
+    candidate.workflowStatus !== stage ||
+    !isCurrentNeutralStateGame(candidate.game)
+  ) {
+    return invalidPostDayWaiting('invalid-shape')
+  }
+  const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
+  if (!gameResult.ok) {
+    return invalidPostDayWaiting('invalid-game')
+  }
+  if (gameResult.value.phase !== 'execution-resolution') {
+    return fail({ type: 'STAGE_PHASE_MISMATCH', stage, phase: gameResult.value.phase })
+  }
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidPostDayWaiting('invalid-participants')
+  }
+  const dayResult = validateDayOutcomeState({
+    game: gameResult.value,
+    participants: participantsResult.value,
+  })
+  if (!dayResult.ok) {
+    return invalidPostDayWaiting('invalid-game')
+  }
+  if (stage === 'pending-revenge-waiting') {
+    const gateResult = validateFactionVictoryEvaluationGate(dayResult.value.game)
+    if (gateResult.ok || gateResult.error.type !== 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY') {
+      return invalidPostDayWaiting('waiting-stage-result-mismatch')
+    }
+    const session = deepFreeze({
+      stage,
+      game: dayResult.value.game,
+      participants: dayResult.value.participants,
+    })
+    return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+      ? succeed(session)
+      : invalidPostDayWaiting('invalid-shape')
+  }
+  const evaluationResult = evaluateFactionVictory(dayResult.value.game)
+  if (!evaluationResult.ok || evaluationResult.value.kind !== 'none') {
+    return invalidPostDayWaiting('waiting-stage-result-mismatch')
+  }
+  const session = deepFreeze({
+    stage,
+    game: dayResult.value.game,
+    participants: dayResult.value.participants,
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidPostDayWaiting('invalid-shape')
+}
+
+function restoreGameOverSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<GameOverAppSession, RestorePersistedSessionV2Error> {
+  if (containsStalePostDayData(candidate)) {
+    return invalidGameOver('contains-stale-day-data')
+  }
+  if (
+    !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants', 'result']) ||
+    candidate.workflowStatus !== 'game-over' ||
+    !isCurrentNeutralStateGame(candidate.game)
+  ) {
+    return invalidGameOver('invalid-shape')
+  }
+  const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
+  if (!gameResult.ok) {
+    return invalidGameOver('invalid-game')
+  }
+  if (gameResult.value.phase !== 'game-over') {
+    return fail({ type: 'STAGE_PHASE_MISMATCH', stage: 'game-over', phase: gameResult.value.phase })
+  }
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidGameOver('invalid-participants')
+  }
+  const stateResult = validateGameOverState({
+    game: gameResult.value,
+    participants: participantsResult.value,
+    result: candidate.result,
+  })
+  if (!stateResult.ok) {
+    return invalidGameOver(
+      stateResult.error.type === 'INVALID_GAME_OVER_RESULT' &&
+        stateResult.error.error.type === 'GAME_OVER_RESULT_MISMATCH'
+        ? 'game-over-result-mismatch'
+        : stateResult.error.type === 'INVALID_GAME_OVER_RESULT'
+          ? 'invalid-result'
+          : 'game-over-result-mismatch',
+    )
+  }
+  const session = deepFreeze({
+    stage: 'game-over' as const,
+    game: stateResult.value.game,
+    participants: stateResult.value.participants,
+    result: stateResult.value.result,
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidGameOver('invalid-shape')
+}
+
+function containsStalePostDayData(candidate: Readonly<Record<string, unknown>>): boolean {
+  return hasAnyKey(candidate, [
+    'workflow',
+    'dawnAnnouncement',
+    'completedSteps',
+    'currentOutcome',
+    'currentStepIndex',
+    'steps',
+    'nightWorkflow',
+    'collectedActions',
+    'resolution',
+    'revengeResolution',
+    'revengeVictimPlayerId',
+    'nextNight',
+    'selectedMayorPlayerId',
+    'mayorDialogOpen',
+    'selectedExecutionPlayerId',
+    'executionDialogOpen',
+    'noExecutionDialogOpen',
+    'operationPending',
+    'showHostRoles',
+    'hostRoleView',
+  ])
+}
+
 function restoreValidatedSetup(
   candidate: unknown,
 ): DomainResult<ValidatedGameSetup, RestorePersistedSessionV2Error> {
@@ -1993,6 +2170,24 @@ function invalidDayOutcome(
   >['reason'],
 ): DomainResult<never, RestorePersistedSessionV2Error> {
   return fail({ type: 'INVALID_DAY_OUTCOME_SESSION', reason })
+}
+
+function invalidPostDayWaiting(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_POST_DAY_WAITING_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_POST_DAY_WAITING_SESSION', reason })
+}
+
+function invalidGameOver(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_GAME_OVER_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_GAME_OVER_SESSION', reason })
 }
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {

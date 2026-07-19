@@ -6,7 +6,8 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7C.1 streamlines the implemented Phase 7C host workflow without changing its game rules.
+Corrected Phase 7D adds faction-victory evaluation and public-safe game over without changing the
+next-Dawn revenge rule. Phase 7C.1 still supplies the streamlined Phase 7C host workflow.
 After verbal nominations, trials, and voting, the host records
 exactly one final result with **Execute a player** or **End day without execution**. Both operations
 atomically replace the editable `day-discussion` session with a persisted `day-outcome` session in
@@ -28,7 +29,19 @@ A private host-only execution dialog lists only living participants with duplica
 does not disclose assignments, targets, wins, conversions, or revenge. A separate irreversible
 confirmation ends the day without execution. The public post-day summary reports only who was
 executed and a role when `revealRoleOnDeath` authorizes it, or that nobody was executed. It offers
-no winner, revenge, game-over, or next-night control.
+no revenge or next-night control.
+
+After the final Day 1 outcome, one pure gate checks for pending Jester revenge before any faction
+predicate runs. Pending revenge remains victim-free and unchanged in a private-safe waiting stage;
+the screen says only that final evaluation is deferred until the next Dawn. With no pending
+revenge, the app evaluates the finalized R-009, R-011, and R-012 predicates once. A non-terminal
+state stops in public-safe post-day waiting without creating Night 2. Town, Mafia, Serial Killer,
+and the documented no-survivors draw enter an immutable `game-over` session.
+
+Game over publicly shows only the winning faction or draw, alive/dead roster state, and roles that
+were already legitimately public. Hidden roles are not automatically revealed. Executioner
+targets, conversions, pending revenge, and personal-win records remain private, and no raw IDs are
+displayed.
 
 A private host-only Mayor dialog lists only living, unrevealed Mayor players. A deliberate confirmation
 sets the existing `publiclyRevealedRoleId` authority to Mayor; there is no second Mayor-reveal
@@ -90,8 +103,13 @@ R-006 through R-012 finalize daytime, neutral-role, death-resolution, and victor
 now records explicit night/day death causes, permanent Jester and Executioner personal wins,
 victim-free pending Jester revenge, and permanent Executioner-to-Jester conversions after proven
 non-execution target deaths. Original assignment and target relationships remain historical
-authority while selectors derive converted Jester behavior. Jester revenge victim selection and
-death, faction victory, game-over presentation, and the subsequent-night loop remain planned work.
+authority while selectors derive converted Jester behavior. Corrected Phase 7D evaluates faction
+victory only when pending revenge is absent and adds safe waiting and game-over presentation.
+Jester revenge victim selection and death and the subsequent-night loop remain Phase 7E work.
+
+Still not implemented: revenge victim selection, revenge death, revenge-triggered conversion,
+Night 2, a second Dawn, next-Dawn revenge resolution, the subsequent-night loop, multi-day history,
+backend/cloud synchronization, or multi-tab synchronization.
 
 ## Local save and privacy
 
@@ -116,8 +134,8 @@ rejected with a clear incompatible-save message because safely restoring it woul
 which information players already saw. Such a V1 save is not silently deleted. On safe migration,
 V2 is written before the legacy key is removed; a failed V2 write preserves V1.
 
-V2 recovery remains intentionally limited to the first Dawn, Day 1 discussion, and the final Day 1
-outcome. A neutral-state subversion of `2` requires explicit death records, personal wins,
+V2 recovery remains intentionally limited to the first Dawn, Day 1 discussion, the final Day 1
+outcome, corrected Phase 7D waiting, and game over. A neutral-state subversion of `2` requires explicit death records, personal wins,
 conversions, pending revenge, and the singular day outcome together. Earlier neutral-state V2
 saves receive canonical empty defaults only where unambiguous. A prior Dawn announcement can prove
 its night deaths and conversions during restoration. A prior Day save with any dead player but no
@@ -131,6 +149,13 @@ next exact actor; an earlier acknowledged result advances only when its persiste
 the boundary unambiguously. Ambiguous advancement fails closed with a compatibility message.
 Host-role visibility and derived host-role display objects are rejected if injected into a day
 save and are never emitted by current persistence.
+
+Corrected Phase 7D keeps schema V2 and neutral-state subversion `2`. New exact session variants
+persist ordinary post-day waiting, pending-revenge waiting, or game over with one canonical
+faction/draw result. Restoration revalidates the result against alive state and active roles,
+rejects forged or partial winners and waiting/result mismatches, and never resolves revenge,
+advances counters, or consumes randomness. Recovery shows generic Day-complete metadata for both
+waiting variants and only the public faction/draw for game over until Continue.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
 announce earlier deaths again. Phase 7E must update the contract deliberately. There is no generic
@@ -260,6 +285,12 @@ day execution never converts its target's Executioners. `application/day-outcome
 living candidates and the public summary. The day feature owns only temporary dialog state and
 deliberate confirmation, while the domain applies death, reveal, neutral effects, and the phase
 transition in one validated immutable operation.
+
+Corrected Phase 7D adds a narrow `win-conditions` domain module, then application-owned pending
+waiting, ordinary waiting, and game-over sessions. Faction results use stable IDs and canonical
+roster ordering while public selectors expose only display labels and existing reveal authority.
+The result is stored once in the terminal session; no generic winner framework, revenge workflow,
+later-night state, backend, or networking layer is introduced.
 
 ## Project authorities
 

@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7C.1 retains schema V2 while canonicalizing obsolete night-flow states and rejecting persisted host-role visibility<br>
+**Persistence:** One versioned local active-session save; corrected Phase 7D retains schema V2 and adds exact waiting/game-over states<br>
 **Backend:** None
 
 ---
@@ -536,7 +536,7 @@ Phase 7E must update the persisted contract deliberately. No generic migration f
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7C.1 implemented; Phase 7D and later are planned. R-006 through R-012 and the Mayor
+**Status: Corrected Phase 7D implemented; Phase 7E and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -767,9 +767,11 @@ recovery only.**
   `ActiveAppSession`, recovery metadata, or persistence.
 - Dawn remains the same authoritative one-time application boundary, reached in one deliberate
   host action.
-- Phase 7D remains unimplemented.
+- This subphase did not implement Phase 7D; corrected Phase 7D is implemented separately below.
 
 ### Phase 7D — Victory evaluation and game over
+
+**Status: Corrected Phase 7D implemented. Pending Jester revenge remains deferred to the next Dawn.**
 
 #### Work
 
@@ -779,19 +781,23 @@ Implement faction evaluation as a pure module:
 evaluateGameOutcome(gameState): GameOutcome
 ```
 
-- Check once after the complete daytime execution consequence sequence.
-- Resolve pending Jester revenge at its documented boundary before any faction victory check:
-  select only from post-ordinary-death survivors using injected randomness, apply the unavoidable
-  death, resolve resulting conversions, and clear the obligation.
+- Check once after the complete daytime execution consequence sequence only when no pending Jester
+  revenge exists.
+- Gate every faction predicate behind complete post-day authority, valid invariants, the exact
+  post-day boundary, no prior result, and an empty pending-revenge list.
+- When revenge is pending, preserve it unchanged and enter private-safe waiting without selecting a
+  victim, applying a death, clearing an obligation, or evaluating a faction.
 - At Dawn, check once against the final state after simultaneous ordinary deaths, conversions,
-  revenge, further conversions, and clearing the obligation.
+  revenge, further conversions, and clearing the obligation. That next-Dawn flow remains Phase 7E.
 - Implement R-009 Serial Killer victory exactly.
 - Implement R-011 Town victory exactly.
 - Implement R-012 Mafia victory and parity counting exactly.
 - Preserve all permanent personal wins alongside faction outcomes.
 - End with no faction winner when nobody remains alive.
-- Add game-over presentation that distinguishes faction outcomes, permanent personal wins, and no
-  faction winner.
+- Add public-safe game-over presentation for the faction/draw result and existing public reveals.
+- Keep personal wins authoritative but private because the specification does not authorize their
+  public disclosure.
+- Stop in safe non-terminal waiting without beginning Night 2.
 
 #### Tests
 
@@ -803,12 +809,16 @@ evaluateGameOutcome(gameState): GameOutcome
 - Verify a living Jester and pending revenge independently block Mafia.
 - Verify pending revenge blocks every faction, including Serial Killer.
 - Verify simultaneous deaths cannot produce an order-dependent intermediate victory.
-- Verify personal wins remain recorded after faction victory or no-faction game over.
+- Verify personal wins remain recorded after faction victory or no-faction game over and do not
+  enter unauthorized public views.
+- Verify pending revenge blocks evaluation without victim selection, death, conversion, clearing,
+  counter advancement, or a next-night workflow.
 
 #### Acceptance criteria
 
-- Every reachable final state produces one authoritative faction result, no faction winner, or
-  “game continues,” without an order-dependent intermediate result.
+- Every evaluated final state produces one authoritative faction result, the documented
+  no-survivors draw, or safe waiting without an order-dependent intermediate result.
+- Pending revenge stops safely for Phase 7E and R-006 remains unchanged.
 
 ### Phase 7E — Subsequent-night loop and persistence upgrade
 
@@ -1040,9 +1050,11 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7C.1 are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through corrected 7D are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
-When further Phase 7 work is explicitly requested, begin with Phase 7D. Do not start later
+When further Phase 7 work is explicitly requested, begin with Phase 7E. Do not start later
 subphases automatically, do not add app-managed voting, and do not reuse the current first-Dawn
-persistence representation for a multi-day loop.
+persistence representation for a multi-day loop. Phase 7E must implement Night 2 ordinary deaths,
+next-Dawn revenge selection/death, resulting conversion, clearing, and post-revenge victory
+reevaluation before adding the subsequent loop.

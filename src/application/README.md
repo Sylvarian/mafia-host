@@ -42,8 +42,8 @@ Dawn applies the retained batch and resolution exactly once and drops all privat
 action/resolution material. It never advances to day discussion or evaluates a winner.
 
 `session-persistence` owns the cross-phase `ActiveAppSession`. Exactly one setup, distribution,
-Executioner-briefing, sequential-night, night-resolution, Dawn, day-discussion, or day-outcome
-stage is authoritative.
+Executioner-briefing, sequential-night, night-resolution, Dawn, day-discussion, legacy day-outcome,
+post-day waiting, pending-revenge waiting, or game-over stage is authoritative.
 Completing the sequential workflow atomically creates final night resolution; preparing Dawn
 atomically creates the public-only Dawn session.
 
@@ -98,10 +98,26 @@ candidate and summary views. Prior neutral-state saves receive empty defaults on
 unambiguous; Dawn announcements can prove their deaths, while a prior Day save with an unexplained
 dead player returns an explicit compatibility failure. New saves omit
 the obsolete `mayorRevealed` value; restoration narrowly accepts its former generated `false`
-value for earlier V2 compatibility. It is never domain authority. Recovery remains limited through
-the final Day 1 outcome. Phase 7E must deliberately distinguish current from historical
-announcements before later nights are added.
+value for earlier V2 compatibility. It is never domain authority. Corrected Phase 7D extends
+recovery through Day 1 waiting and game over. Phase 7E must deliberately distinguish current from
+historical announcements before later nights are added.
 
 Day host-role visibility remains React-only and is absent from `ActiveAppSession`. Persistence
 never emits it or derived host-role display objects, and restoration rejects attempted
 `showHostRoles`, `hostOnlyRoles`, `hostRoleView`, or `hostRoleVisibility` fields.
+
+Corrected Phase 7D settles a completed `day-outcome` through one application operation. It invokes
+the domain pending-revenge gate before evaluation, maps pending revenge to its own unchanged waiting
+session, maps `none` to ordinary post-day waiting, and maps a terminal result to one immutable
+game-over session. The live path derives faction predicates exactly once, then uses an internal
+same-operation constructor for the returned canonical game/result pair. Persisted terminal data
+instead crosses the untrusted validator once, while public selection and save retry do not
+reevaluate victory. New day completions settle before a single save. Restored Phase 7C day outcomes
+settle only after Continue and then save once; no randomness, counter advancement, revenge action,
+or next-night workflow occurs.
+
+`application/game-over` validates the authoritative game/result pair and builds the sole public
+game-over view. It exposes duplicate-safe names, alive/dead state, and existing public role reveals
+only. It excludes stable IDs, hidden assignments, targets, conversions, pending revenge, and
+personal wins. Schema V2 adds exact waiting and terminal session variants while retaining existing
+V1 migration and existing Phase 7C/7C.1 V2 compatibility.

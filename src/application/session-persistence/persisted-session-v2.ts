@@ -286,6 +286,20 @@ export type PersistedDawnAnnouncementV2 =
       }>[]
     }>
 
+export type PersistedTerminalFactionResultV2 =
+  | Readonly<{ kind: 'town-victory'; gameId: string }>
+  | Readonly<{
+      kind: 'mafia-victory'
+      gameId: string
+      winnerPlayerIds: readonly string[]
+    }>
+  | Readonly<{
+      kind: 'serial-killer-victory'
+      gameId: string
+      winnerPlayerIds: readonly string[]
+    }>
+  | Readonly<{ kind: 'draw'; gameId: string; reason: 'no-survivors' }>
+
 export type PersistedAppSessionV2 =
   | Readonly<{
       stage: 'setup'
@@ -349,6 +363,25 @@ export type PersistedAppSessionV2 =
       game: PersistedGameV2
       participants: readonly PersistedPlayerV2[]
     }>
+  | Readonly<{
+      stage: 'post-day-waiting'
+      workflowStatus: 'post-day-waiting'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+    }>
+  | Readonly<{
+      stage: 'pending-revenge-waiting'
+      workflowStatus: 'pending-revenge-waiting'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+    }>
+  | Readonly<{
+      stage: 'game-over'
+      workflowStatus: 'game-over'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      result: PersistedTerminalFactionResultV2
+    }>
 
 export type PersistedSessionEnvelopeV2 = Readonly<{
   schemaVersion: 2
@@ -374,9 +407,11 @@ export type SessionStageSummary = Readonly<{
     | 'Dawn announcement'
     | 'Day discussion'
     | 'Day complete'
+    | 'Game over'
   playerCount: number
   nightNumber: number | null
   dayNumber: number | null
+  resultLabel: 'Town wins' | 'Mafia wins' | 'Serial Killer wins' | 'Draw' | null
 }>
 
 export function createPersistedSessionEnvelopeV2(
@@ -482,6 +517,31 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
         game: copyGame(session.game),
         participants: session.participants.map(copyPlayer),
       })
+    case 'post-day-waiting':
+      return deepFreeze({
+        stage: 'post-day-waiting',
+        workflowStatus: 'post-day-waiting',
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+      })
+    case 'pending-revenge-waiting':
+      return deepFreeze({
+        stage: 'pending-revenge-waiting',
+        workflowStatus: 'pending-revenge-waiting',
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+      })
+    case 'game-over':
+      return deepFreeze({
+        stage: 'game-over',
+        workflowStatus: 'game-over',
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+        result:
+          session.result.kind === 'mafia-victory' || session.result.kind === 'serial-killer-victory'
+            ? { ...session.result, winnerPlayerIds: [...session.result.winnerPlayerIds] }
+            : { ...session.result },
+      })
   }
 }
 
@@ -530,6 +590,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.workflow.draft.roster.filter((player) => player.playing).length,
         nightNumber: null,
         dayNumber: null,
+        resultLabel: null,
       })
     case 'role-distribution':
       return Object.freeze({
@@ -540,6 +601,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.workflow.game.players.length,
         nightNumber: null,
         dayNumber: null,
+        resultLabel: null,
       })
     case 'executioner-briefing':
       return Object.freeze({
@@ -547,6 +609,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.game.players.length,
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
+        resultLabel: null,
       })
     case 'sequential-night':
       return Object.freeze({
@@ -554,6 +617,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
+        resultLabel: null,
       })
     case 'night-resolution':
       return Object.freeze({
@@ -561,6 +625,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
+        resultLabel: null,
       })
     case 'dawn':
       return Object.freeze({
@@ -568,6 +633,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.workflow.game.players.length,
         nightNumber: session.workflow.game.nightNumber,
         dayNumber: session.workflow.game.dayNumber,
+        resultLabel: null,
       })
     case 'day-discussion':
       return Object.freeze({
@@ -575,6 +641,7 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.game.players.length,
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
+        resultLabel: null,
       })
     case 'day-outcome':
       return Object.freeze({
@@ -582,7 +649,40 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         playerCount: session.game.players.length,
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
+        resultLabel: null,
       })
+    case 'post-day-waiting':
+    case 'pending-revenge-waiting':
+      return Object.freeze({
+        stage: 'Day complete',
+        playerCount: session.game.players.length,
+        nightNumber: session.game.nightNumber,
+        dayNumber: session.game.dayNumber,
+        resultLabel: null,
+      })
+    case 'game-over':
+      return Object.freeze({
+        stage: 'Game over',
+        playerCount: session.game.players.length,
+        nightNumber: session.game.nightNumber,
+        dayNumber: session.game.dayNumber,
+        resultLabel: selectPersistedResultLabel(session.result),
+      })
+  }
+}
+
+function selectPersistedResultLabel(
+  result: Extract<ActiveAppSession, Readonly<{ stage: 'game-over' }>>['result'],
+): NonNullable<SessionStageSummary['resultLabel']> {
+  switch (result.kind) {
+    case 'town-victory':
+      return 'Town wins'
+    case 'mafia-victory':
+      return 'Mafia wins'
+    case 'serial-killer-victory':
+      return 'Serial Killer wins'
+    case 'draw':
+      return 'Draw'
   }
 }
 
