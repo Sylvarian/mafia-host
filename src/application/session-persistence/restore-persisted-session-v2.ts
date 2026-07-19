@@ -28,6 +28,7 @@ import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
 
 import { validateDayDiscussionState, type DayDiscussionState } from '../day-discussion/index.ts'
+import { validateDayOutcomeState, type DayOutcomeState } from '../day-outcome/index.ts'
 import {
   acknowledgeExecutionerBriefing,
   createExecutionerBriefingWorkflow,
@@ -59,6 +60,7 @@ import {
 import type {
   ActiveAppSession,
   DayDiscussionAppSession,
+  DayOutcomeAppSession,
   DawnAppSession,
   ExecutionerBriefingAppSession,
   NightResolutionAppSession,
@@ -147,13 +149,29 @@ export type RestorePersistedSessionV2Error =
         | 'contains-stale-night-data'
     }>
   | Readonly<{
+      type: 'INVALID_DAY_OUTCOME_SESSION'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'invalid-outcome'
+        | 'contains-stale-day-data'
+    }>
+  | Readonly<{
+      type: 'PERSISTENCE_COMPATIBILITY_FAILURE'
+      reason: 'legacy-day-death-cause-unavailable'
+    }>
+  | Readonly<{
       type: 'STAGE_PHASE_MISMATCH'
       stage: ActiveAppSession['stage']
       phase: string
     }>
   | Readonly<{ type: 'MULTIPLE_AUTHORITATIVE_GAMES' }>
 
-type RestoreOptions = Readonly<{ allowLegacyGameShape: boolean }>
+type RestoreOptions = Readonly<{
+  allowLegacyGameShape: boolean
+  provenNightDeathPlayerIds?: readonly string[]
+}>
 
 const DEFAULT_OPTIONS: RestoreOptions = Object.freeze({ allowLegacyGameShape: false })
 const ALLOWED_EDITING_SETUP_ERRORS = new Set<GameSetupValidationError['type']>([
@@ -244,6 +262,10 @@ function restoreAppSession(
       return options.allowLegacyGameShape
         ? invalidDayDiscussion('invalid-shape')
         : restoreDayDiscussionSession(candidate)
+    case 'day-outcome':
+      return options.allowLegacyGameShape
+        ? invalidDayOutcome('invalid-shape')
+        : restoreDayOutcomeSession(candidate)
     default:
       return fail({ type: 'UNKNOWN_PERSISTED_STAGE' })
   }
@@ -729,7 +751,10 @@ function restoreDawnSession(
   ) {
     return invalidDawn('invalid-shape')
   }
-  const gameResult = restoreGame(candidate.game, options)
+  const gameResult = restoreGame(candidate.game, {
+    ...options,
+    provenNightDeathPlayerIds: selectDawnDeathPlayerIds(candidate.dawnAnnouncement),
+  })
   if (!gameResult.ok) {
     return invalidDawn('invalid-game')
   }
@@ -791,6 +816,10 @@ function restoreDayDiscussionSession(
       'blocks',
       'selectedMayorPlayerId',
       'mayorDialogOpen',
+      'selectedExecutionPlayerId',
+      'executionDialogOpen',
+      'noExecutionDialogOpen',
+      'operationPending',
     ])
   ) {
     return invalidDayDiscussion('contains-stale-night-data')
@@ -800,6 +829,12 @@ function restoreDayDiscussionSession(
     candidate.workflowStatus !== 'day-discussion'
   ) {
     return invalidDayDiscussion('invalid-shape')
+  }
+  if (isPriorNeutralStateGame(candidate.game) && persistedGameHasDeadPlayer(candidate.game)) {
+    return fail({
+      type: 'PERSISTENCE_COMPATIBILITY_FAILURE',
+      reason: 'legacy-day-death-cause-unavailable',
+    })
   }
   const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
   if (!gameResult.ok) {
@@ -838,6 +873,76 @@ function restoreDayDiscussionSession(
     : invalidDayDiscussion('invalid-shape')
 }
 
+function restoreDayOutcomeSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<DayOutcomeAppSession, RestorePersistedSessionV2Error> {
+  if (
+    hasAnyKey(candidate, [
+      'workflow',
+      'dawnAnnouncement',
+      'completedSteps',
+      'currentOutcome',
+      'currentStepIndex',
+      'steps',
+      'nightWorkflow',
+      'collectedActions',
+      'resolution',
+      'selectedMayorPlayerId',
+      'mayorDialogOpen',
+      'selectedExecutionPlayerId',
+      'executionDialogOpen',
+      'noExecutionDialogOpen',
+      'operationPending',
+    ])
+  ) {
+    return invalidDayOutcome('contains-stale-day-data')
+  }
+  if (
+    !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants']) ||
+    candidate.workflowStatus !== 'day-outcome' ||
+    !isCurrentNeutralStateGame(candidate.game)
+  ) {
+    return invalidDayOutcome('invalid-shape')
+  }
+  const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
+  if (!gameResult.ok) {
+    return invalidDayOutcome('invalid-game')
+  }
+  if (gameResult.value.phase !== 'execution-resolution') {
+    return fail({
+      type: 'STAGE_PHASE_MISMATCH',
+      stage: 'day-outcome',
+      phase: gameResult.value.phase,
+    })
+  }
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidDayOutcome('invalid-participants')
+  }
+  const state: DayOutcomeState = {
+    game: gameResult.value,
+    participants: participantsResult.value,
+  }
+  const stateResult = validateDayOutcomeState(state)
+  if (!stateResult.ok) {
+    return invalidDayOutcome(
+      stateResult.error.type === 'INVALID_DAY_OUTCOME_PARTICIPANTS'
+        ? 'invalid-participants'
+        : stateResult.error.type === 'MISSING_DAY_OUTCOME'
+          ? 'invalid-outcome'
+          : 'invalid-game',
+    )
+  }
+  const session = deepFreeze({
+    stage: 'day-outcome' as const,
+    game: stateResult.value.game,
+    participants: stateResult.value.participants,
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidDayOutcome('invalid-shape')
+}
+
 function restoreValidatedSetup(
   candidate: unknown,
 ): DomainResult<ValidatedGameSetup, RestorePersistedSessionV2Error> {
@@ -871,7 +976,7 @@ function restoreGame(
   if (!isUnknownRecord(candidate)) {
     return invalidDistribution('invalid-game')
   }
-  const currentKeys = [
+  const priorNeutralKeys = [
     'id',
     'phase',
     'players',
@@ -883,6 +988,14 @@ function restoreGame(
     'dayNumber',
     'doctorPreviousTargets',
   ]
+  const currentKeys = [
+    ...priorNeutralKeys,
+    'deathRecords',
+    'personalWins',
+    'executionerConversions',
+    'pendingJesterRevenges',
+    'dayOutcome',
+  ]
   const legacyKeys = [
     'id',
     'phase',
@@ -893,8 +1006,12 @@ function restoreGame(
     'doctorPreviousTargets',
   ]
   const legacyShape = options.allowLegacyGameShape && hasExactKeys(candidate, legacyKeys)
+  const priorNeutralShape =
+    !legacyShape && hasExactKeys(candidate, priorNeutralKeys) && candidate.neutralStateVersion === 1
+  const currentNeutralShape =
+    hasExactKeys(candidate, currentKeys) && candidate.neutralStateVersion === 2
   if (
-    (!hasExactKeys(candidate, currentKeys) && !legacyShape) ||
+    (!currentNeutralShape && !priorNeutralShape && !legacyShape) ||
     typeof candidate.id !== 'string' ||
     candidate.id.trim().length === 0 ||
     typeof candidate.phase !== 'string' ||
@@ -909,8 +1026,7 @@ function restoreGame(
   }
   if (
     !legacyShape &&
-    (candidate.neutralStateVersion !== 1 ||
-      !Array.isArray(candidate.executionerTargets) ||
+    (!Array.isArray(candidate.executionerTargets) ||
       (candidate.executionerBriefingStatus !== 'not-started' &&
         candidate.executionerBriefingStatus !== 'not-required' &&
         candidate.executionerBriefingStatus !== 'pending' &&
@@ -1016,6 +1132,31 @@ function restoreGame(
   const roleDefinitions = ROLE_REGISTRY.filter((role) => selectedRoleIds.has(role.id)).map(
     (role) => ({ id: role.id, name: role.name, faction: role.faction }),
   )
+  const provenNightDeaths = new Set(options.provenNightDeathPlayerIds ?? [])
+  const upgradedDeathRecords = currentNeutralShape
+    ? candidate.deathRecords
+    : players
+        .filter((player) => provenNightDeaths.has(player.playerId))
+        .map((player) => ({
+          gameId: candidate.id,
+          playerId: player.playerId,
+          roleInstanceId: player.role.instanceId,
+          cause: {
+            kind: 'night-death' as const,
+            nightNumber: candidate.nightNumber,
+          },
+        }))
+  const upgradedConversions = currentNeutralShape
+    ? candidate.executionerConversions
+    : executionerTargets
+        .filter((target) => provenNightDeaths.has(target.targetPlayerId))
+        .map((target) => ({
+          kind: 'executioner-to-jester' as const,
+          gameId: candidate.id,
+          playerId: target.executionerPlayerId,
+          roleInstanceId: target.executionerRoleInstanceId,
+          targetPlayerId: target.targetPlayerId,
+        }))
   const gameCandidate: GameStateCandidate = {
     id: gameId(candidate.id),
     phase: candidate.phase,
@@ -1033,6 +1174,11 @@ function restoreGame(
           ? 'not-started'
           : 'not-required'
       : candidate.executionerBriefingStatus,
+    deathRecords: upgradedDeathRecords,
+    personalWins: currentNeutralShape ? candidate.personalWins : [],
+    executionerConversions: upgradedConversions,
+    pendingJesterRevenges: currentNeutralShape ? candidate.pendingJesterRevenges : [],
+    dayOutcome: currentNeutralShape ? candidate.dayOutcome : null,
   }
   const result = validateGameState(gameCandidate)
   return result.ok ? succeed(deepFreeze(result.value)) : invalidDistribution('invalid-game')
@@ -1299,6 +1445,9 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
   if (!isUnknownRecord(canonical) || !isUnknownRecord(candidate)) {
     return false
   }
+  if (isCurrentNeutralStateGame(canonical) && isPriorNeutralStateGame(candidate)) {
+    return hasSameCanonicalContent(toPriorNeutralStateGame(canonical), candidate)
+  }
   const keys = Object.keys(canonical)
   const candidateKeys = Object.keys(candidate).filter(
     (key) => !isCompatibleLegacyMayorMarker(canonical, candidate, key),
@@ -1309,6 +1458,55 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
       (key) =>
         Object.hasOwn(candidate, key) && hasSameCanonicalContent(canonical[key], candidate[key]),
     )
+  )
+}
+
+function isPriorNeutralStateGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
+  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 1
+}
+
+function isCurrentNeutralStateGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
+  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 2
+}
+
+function toPriorNeutralStateGame(
+  candidate: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const phase7CFields = new Set([
+    'deathRecords',
+    'personalWins',
+    'executionerConversions',
+    'pendingJesterRevenges',
+    'dayOutcome',
+  ])
+  return {
+    ...Object.fromEntries(Object.entries(candidate).filter(([key]) => !phase7CFields.has(key))),
+    neutralStateVersion: 1,
+  }
+}
+
+function persistedGameHasDeadPlayer(candidate: unknown): boolean {
+  return (
+    isUnknownRecord(candidate) &&
+    Array.isArray(candidate.players) &&
+    candidate.players.some((player) => isUnknownRecord(player) && player.alive === false)
+  )
+}
+
+function selectDawnDeathPlayerIds(candidate: unknown): readonly string[] {
+  if (
+    !isUnknownRecord(candidate) ||
+    candidate.outcome !== 'deaths' ||
+    !Array.isArray(candidate.deaths)
+  ) {
+    return []
+  }
+  return candidate.deaths.flatMap((death) =>
+    isUnknownRecord(death) && typeof death.playerId === 'string' ? [death.playerId] : [],
   )
 }
 
@@ -1407,6 +1605,15 @@ function invalidDayDiscussion(
   >['reason'],
 ): DomainResult<never, RestorePersistedSessionV2Error> {
   return fail({ type: 'INVALID_DAY_DISCUSSION_SESSION', reason })
+}
+
+function invalidDayOutcome(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_DAY_OUTCOME_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_DAY_OUTCOME_SESSION', reason })
 }
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {

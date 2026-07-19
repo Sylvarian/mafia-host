@@ -321,7 +321,8 @@ describe('Phase 7B App integration', () => {
     expect(screen.getByText('Day 1 · Public-safe display')).toBeVisible()
     expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Role hidden')
     expect(screen.getByText('Casey').closest('li')).toHaveTextContent('Role hidden')
-    expect(screen.queryByRole('button', { name: /execute|end day/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Execute a player' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
   })
 
   it('keeps Mayor candidates private, reveals independently, and guards rapid confirmation', () => {
@@ -427,5 +428,122 @@ describe('Phase 7B App integration', () => {
     expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
       'Mayor 1 — publicly revealed',
     )
+  })
+})
+
+describe('Phase 7C App integration', () => {
+  it('guards rapid execution, saves once, and replaces editable day controls with a public summary', () => {
+    const { store } = renderLoaded(dawnSession())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    expect(store.saveCount).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Execute a player' })
+    expect(screen.getByLabelText('Local save status').parentElement).toHaveAttribute('inert')
+    expect(within(dialog).queryByText(/Mayor|Citizen|Jester|Executioner/)).toBeNull()
+    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyLiving player/ }))
+    const confirm = within(dialog).getByRole('button', { name: 'Execute Casey' })
+    act(() => {
+      confirm.click()
+      confirm.click()
+    })
+
+    expect(store.saveCount).toBe(2)
+    expect(screen.getByRole('heading', { name: 'Day 1 complete' })).toHaveFocus()
+    expect(screen.getByText('Casey was executed.')).toBeVisible()
+    expect(screen.queryByText(/Their role was/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Execute a player' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /next night|game over|revenge/i })).toBeNull()
+    expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
+      stage: 'day-outcome',
+      workflowStatus: 'day-outcome',
+      game: {
+        phase: 'execution-resolution',
+        dayOutcome: { kind: 'player-executed', dayNumber: 1 },
+      },
+    })
+  })
+
+  it('confirms no execution once without killing a player or exposing a later workflow', () => {
+    const { store } = renderLoaded(dawnSession())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'End Day 1 without an execution?',
+    })
+    const confirm = within(dialog).getByRole('button', {
+      name: 'End day without execution',
+    })
+    act(() => {
+      confirm.click()
+      confirm.click()
+    })
+
+    expect(store.saveCount).toBe(2)
+    expect(screen.getByText('No player was executed.')).toBeVisible()
+    expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
+      stage: 'day-outcome',
+      game: {
+        dayOutcome: { kind: 'no-execution', dayNumber: 1 },
+        deathRecords: [],
+        personalWins: [],
+        pendingJesterRevenges: [],
+      },
+    })
+  })
+
+  it('keeps post-day recovery generic until Continue and leaks no neutral authority', () => {
+    const store = new MemorySessionStore()
+    const active = renderLoaded(dawnSession(), store)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyLiving player/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Execute Casey' }))
+    const saved = store.lastSuccessfulEnvelope
+    if (saved === null) throw new Error('Expected saved outcome.')
+    const restored = restorePersistedSessionEnvelopeV2(JSON.parse(JSON.stringify(saved)) as unknown)
+    if (!restored.ok) throw new Error('Expected outcome restoration.')
+
+    active.unmount()
+    const title = document.title
+    const url = window.location.href
+    const logSpy = vi.spyOn(console, 'log')
+    const recovered = renderLoaded(restored.value.session)
+
+    expect(screen.getByText('Day 1 — Day complete')).toBeVisible()
+    expect(recovered.container).not.toHaveTextContent(/Morgan|Casey|Riley/)
+    expect(recovered.container.innerHTML).not.toMatch(
+      /jester|executioner|personalWins|pendingJester|role-instance|player-2/i,
+    )
+    expect(document.title).toBe(title)
+    expect(window.location.href).toBe(url)
+    expect(logSpy).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByText('Casey was executed.')).toBeVisible()
+  })
+
+  it('retains the exact completed outcome after save failure and retries without reapplying it', () => {
+    const store = new MemorySessionStore()
+    renderLoaded(dawnSession(), store)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    store.failSave = true
+    fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
+    fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
+
+    expect(screen.getByText('No player was executed.')).toBeVisible()
+    expect(screen.getByText(/Unable to save locally/)).toBeVisible()
+    const failedPayload = JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)).toBe(failedPayload)
+    expect(screen.getByText('No player was executed.')).toBeVisible()
   })
 })

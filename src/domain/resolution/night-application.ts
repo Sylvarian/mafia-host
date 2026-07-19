@@ -1,6 +1,8 @@
 import { fail, succeed, type DomainResult } from '../game/domain-result.ts'
 import type { DoctorPreviousTarget } from '../game/doctor-previous-target.ts'
+import type { DeathRecord } from '../game/death-record.ts'
 import { validateGameState } from '../game/game-invariants.ts'
+import { orderDeathRecords } from '../game/outcome-state-invariants.ts'
 import type { GameState } from '../game/game-state.ts'
 import { gameId, playerId, roleId, type PlayerId, type RoleInstanceId } from '../identifiers.ts'
 import {
@@ -10,6 +12,7 @@ import {
 } from '../night-actions/night-action.ts'
 import { transitionPhase } from '../phases/phase-machine.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
+import { addConversionsForProvenNonExecutionDeaths } from '../neutral/executioner-conversion.ts'
 import type { DawnAnnouncement, DawnDeath } from './dawn-announcement.ts'
 import type { NightApplicationError } from './night-application-errors.ts'
 import { resolveNight } from './night-resolution.ts'
@@ -87,6 +90,33 @@ export function applyResolvedNight(
       }),
     ),
   )
+  const newDeathRecords: readonly DeathRecord[] = Object.freeze(
+    validationResult.value.provisionalDeaths.map((death) => {
+      const player = validatedGame.players.find(
+        (candidate) => candidate.playerId === death.deadPlayerId,
+      )
+      if (player === undefined) {
+        throw new Error('A validated provisional death has no participating player.')
+      }
+      return Object.freeze({
+        gameId: validatedGame.id,
+        playerId: player.playerId,
+        roleInstanceId: player.role.instanceId,
+        cause: Object.freeze({
+          kind: 'night-death' as const,
+          nightNumber: validatedGame.nightNumber,
+        }),
+      })
+    }),
+  )
+  const deathRecords = orderDeathRecords(
+    [...validatedGame.deathRecords, ...newDeathRecords],
+    validatedGame.players,
+  )
+  const executionerConversions = addConversionsForProvenNonExecutionDeaths(
+    validatedGame,
+    newDeathRecords,
+  )
   const doctorPreviousTargets = buildDoctorPreviousTargets(validatedGame, validatedActions)
   const phaseResult = transitionPhase(validatedGame.phase, 'dawn-announcement')
 
@@ -99,6 +129,8 @@ export function applyResolvedNight(
     phase: phaseResult.value,
     players: updatedPlayers,
     doctorPreviousTargets,
+    deathRecords,
+    executionerConversions,
   })
 
   if (!updatedGameResult.ok) {

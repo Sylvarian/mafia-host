@@ -459,6 +459,8 @@ describe('Executioner target invariants', () => {
     const target = requireTarget(game)
 
     for (const deadPlayerId of [target.executionerPlayerId, target.targetPlayerId]) {
+      const deadPlayer = game.players.find((player) => player.playerId === deadPlayerId)
+      if (deadPlayer === undefined) throw new Error('Expected the selected dead player.')
       const result = validateGameState({
         ...game,
         phase: 'dawn-announcement',
@@ -466,6 +468,26 @@ describe('Executioner target invariants', () => {
         players: game.players.map((player) =>
           player.playerId === deadPlayerId ? { ...player, alive: false } : player,
         ),
+        deathRecords: [
+          {
+            gameId: game.id,
+            playerId: deadPlayer.playerId,
+            roleInstanceId: deadPlayer.role.instanceId,
+            cause: { kind: 'night-death', nightNumber: game.nightNumber },
+          },
+        ],
+        executionerConversions:
+          deadPlayerId === target.targetPlayerId
+            ? [
+                {
+                  kind: 'executioner-to-jester',
+                  gameId: game.id,
+                  playerId: target.executionerPlayerId,
+                  roleInstanceId: target.executionerRoleInstanceId,
+                  targetPlayerId: target.targetPlayerId,
+                },
+              ]
+            : [],
       })
 
       expect(result.ok).toBe(true)

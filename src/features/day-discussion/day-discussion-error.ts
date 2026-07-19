@@ -3,6 +3,7 @@ import type {
   ConfirmMayorRevealWorkflowError,
   MayorRevealCandidateView,
 } from '@/application/day-discussion/index.ts'
+import type { CompleteDayOutcomeWorkflowError } from '@/application/day-outcome/index.ts'
 
 export function getBeginDayDiscussionErrorMessage(error: BeginDayDiscussionWorkflowError): string {
   switch (error.type) {
@@ -18,6 +19,37 @@ export function getBeginDayDiscussionErrorMessage(error: BeginDayDiscussionWorkf
       return 'The current day and night counters are incompatible with beginning day discussion.'
     case 'INVALID_DAY_DISCUSSION_PARTICIPANTS':
       return 'The saved participant roster no longer matches the Dawn game.'
+  }
+}
+
+export function getDayOutcomeErrorMessage(error: CompleteDayOutcomeWorkflowError): string {
+  switch (error.type) {
+    case 'DAY_OUTCOME_ALREADY_RECORDED':
+      return 'The final outcome for this day has already been recorded.'
+    case 'INVALID_DAY_OUTCOME_PHASE':
+    case 'DAY_DISCUSSION_PHASE_MISMATCH':
+    case 'DAY_OUTCOME_PHASE_MISMATCH':
+      return `The final day outcome cannot be recorded while the game is in ${error.currentPhase}.`
+    case 'INVALID_EXECUTION_PLAYER_ID':
+    case 'NON_PARTICIPATING_EXECUTION_PLAYER':
+      return 'The selected execution player is invalid. No day outcome was recorded.'
+    case 'DEAD_EXECUTION_PLAYER':
+      return 'The selected player is already dead and cannot be executed.'
+    case 'INVALID_DAY_OUTCOME_COUNTERS':
+    case 'INVALID_DAY_DISCUSSION_COUNTERS':
+    case 'DAY_OUTCOME_COUNTER_MISMATCH':
+      return 'The current day and night counters are incompatible. No outcome was recorded.'
+    case 'INVALID_EXECUTION_ROLE_METADATA':
+      return 'The selected player has invalid role authority. No outcome was recorded.'
+    case 'DAY_OUTCOME_GAME_REJECTED':
+    case 'INVALID_DAY_DISCUSSION_GAME':
+    case 'INVALID_DAY_OUTCOME_GAME':
+      return 'The active game failed domain validation. No day outcome was recorded.'
+    case 'INVALID_DAY_DISCUSSION_PARTICIPANTS':
+    case 'INVALID_DAY_OUTCOME_PARTICIPANTS':
+      return 'The active participant roster no longer matches the day game.'
+    case 'MISSING_DAY_OUTCOME':
+      return 'The completed day has no final outcome.'
   }
 }
 

@@ -83,7 +83,8 @@ describe('public day discussion UI', () => {
     expect(screen.getByText(/Players handle nominations and trial voting verbally/)).toBeVisible()
     expect(screen.getByText(/More guilty than innocent means execution/)).toBeVisible()
     expect(screen.queryByRole('spinbutton')).toBeNull()
-    expect(screen.queryByRole('button', { name: /execute|end day/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Execute a player' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
     expect(container.innerHTML).not.toMatch(
       /private-player|role-instance|executionerTarget|actualRoleId|nightResolution/,
     )
@@ -257,6 +258,123 @@ describe('private Mayor reveal boundary', () => {
     expect(onConfirm).toHaveBeenCalledTimes(2)
     expect(onConfirm).toHaveBeenNthCalledWith(1, hiddenMayorId)
     expect(onConfirm).toHaveBeenNthCalledWith(2, revealedMayorId)
+  })
+})
+
+describe('private final-day boundaries', () => {
+  it('shows only living display labels and guards a deliberate execution confirmation', () => {
+    const onExecute = vi.fn(() => true)
+    const onPrivatePresentationChange = vi.fn()
+    const { container } = render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        privateExecutionCandidates={[
+          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
+          { playerId: revealedMayorId, playerDisplayLabel: 'Alex (Player 2)' },
+        ]}
+        revealError={null}
+        outcomeError={null}
+        onConfirmMayorReveal={() => true}
+        onExecutePlayer={onExecute}
+        onEndDayWithoutExecution={() => true}
+        onClearRevealError={() => undefined}
+        onClearOutcomeError={() => undefined}
+        onPrivatePresentationChange={onPrivatePresentationChange}
+      />,
+    )
+
+    const openButton = screen.getByRole('button', { name: 'Execute a player' })
+    fireEvent.click(openButton)
+    const dialog = screen.getByRole('alertdialog', { name: 'Execute a player' })
+    expect(dialog).toHaveFocus()
+    expect(container.querySelector('.day-discussion__public')).toHaveAttribute('inert')
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(2)
+    expect(within(dialog).queryByText('Taylor')).toBeNull()
+    expect(dialog).not.toHaveTextContent(/Jester|Executioner|role instance|target|revenge|win/i)
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Alex \(Player 2\)Living player/ }))
+    expect(dialog).toHaveTextContent('Execute Alex (Player 2)?')
+    expect(dialog).toHaveTextContent(
+      'This permanently records Alex (Player 2) as the player executed on Day 1. This action cannot be undone.',
+    )
+    const confirm = within(dialog).getByRole('button', {
+      name: 'Execute Alex (Player 2)',
+    })
+    act(() => {
+      confirm.click()
+      confirm.click()
+    })
+
+    expect(onExecute).toHaveBeenCalledTimes(1)
+    expect(onExecute).toHaveBeenCalledWith(revealedMayorId)
+    expect(onPrivatePresentationChange).toHaveBeenCalledWith(true)
+  })
+
+  it('cancels execution with Escape and restores focus without applying an outcome', () => {
+    const onExecute = vi.fn(() => true)
+    render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        privateExecutionCandidates={[
+          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
+        ]}
+        revealError={null}
+        outcomeError={null}
+        onConfirmMayorReveal={() => true}
+        onExecutePlayer={onExecute}
+        onEndDayWithoutExecution={() => true}
+        onClearRevealError={() => undefined}
+        onClearOutcomeError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+      />,
+    )
+
+    const openButton = screen.getByRole('button', { name: 'Execute a player' })
+    fireEvent.click(openButton)
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' })
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(openButton).toHaveFocus()
+    expect(onExecute).not.toHaveBeenCalled()
+  })
+
+  it('confirms no execution once and persists no temporary selection in the component DOM', () => {
+    const onEndDay = vi.fn(() => true)
+    const { container } = render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        privateExecutionCandidates={[
+          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
+        ]}
+        revealError={null}
+        outcomeError={null}
+        onConfirmMayorReveal={() => true}
+        onExecutePlayer={() => true}
+        onEndDayWithoutExecution={onEndDay}
+        onClearRevealError={() => undefined}
+        onClearOutcomeError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'End Day 1 without an execution?',
+    })
+    expect(dialog).toHaveTextContent('No player will be executed today.')
+    const confirm = within(dialog).getByRole('button', {
+      name: 'End day without execution',
+    })
+    act(() => {
+      confirm.click()
+      confirm.click()
+    })
+
+    expect(onEndDay).toHaveBeenCalledTimes(1)
+    expect(container.innerHTML).not.toMatch(/selectedExecutionPlayerId|operationPending/)
   })
 })
 

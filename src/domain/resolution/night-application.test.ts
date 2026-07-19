@@ -46,7 +46,7 @@ describe('night resolution application', () => {
     expect(applied.value.game.players.map((player) => player.role)).toEqual(
       fixture.game.players.map((player) => player.role),
     )
-    expect(applied.value.game).not.toHaveProperty('personalWins')
+    expect(applied.value.game.personalWins).toEqual([])
     expect(applied.value.game).not.toHaveProperty('factionWinner')
     expect(JSON.stringify(fixture.game)).toBe(originalGame)
     expect(JSON.stringify(resolution)).toBe(originalResolution)
@@ -62,7 +62,7 @@ describe('night resolution application', () => {
     })
   })
 
-  it('keeps death roles hidden when configured and preserves a legitimate prior reveal', () => {
+  it('keeps death roles hidden and rejects a forged matching-role reveal', () => {
     const fixture = createResolutionFixture(
       [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
       [1, null],
@@ -81,7 +81,7 @@ describe('night resolution application', () => {
       deaths: [{ playerId: playerId('player-2'), revealedRoleId: null }],
     })
 
-    const preRevealedGame = {
+    const forgedRevealGame = {
       ...fixture.game,
       players: fixture.game.players.map((player) =>
         player.playerId === playerId('player-2')
@@ -89,19 +89,68 @@ describe('night resolution application', () => {
           : player,
       ),
     }
-    const preRevealedBegun = beginNightResolution(
-      preRevealedGame,
-      resolution,
-      fixture.collectedActions,
+    expect(
+      beginNightResolution(forgedRevealGame, resolution, fixture.collectedActions),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE_FOR_NIGHT_APPLICATION',
+        error: {
+          type: 'INVALID_DEATH_RECORDS',
+          reason: 'public-reveal-mismatch',
+        },
+      },
+    })
+  })
+
+  it('converts every shared-target Executioner at the applied-death boundary', () => {
+    const fixture = createResolutionFixture(
+      [
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.executioner, alive: false },
+        { roleId: ROLE_IDS.citizen },
+      ],
+      [3, null, null, null],
     )
-    if (!preRevealedBegun.ok) throw new Error('Expected pre-revealed entry.')
-    const preserved = applyResolvedNight(
-      preRevealedBegun.value,
-      resolution,
-      fixture.collectedActions,
-    )
-    if (!preserved.ok) throw new Error('Expected prior reveal preservation.')
-    expect(preserved.value.game.players[1]?.publiclyRevealedRoleId).toBe(ROLE_IDS.citizen)
+    const resolution = resolveFixture(fixture)
+    const begun = beginNightResolution(fixture.game, resolution, fixture.collectedActions)
+    if (!begun.ok) throw new Error('Expected night-resolution entry.')
+    const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
+    if (!applied.ok) throw new Error('Expected shared-target conversion application.')
+
+    expect(
+      applied.value.game.executionerConversions.map((conversion) => ({
+        playerId: conversion.playerId,
+        roleInstanceId: conversion.roleInstanceId,
+        targetPlayerId: conversion.targetPlayerId,
+      })),
+    ).toEqual([
+      {
+        playerId: fixture.game.players[1]?.playerId,
+        roleInstanceId: fixture.game.players[1]?.role.instanceId,
+        targetPlayerId: fixture.game.players[3]?.playerId,
+      },
+      {
+        playerId: fixture.game.players[2]?.playerId,
+        roleInstanceId: fixture.game.players[2]?.role.instanceId,
+        targetPlayerId: fixture.game.players[3]?.playerId,
+      },
+    ])
+    expect(applied.value.game.players[1]?.alive).toBe(true)
+    expect(applied.value.game.players[2]?.alive).toBe(false)
+    expect(applied.value.game.players[3]?.alive).toBe(false)
+    expect(applied.value.game.personalWins).toEqual([])
+    expect(applied.value.game.pendingJesterRevenges).toEqual([])
+    expect(
+      applyResolvedNight(applied.value.game, resolution, fixture.collectedActions),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_NIGHT_APPLICATION_PHASE',
+        currentPhase: 'dawn-announcement',
+      },
+    })
   })
 
   it('preserves mixed legitimate public reveals across multiple hidden-role deaths', () => {
@@ -109,7 +158,7 @@ describe('night resolution application', () => {
       [
         { roleId: ROLE_IDS.godfather },
         { roleId: ROLE_IDS.serialKiller },
-        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.mayor },
         { roleId: ROLE_IDS.citizen },
       ],
       [2, 3, null, null],
@@ -118,9 +167,10 @@ describe('night resolution application', () => {
     const resolution = resolveFixture(fixture)
     const preRevealedGame = {
       ...fixture.game,
+      dayNumber: 1,
       players: fixture.game.players.map((player) =>
         player.playerId === playerId('player-3')
-          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.citizen }
+          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
           : player,
       ),
     }
@@ -133,7 +183,7 @@ describe('night resolution application', () => {
       outcome: 'deaths',
       nightNumber: fixture.game.nightNumber,
       deaths: [
-        { playerId: playerId('player-3'), revealedRoleId: ROLE_IDS.citizen },
+        { playerId: playerId('player-3'), revealedRoleId: ROLE_IDS.mayor },
         { playerId: playerId('player-4'), revealedRoleId: null },
       ],
     })
@@ -149,6 +199,7 @@ describe('night resolution application', () => {
     if (mayor === undefined) throw new Error('Expected Mayor.')
     const preRevealedGame = {
       ...fixture.game,
+      dayNumber: 1,
       players: fixture.game.players.map((player) =>
         player.playerId === mayor.playerId
           ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }

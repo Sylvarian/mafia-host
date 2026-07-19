@@ -6,6 +6,11 @@ import {
   type ConfirmMayorRevealWorkflowError,
 } from '@/application/day-discussion/index.ts'
 import {
+  selectDayExecutionCandidates,
+  selectPublicDayOutcomeView,
+  type CompleteDayOutcomeWorkflowError,
+} from '@/application/day-outcome/index.ts'
+import {
   selectExecutionerBriefingView,
   type CompleteExecutionerBriefingPhaseError,
   type ExecutionerBriefingError,
@@ -37,6 +42,8 @@ import {
   continueSessionNight,
   createActiveAppSession,
   createPersistedSessionEnvelopeV2,
+  endSessionDayWithoutExecution,
+  executeSessionDayPlayer,
   markAllSessionCardsDelivered,
   nextSessionExecutionerBriefing,
   prepareSessionDawn,
@@ -59,6 +66,7 @@ import {
   DayDiscussion,
   getBeginDayDiscussionErrorMessage,
 } from '@/features/day-discussion/index.ts'
+import { DayOutcomeSummary } from '@/features/day-outcome/index.ts'
 import {
   ExecutionerBriefing,
   getExecutionerBriefingErrorMessage,
@@ -124,6 +132,9 @@ export default function App({
   const [mayorRevealError, setMayorRevealError] = useState<ConfirmMayorRevealWorkflowError | null>(
     null,
   )
+  const [dayOutcomeError, setDayOutcomeError] = useState<CompleteDayOutcomeWorkflowError | null>(
+    null,
+  )
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
@@ -179,6 +190,7 @@ export default function App({
     setCompletionError(null)
     setDayTransitionErrorMessage(null)
     setMayorRevealError(null)
+    setDayOutcomeError(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
   }
@@ -489,11 +501,16 @@ export default function App({
           <DayDiscussion
             view={selectPublicDayDiscussionView(session)}
             privateMayorCandidates={selectMayorRevealCandidates(session)}
+            privateExecutionCandidates={selectDayExecutionCandidates(session)}
             revealError={mayorRevealError}
+            outcomeError={dayOutcomeError}
             onClearRevealError={() => {
               setMayorRevealError(null)
             }}
             onPrivatePresentationChange={setDayPrivatePresentationOpen}
+            onClearOutcomeError={() => {
+              setDayOutcomeError(null)
+            }}
             onConfirmMayorReveal={(selectedPlayerId) =>
               runDayOperation(() => {
                 const result = confirmSessionMayorReveal(session, selectedPlayerId)
@@ -509,6 +526,47 @@ export default function App({
                 return true
               })
             }
+            onExecutePlayer={(selectedPlayerId) =>
+              runDayOperation(() => {
+                const result = executeSessionDayPlayer(session, selectedPlayerId)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setDayOutcomeError(result.error)
+                  return false
+                }
+                clearErrors()
+                setDayPrivatePresentationOpen(false)
+                setActiveSession(result.value)
+                return true
+              })
+            }
+            onEndDayWithoutExecution={() =>
+              runDayOperation(() => {
+                const result = endSessionDayWithoutExecution(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  setDayOutcomeError(result.error)
+                  return false
+                }
+                clearErrors()
+                setDayPrivatePresentationOpen(false)
+                setActiveSession(result.value)
+                return true
+              })
+            }
+          />
+        )
+      case 'day-outcome':
+        return (
+          <DayOutcomeSummary
+            view={selectPublicDayOutcomeView({
+              game: session.game,
+              participants: session.participants,
+            })}
           />
         )
     }
@@ -662,13 +720,13 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7B · Day discussion and Mayor reveal</p>
+        <p>Phase 7C · Final day outcome and neutral consequences</p>
       </header>
 
       <main className="app-main">
         <section className="app-intro" aria-labelledby="page-heading">
           <p className="app-intro__eyebrow">Run the table safely</p>
-          <h1 id="page-heading">Set up, resolve, announce, and discuss</h1>
+          <h1 id="page-heading">Set up, resolve, announce, discuss, and conclude the day</h1>
           <p>
             This host-only app keeps one active session locally in this browser so a refresh can
             resume at the exact authoritative stage.

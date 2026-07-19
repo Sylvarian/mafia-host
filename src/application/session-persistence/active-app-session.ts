@@ -18,6 +18,12 @@ import {
   type DayDiscussionState,
 } from '../day-discussion/index.ts'
 import {
+  completeDayWithoutExecution,
+  executePlayerAndCompleteDay,
+  type CompleteDayOutcomeWorkflowError,
+  type DayOutcomeState,
+} from '../day-outcome/index.ts'
+import {
   acknowledgeExecutionerBriefing,
   createExecutionerBriefingWorkflow,
   nextExecutionerBriefing,
@@ -100,6 +106,12 @@ export type DayDiscussionAppSession = Readonly<{
   participants: readonly Player[]
 }>
 
+export type DayOutcomeAppSession = Readonly<{
+  stage: 'day-outcome'
+  game: GameState
+  participants: readonly Player[]
+}>
+
 export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
@@ -108,6 +120,7 @@ export type ActiveAppSession =
   | NightResolutionAppSession
   | DawnAppSession
   | DayDiscussionAppSession
+  | DayOutcomeAppSession
 
 export type ActiveAppSessionStage = ActiveAppSession['stage']
 
@@ -129,6 +142,8 @@ export type ActiveAppSessionOperation =
   | 'prepare-dawn'
   | 'begin-day-discussion'
   | 'confirm-mayor-reveal'
+  | 'execute-day-player'
+  | 'end-day-without-execution'
 
 export type InvalidActiveAppSessionStageError = Readonly<{
   type: 'INVALID_ACTIVE_APP_SESSION_STAGE'
@@ -146,6 +161,7 @@ export type ActiveAppSessionError =
   | NightCompletionError
   | BeginDayDiscussionWorkflowError
   | ConfirmMayorRevealWorkflowError
+  | CompleteDayOutcomeWorkflowError
   | InvalidActiveAppSessionStageError
 
 export function createActiveAppSession(): SetupAppSession {
@@ -462,6 +478,49 @@ export function confirmSessionMayorReveal(
         }),
       )
     : result
+}
+
+export function executeSessionDayPlayer(
+  session: ActiveAppSession,
+  selectedPlayerId: PlayerId,
+): DomainResult<
+  DayOutcomeAppSession,
+  CompleteDayOutcomeWorkflowError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'day-discussion') {
+    return invalidStage('execute-day-player', session.stage)
+  }
+  const state: DayDiscussionState = {
+    game: session.game,
+    participants: session.participants,
+  }
+  const result = executePlayerAndCompleteDay(state, selectedPlayerId)
+  return result.ok ? succeed(toDayOutcomeSession(result.value)) : result
+}
+
+export function endSessionDayWithoutExecution(
+  session: ActiveAppSession,
+): DomainResult<
+  DayOutcomeAppSession,
+  CompleteDayOutcomeWorkflowError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'day-discussion') {
+    return invalidStage('end-day-without-execution', session.stage)
+  }
+  const state: DayDiscussionState = {
+    game: session.game,
+    participants: session.participants,
+  }
+  const result = completeDayWithoutExecution(state)
+  return result.ok ? succeed(toDayOutcomeSession(result.value)) : result
+}
+
+function toDayOutcomeSession(state: DayOutcomeState): DayOutcomeAppSession {
+  return Object.freeze({
+    stage: 'day-outcome',
+    game: state.game,
+    participants: state.participants,
+  })
 }
 
 function startFirstNightStage(

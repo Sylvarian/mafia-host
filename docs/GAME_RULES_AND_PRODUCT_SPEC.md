@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7B<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7C<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -36,20 +36,20 @@ The implemented product currently includes:
 - The first public Dawn.
 - Day 1 discussion with a public-safe living/dead roster.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
-- Browser-local refresh recovery through setup, Executioner briefing, the first Dawn, and Day 1.
+- Final Day 1 execution or no-execution recording and a public-safe post-day summary.
+- Explicit death causes, permanent neutral personal wins, pending Jester revenge creation, and
+  Executioner-to-Jester conversion after proven non-execution target death.
+- Browser-local refresh recovery through setup, Executioner briefing, the first Dawn, Day 1, and
+  its final outcome.
 
 The following rules are finalized but their gameplay is not implemented:
 
-- Executioner-to-Jester conversion.
-- Executioner personal-win awarding.
-- Jester personal wins and pending revenge.
-- Final daytime outcome controls.
-- Day execution and ending a day without execution.
+- Jester revenge victim selection and revenge death.
 - Later nights and Dawns.
 - Faction victory calculation.
 - Game-over presentation.
 
-These features are planned for Phase 7C or later. A finalized
+These features are planned for Phase 7D or later. A finalized
 rule must not be read as evidence that its feature is already available.
 
 The application does **not** initially provide:
@@ -123,17 +123,17 @@ explicit incompatible-save errors because which private information was already 
 cannot be reconstructed safely. A rejected V1 save is not silently deleted. A safe migration writes
 V2 before removing V1 and preserves V1 if the V2 write fails.
 
-Current V2 persistence supports recovery only through the first Dawn and its resulting Day 1
-discussion. Day persistence stores only the authoritative game and participating display roster;
-the public roster and revealed-Mayor reminders are derived. Its Dawn representation requires the
-public announcement to account for every currently dead player. Before supporting later days and
-nights, persistence must distinguish:
+Current V2 persistence supports recovery through the first Dawn, its Day 1 discussion, and the
+final Day 1 outcome. Neutral-state sub-version `2` persists explicit death causes, permanent
+personal wins, conversions, pending revenge, and the singular day outcome together. Public rows,
+revealed-Mayor reminders, living execution candidates, and post-day prose remain derived. A prior
+neutral-state Dawn save can be upgraded from the exact death identities in its announcement. A
+prior Day save with any dead player and no cause evidence is rejected explicitly rather than
+inferring a cause from `alive: false`. Before supporting later days and nights, persistence must
+add a current-announcement boundary that distinguishes:
 
 - Deaths newly announced at the current Dawn.
 - Players who died on earlier nights or days.
-- Pending Jester revenge obligations.
-- Permanent Jester and Executioner personal wins.
-- Executioner conversions.
 - Current versus historical public announcements.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
@@ -439,8 +439,8 @@ Example: if the Godfather and Serial Killer both attack Alice and one unblocked 
 - If the target dies for any reason other than daytime execution, the Executioner converts into a
   Jester after that death is applied. This includes ordinary night death, a Godfather or Serial
   Killer attack, Jester revenge, and any future non-execution death mechanic.
-- Conversion does not revive the Executioner, does not retroactively grant a Jester personal win,
-  and clears the previous Executioner target.
+- Conversion does not revive the Executioner or retroactively grant a Jester personal win. The
+  previous target is no longer active, while the relationship remains historical authority.
 - Multiple Executioners with the same target convert independently after a non-execution target
   death.
 - A living or personally victorious Executioner remains Neutral, does not prevent Mafia victory,
@@ -757,10 +757,11 @@ cleared, and no faction wins. If exactly one player survives ordinary night deat
 selected and dies from revenge, leaving no faction winner. Existing personal wins remain recorded
 in both cases.
 
-The current implementation stops after structured provisional deaths and the deliberate
-first-Dawn application. Immediate investigative outcomes are cross-checked against the same shared
-mechanics used by final resolution and are not replayed. The conversion, revenge, personal-win,
-faction-win, and later-Dawn stages above are finalized rules but remain outside the implemented
+The current implementation stops after the deliberate first-Dawn application, Day 1 discussion,
+and one final day outcome. Immediate investigative outcomes are cross-checked against the same
+shared mechanics used by final resolution and are not replayed. Proven first-Dawn deaths now
+receive explicit night-death records and trigger every qualifying Executioner conversion exactly
+once. Revenge resolution, faction victory, and later-Dawn stages remain outside the implemented
 boundary.
 
 ---
@@ -781,6 +782,9 @@ eyes are open. At this boundary:
   Doctor submitted no target and records no new history.
 - Actual roles are made public only when `revealRoleOnDeath` is enabled or a legitimate public
   reveal already existed.
+- Each final death receives an explicit night-death cause.
+- Every Executioner whose target died receives one explicit permanent conversion to active Jester
+  behavior, without changing original assignment identity or reviving the owner.
 - The active game enters `dawn-announcement`.
 
 The public Dawn screen shows only:
@@ -828,7 +832,7 @@ not announced again.
 
 ## 14. Day discussion
 
-Implemented for the first daytime discussion in Phase 7B.
+Implemented for the first daytime discussion and final outcome through Phase 7C.
 
 During day discussion, the public-safe screen shows every player with:
 
@@ -841,21 +845,24 @@ During day discussion, the public-safe screen shows every player with:
 Available controls:
 
 - Deliberately confirm a Mayor's verbal public reveal.
+- Execute a living participating player.
+- End the day without execution.
 
 Opening the Mayor control crosses a deliberate host-only privacy boundary and lists only living,
 unrevealed Mayor players. The public view never receives hidden assignments, factions, Executioner
 targets, or night state. Multiple Mayor copies reveal independently. The existing
 `publiclyRevealedRoleId` field is the only Mayor-reveal authority.
 
-Phase 7B provides no final daytime-outcome control. **Execute a player** and **End day without
-execution** belong to Phase 7C.
+Both final controls use deliberate private host-only confirmations. The execution candidate list
+contains only living duplicate-safe player labels and no roles, factions, targets, personal
+effects, or revenge information. Dialog state and temporary selection are not persisted.
 
 ---
 
 ## 15. Trial, voting, and execution
 
-Rules finalized. Verbal trial guidance is shown in Phase 7B; final outcome recording and
-consequences are planned for Phase 7C.
+Rules finalized. Verbal trial guidance and final outcome recording are implemented through Phase
+7C.
 
 Any number of trials may occur during a day. Players manage nominations, discussion, and voting
 verbally, while the host counts votes manually. A nomination requires a majority, but the host is
@@ -879,9 +886,8 @@ The app does not record:
 - Vote totals.
 - Majority calculations.
 
-In Phase 7C, the host will record only the final outcome by selecting **Execute a player** or **End
-day without execution**. Phase 7B deliberately exposes neither control and provides no app-managed
-trial or vote-counting workflow.
+The host records only the final outcome by selecting **Execute a player** or **End day without
+execution**. There is no app-managed trial or vote-counting workflow.
 
 ### 15.1 Daytime execution timing
 
@@ -893,8 +899,8 @@ Executing a player immediately ends the day. The authoritative order is:
 4. If the executed player was a Jester:
    - Award that Jester's permanent personal win.
    - Create a pending revenge obligation without selecting a victim.
-5. If the executed player was an Executioner target and the death was not a valid execution for
-   some relevant Executioner, apply conversions as appropriate.
+5. Preserve conversions already caused by proven non-execution deaths; the execution itself
+   creates no conversion.
 6. Check faction victory unless pending revenge blocks it.
 7. If no faction victory exists, proceed toward the next night.
 
@@ -907,11 +913,17 @@ publicly revealed. Personal-win and victory effects are evaluated immediately af
 death and its consequences. If executing a Jester creates pending revenge, every faction victory is
 blocked and play proceeds toward the next night.
 
+Phase 7C atomically implements steps 1 through 5, records one immutable `DayOutcome`, transitions
+to `execution-resolution`, and stops. It does not perform steps 6 or 7. The post-day summary shows
+only the public outcome and an authorized role reveal; personal wins, conversions, and pending
+revenge remain private.
+
 ---
 
 ## 16. Win conditions
 
-Rule finalized; implementation planned for the Phase 7 delivery sequence.
+Personal-win recording is implemented in Phase 7C. Faction victory and game-over presentation
+remain planned for Phase 7D.
 
 Personal wins are permanent records attached to the winning player/role instance. They do not end
 the main game and may coexist with other personal wins and a later Town, Mafia, or Serial Killer
@@ -1177,8 +1189,10 @@ Minimum scenarios:
 
 R-001 through R-012 are finalized and authoritative. Phase 7A implements the target eligibility,
 assignment, and private-briefing portion of R-008. Phase 7B implements first-day discussion and
-voluntary Mayor reveal only. R-006 through R-012 personal effects, execution consequences, revenge,
-victory, and later-loop gameplay remain unimplemented.
+voluntary Mayor reveal. Phase 7C implements the final day outcome, execution consequences,
+permanent Jester and Executioner personal wins, pending-revenge creation, and proven
+non-execution-death conversions. Revenge resolution, faction victory, and later-loop gameplay
+remain unimplemented.
 
 ### R-001 — Mutual killing disabled
 
@@ -1256,7 +1270,8 @@ personal wins remain recorded.
 - Conversion occurs after the relevant death is applied.
 - The converted player remains alive or dead according to their own state; conversion does not
   revive anyone.
-- Their previous Executioner target is no longer active after conversion.
+- Their previous Executioner target is no longer active after conversion, while the relationship
+  remains stored as historical authority.
 - They follow normal Jester rules from that point onward.
 - Conversion does not retroactively grant a Jester personal win.
 - Multiple Executioners with the same target convert independently if that target dies through a
@@ -1298,8 +1313,7 @@ personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-010 — Day discussion, trials, voting, and execution
 
-**Status: Finalized. Phase 7B implements discussion guidance only; final outcome controls and
-execution remain planned for Phase 7C.**
+**Status: Finalized and implemented through the final Day 1 outcome in Phase 7C.**
 
 - Any number of trials may occur during a day.
 - Trial nominations and votes are managed verbally by the players and manually by the host.
@@ -1307,14 +1321,14 @@ execution remain planned for Phase 7C.**
 - Trial verdict options are guilty and innocent.
 - A player is executed when guilty votes exceed innocent votes.
 - A tie means innocent.
-- In Phase 7C, the app will record only the final outcome and will not record nomination attempts,
+- The app records only the final outcome and does not record nomination attempts,
   voters, trial count, individual votes, vote totals, or majority calculations.
-- Phase 7C will provide **Execute a player** and **End day without execution**.
+- Phase 7C provides **Execute a player** and **End day without execution**.
 - The host may end the day without an execution.
 - Executing a player immediately ends the day.
 - An execution uses `revealRoleOnDeath` for public role reveal.
-- Victory and personal-win effects are evaluated immediately after the execution death and its
-  consequences.
+- Phase 7C records personal-win effects immediately after the execution death and its
+  consequences; Phase 7D will evaluate faction victory.
 - If executing a Jester creates pending revenge, faction victory remains blocked and play proceeds
   toward the next night.
 

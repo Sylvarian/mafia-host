@@ -100,7 +100,8 @@ export function SessionRecovery(props: SessionRecoveryProps) {
         <h2 id="session-recovery-heading">Saved game found</h2>
         <div className="session-recovery__summary">
           <strong>
-            {summary.stage === 'Day discussion' && summary.dayNumber !== null
+            {(summary.stage === 'Day discussion' || summary.stage === 'Day complete') &&
+            summary.dayNumber !== null
               ? `Day ${String(summary.dayNumber)} — ${summary.stage}`
               : summary.nightNumber === null
                 ? summary.stage
@@ -244,6 +245,7 @@ function getRecoveryHeading(error: LoadPersistedSessionError): string {
     case 'UNSUPPORTED_SCHEMA_VERSION':
     case 'LEGACY_IN_PROGRESS_NIGHT_INCOMPATIBLE':
     case 'STALE_OLD_PRIVATE_RESULT_WORKFLOW':
+    case 'PERSISTENCE_COMPATIBILITY_FAILURE':
       return 'This saved game was created by an incompatible workflow version.'
     default:
       return 'The saved game could not be restored.'
@@ -262,6 +264,8 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
       return 'This older save was captured during night actions. It cannot be migrated without guessing which private results were already revealed.'
     case 'STALE_OLD_PRIVATE_RESULT_WORKFLOW':
       return 'This older save contains the removed end-of-night private-result replay and cannot be migrated safely.'
+    case 'PERSISTENCE_COMPATIBILITY_FAILURE':
+      return 'This older day save contains a death without enough evidence to prove its cause. It cannot be upgraded without guessing.'
     case 'V2_WRITE_FAILURE_AFTER_MIGRATION':
       return 'The older save was valid, but the upgraded V2 save could not be written. The older save was not removed.'
     case 'LEGACY_REMOVAL_FAILURE_AFTER_MIGRATION':
@@ -280,6 +284,7 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
     case 'INVALID_NIGHT_RESOLUTION_SESSION':
     case 'INVALID_DAWN_SESSION':
     case 'INVALID_DAY_DISCUSSION_SESSION':
+    case 'INVALID_DAY_OUTCOME_SESSION':
     case 'STAGE_PHASE_MISMATCH':
     case 'MULTIPLE_AUTHORITATIVE_GAMES':
       return 'The local save appears to be damaged or incomplete.'

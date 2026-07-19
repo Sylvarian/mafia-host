@@ -2,6 +2,7 @@ import type { PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
 import type { InvalidGameSettingError } from './game-settings.ts'
 import type { ExecutionerTargetInvariantError } from '../executioner/executioner-target-errors.ts'
+import type { OutcomeStateInvariantError } from './outcome-state-invariants.ts'
 
 export type InvalidPhaseTransitionError = Readonly<{
   type: 'INVALID_PHASE_TRANSITION'
@@ -171,6 +172,7 @@ export type GameInvariantError =
   | InvalidPublicRoleRevealError
   | DoctorPreviousTargetInvariantError
   | ExecutionerTargetInvariantError
+  | OutcomeStateInvariantError
   | InvalidGameStateError
 
 export type CreateGameError =

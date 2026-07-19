@@ -82,7 +82,8 @@ export function createNightFixture(
         ordinal,
       },
       alive: role.alive ?? true,
-      publiclyRevealedRoleId: null,
+      publiclyRevealedRoleId:
+        role.alive === false && settings.revealRoleOnDeath ? role.roleId : null,
     }
   })
   const selectedRoleIds = new Set(roles.map((role) => role.roleId))
@@ -120,6 +121,38 @@ export function createNightFixture(
           },
         ]
   })
+  const requiresFinalDeathAuthority = phase !== 'role-distribution'
+  const deathRecords = requiresFinalDeathAuthority
+    ? players.flatMap((player) =>
+        player.alive
+          ? []
+          : [
+              {
+                gameId: fixtureGameId,
+                playerId: player.playerId,
+                roleInstanceId: player.role.instanceId,
+                cause: {
+                  kind: 'night-death' as const,
+                  nightNumber: Math.max(1, options.nightNumber ?? 1),
+                },
+              },
+            ],
+      )
+    : []
+  const deadPlayerIds = new Set(deathRecords.map((record) => record.playerId))
+  const executionerConversions = executionerTargets.flatMap((target) =>
+    deadPlayerIds.has(target.targetPlayerId)
+      ? [
+          {
+            kind: 'executioner-to-jester' as const,
+            gameId: fixtureGameId,
+            playerId: target.executionerPlayerId,
+            roleInstanceId: target.executionerRoleInstanceId,
+            targetPlayerId: target.targetPlayerId,
+          },
+        ]
+      : [],
+  )
   const game: GameState = {
     id: fixtureGameId,
     phase,
@@ -139,6 +172,11 @@ export function createNightFixture(
             ? 'pending'
             : 'completed'
           : 'not-required'),
+    deathRecords,
+    personalWins: [],
+    executionerConversions,
+    pendingJesterRevenges: [],
+    dayOutcome: null,
   }
   const roleCounts = ROLE_REGISTRY.map((role) => ({
     roleId: role.id,

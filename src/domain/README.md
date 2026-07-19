@@ -34,7 +34,9 @@ night-application boundary explicitly enters `night-resolution`, revalidates the
 the completed action batch, applies provisional deaths and configured public role reveals once,
 records every Doctor's submitted target even if the Doctor or target is killed, builds a public-safe Dawn
 model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, and
-Executioner targets and performs no neutral or faction outcome calculation.
+Executioner targets. Phase 7C extends this same final-death boundary with explicit night-death
+records and qualifying Executioner conversions, but still performs no personal-win or faction
+outcome calculation.
 
 Phase 7A adds an explicit immutable `ExecutionerTarget` relationship keyed by game, Executioner
 player, Executioner role instance, and target player. Final distribution uses the injected
@@ -64,3 +66,18 @@ sets `publiclyRevealedRoleId` to the canonical Mayor role and changes nothing el
 revealed Mayor returns a structured error. `GamePlayer` has no second Mayor-reveal authority, so
 ordinary death reveal can expose a dead Mayor without being confused with a voluntary living
 action, and a prior public reveal remains intact when death reveal is disabled.
+
+Phase 7C adds narrow explicit authority rather than a generic event or effect engine:
+`DeathRecord` distinguishes night death, day execution, and the future Jester-revenge cause;
+`DayOutcome` records exactly one executed player or no execution; personal-win records cover only
+executed Jesters and Executioners whose target was executed; pending revenge identifies only the
+executed Jester and remains victim-free; and an `ExecutionerToJesterConversion` retains stable
+owner, role-instance, and historical target identity.
+
+The day-execution and no-execution operations validate the complete game, apply every consequence
+immutably, revalidate the result, and enter `execution-resolution` atomically. Execution preserves
+prior Mayor reveal, applies `revealRoleOnDeath`, awards all shared-target Executioners regardless
+of owner alive/dead state, and creates one Jester win/revenge where applicable. Proven
+non-execution deaths convert all affected Executioners exactly once. Selectors derive active
+Jester behavior without changing the immutable original Executioner assignment. Revenge
+resolution, faction victory, game over, and the next night remain outside the domain boundary.

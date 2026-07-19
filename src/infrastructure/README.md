@@ -10,8 +10,8 @@ injected random source exactly once per Executioner target; Phase 7A.1 bulk deli
 selection, sequential outcomes, restoration, and migration consume no randomness.
 
 `BrowserGameSessionStore` and the browser clock implement the Phase 6.5 transport contracts.
-`mafia-host:active-session:v2` remains the only current authority; Phase 7B adds a compatible
-first-day stage without changing the transport or key. The V1 key remains solely for narrow
+`mafia-host:active-session:v2` remains the only current authority; Phase 7C adds explicit
+neutral-state and post-day fields without changing the transport or key. The V1 key remains solely for narrow
 application-owned migration. The adapter reads V2 first. If absent, it passes untrusted V1 JSON to
 the injected migrator, validates the returned V2 through the injected restorer, writes V2, and only
 then removes V1. A failed migration or V2 write leaves V1 untouched. A failed legacy-key removal
@@ -23,3 +23,8 @@ unavailable/read/write/quota/clear failures, browser time, and no console loggin
 validate game rules, rebuild workflows, import application implementations, or import feature
 code. Parsed JSON crosses a narrow contract as untrusted input; canonical validation and migration
 semantics remain in the application layer.
+
+Execution/no-execution completion produces one ordinary application save. Dialog state, temporary
+selection, derived summaries, focus, and operation guards never reach the adapter. A save failure
+retains the exact completed in-memory session, and retry transports that same canonical payload
+without reapplying domain consequences.

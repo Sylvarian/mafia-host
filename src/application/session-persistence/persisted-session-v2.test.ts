@@ -7,6 +7,10 @@ import {
   selectPublicDayDiscussionView,
 } from '@/application/day-discussion/index.ts'
 import {
+  completeDayWithoutExecution,
+  executePlayerAndCompleteDay,
+} from '@/application/day-outcome/index.ts'
+import {
   beginFinalNightResolution,
   prepareDawnAnnouncement,
 } from '@/application/night-completion/index.ts'
@@ -18,7 +22,10 @@ import {
   type ActiveNightActionCollectionWorkflow,
 } from '@/application/night-actions/index.ts'
 import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
-import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
+import {
+  createNightFixture,
+  nightFixturePlayerId,
+} from '../../../tests/support/night-action-fixtures.ts'
 import {
   createActiveAppSession,
   type ActiveAppSession,
@@ -163,6 +170,54 @@ function createDaySession(revealIndexes: readonly number[] = []): ActiveAppSessi
     stage: 'day-discussion',
     game: state.game,
     participants: state.participants,
+  }
+}
+
+function createDayOutcomeSession(
+  kind: 'execution' | 'no-execution',
+  roles: Parameters<typeof createNightFixture>[0] = [
+    { roleId: ROLE_IDS.citizen, name: 'Public player' },
+    { roleId: ROLE_IDS.godfather, name: 'Private player' },
+  ],
+): ActiveAppSession {
+  const fixture = createNightFixture(roles, {
+    phase: 'day-discussion',
+    nightNumber: 1,
+  })
+  const state = {
+    game: { ...fixture.game, dayNumber: 1 },
+    participants: fixture.participants,
+  }
+  const result =
+    kind === 'no-execution'
+      ? completeDayWithoutExecution(state)
+      : executePlayerAndCompleteDay(
+          state,
+          state.game.players[0]?.playerId ??
+            fixture.participants[0]?.id ??
+            nightFixturePlayerId('missing-player'),
+        )
+  if (!result.ok) throw new Error(`Expected day outcome: ${result.error.type}`)
+  return {
+    stage: 'day-outcome',
+    game: result.value.game,
+    participants: result.value.participants,
+  }
+}
+
+function toPriorNeutralGame(
+  game: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const phase7CFields = new Set([
+    'deathRecords',
+    'personalWins',
+    'executionerConversions',
+    'pendingJesterRevenges',
+    'dayOutcome',
+  ])
+  return {
+    ...Object.fromEntries(Object.entries(game).filter(([key]) => !phase7CFields.has(key))),
+    neutralStateVersion: 1,
   }
 }
 
@@ -582,5 +637,305 @@ describe('persisted Phase 7B day discussion V2', () => {
     expect(JSON.stringify(toPersistedAppSessionV2(restored.value.session))).not.toContain(
       'mayorRevealed',
     )
+  })
+})
+
+describe('persisted Phase 7C final day outcome V2', () => {
+  it.each(['execution', 'no-execution'] as const)(
+    'round-trips the exact %s result without temporary UI or later-stage authority',
+    (kind) => {
+      const session = createDayOutcomeSession(kind)
+      const persisted = toPersistedAppSessionV2(session)
+      const restored = roundTrip(session)
+
+      expect(restored).toEqual(session)
+      expect(persisted).toMatchObject({
+        stage: 'day-outcome',
+        workflowStatus: 'day-outcome',
+        game: {
+          neutralStateVersion: 2,
+          phase: 'execution-resolution',
+        },
+      })
+      expect(JSON.stringify(persisted)).not.toMatch(
+        /dialogOpen|selectedExecution|operationPending|eligibleCandidates|summaryProse|winner|nextNight/,
+      )
+    },
+  )
+
+  it('round-trips a permanent Jester win and victim-free pending revenge', () => {
+    const session = createDayOutcomeSession('execution', [
+      { roleId: ROLE_IDS.jester, name: 'Public player' },
+      { roleId: ROLE_IDS.godfather, name: 'Private player' },
+      { roleId: ROLE_IDS.citizen, name: 'Town player' },
+    ])
+    const restored = roundTrip(session)
+
+    expect(restored).toEqual(session)
+    if (restored.stage !== 'day-outcome') throw new Error('Expected day outcome.')
+    expect(restored.game.personalWins).toHaveLength(1)
+    expect(restored.game.pendingJesterRevenges).toHaveLength(1)
+    expect(restored.game.pendingJesterRevenges[0]).not.toHaveProperty('victimPlayerId')
+  })
+
+  it('rejects partial fields, duplicate wins, and stale private day state', () => {
+    const session = createDayOutcomeSession('execution', [
+      { roleId: ROLE_IDS.jester },
+      { roleId: ROLE_IDS.godfather },
+      { roleId: ROLE_IDS.citizen },
+    ])
+    const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
+    if (envelope.session.stage !== 'day-outcome') throw new Error('Expected persisted outcome.')
+    const partialGame = Object.fromEntries(
+      Object.entries(envelope.session.game).filter(([key]) => key !== 'personalWins'),
+    )
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: { ...envelope.session, game: partialGame },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_DAY_OUTCOME_SESSION', reason: 'invalid-game' },
+    })
+
+    const win = envelope.session.game.personalWins[0]
+    if (win === undefined) throw new Error('Expected persisted Jester win.')
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          game: {
+            ...envelope.session.game,
+            personalWins: [...envelope.session.game.personalWins, win],
+          },
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_DAY_OUTCOME_SESSION', reason: 'invalid-game' },
+    })
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: { ...envelope.session, selectedExecutionPlayerId: 'player-1' },
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_OUTCOME_SESSION',
+        reason: 'contains-stale-day-data',
+      },
+    })
+  })
+
+  it('rejects a forged post-day session outside the Phase 7C Day 1 boundary', () => {
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(createDayOutcomeSession('no-execution'), SAVED_AT),
+      ),
+    ) as {
+      session: {
+        game: {
+          nightNumber: number
+          dayNumber: number
+          dayOutcome: { dayNumber: number }
+        }
+      }
+    }
+    envelope.session.game.nightNumber = 2
+    envelope.session.game.dayNumber = 2
+    envelope.session.game.dayOutcome.dayNumber = 2
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_OUTCOME_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+  })
+
+  it('rejects a matching hidden-role reveal in day and post-day saves', () => {
+    const dayEnvelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: {
+        game: { players: { publiclyRevealedRoleId: string | null }[] }
+      }
+    }
+    const hiddenCitizen = dayEnvelope.session.game.players[1]
+    if (hiddenCitizen === undefined) throw new Error('Expected hidden Citizen.')
+    hiddenCitizen.publiclyRevealedRoleId = ROLE_IDS.citizen
+    expect(restorePersistedSessionEnvelopeV2(dayEnvelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+
+    const deadMayorFixture = createNightFixture(
+      [{ roleId: ROLE_IDS.mayor, alive: false }, { roleId: ROLE_IDS.godfather }],
+      { phase: 'day-discussion', nightNumber: 1 },
+    )
+    const deadMayorEnvelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(
+          {
+            stage: 'day-discussion',
+            game: { ...deadMayorFixture.game, dayNumber: 1 },
+            participants: deadMayorFixture.participants,
+          },
+          SAVED_AT,
+        ),
+      ),
+    ) as {
+      session: {
+        game: { players: { publiclyRevealedRoleId: string | null }[] }
+      }
+    }
+    const deadMayor = deadMayorEnvelope.session.game.players[0]
+    if (deadMayor === undefined) throw new Error('Expected dead Mayor.')
+    deadMayor.publiclyRevealedRoleId = ROLE_IDS.mayor
+    expect(restorePersistedSessionEnvelopeV2(deadMayorEnvelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_DISCUSSION_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+
+    const postDayEnvelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(
+          createDayOutcomeSession('execution', [
+            { roleId: ROLE_IDS.jester },
+            { roleId: ROLE_IDS.godfather },
+            { roleId: ROLE_IDS.citizen },
+          ]),
+          SAVED_AT,
+        ),
+      ),
+    ) as {
+      session: {
+        game: { players: { publiclyRevealedRoleId: string | null }[] }
+      }
+    }
+    const hiddenJester = postDayEnvelope.session.game.players[0]
+    if (hiddenJester === undefined) throw new Error('Expected hidden Jester.')
+    hiddenJester.publiclyRevealedRoleId = ROLE_IDS.jester
+    expect(restorePersistedSessionEnvelopeV2(postDayEnvelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_DAY_OUTCOME_SESSION',
+        reason: 'invalid-game',
+      },
+    })
+  })
+
+  it('upgrades an all-alive prior-neutral day save but fails closed on unexplained deaths', () => {
+    const currentDayEnvelope = createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)
+    if (currentDayEnvelope.session.stage !== 'day-discussion') {
+      throw new Error('Expected persisted day discussion.')
+    }
+    const priorDayEnvelope = {
+      ...currentDayEnvelope,
+      session: {
+        ...currentDayEnvelope.session,
+        game: toPriorNeutralGame(currentDayEnvelope.session.game),
+      },
+    }
+    const compatible = restorePersistedSessionEnvelopeV2(priorDayEnvelope)
+    expect(compatible.ok).toBe(true)
+    if (!compatible.ok) throw new Error('Expected compatible prior-neutral day save.')
+    expect(toPersistedAppSessionV2(compatible.value.session)).toMatchObject({
+      stage: 'day-discussion',
+      game: {
+        neutralStateVersion: 2,
+        deathRecords: [],
+        personalWins: [],
+        executionerConversions: [],
+        pendingJesterRevenges: [],
+        dayOutcome: null,
+      },
+    })
+
+    const deadFixture = createNightFixture(
+      [{ roleId: ROLE_IDS.citizen, alive: false }, { roleId: ROLE_IDS.godfather }],
+      { phase: 'day-discussion', nightNumber: 1 },
+    )
+    const deadSession: ActiveAppSession = {
+      stage: 'day-discussion',
+      game: { ...deadFixture.game, dayNumber: 1 },
+      participants: deadFixture.participants,
+    }
+    const deadEnvelope = createPersistedSessionEnvelopeV2(deadSession, SAVED_AT)
+    if (deadEnvelope.session.stage !== 'day-discussion') {
+      throw new Error('Expected dead-player day save.')
+    }
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...deadEnvelope,
+        session: {
+          ...deadEnvelope.session,
+          game: toPriorNeutralGame(deadEnvelope.session.game),
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'PERSISTENCE_COMPATIBILITY_FAILURE',
+        reason: 'legacy-day-death-cause-unavailable',
+      },
+    })
+  })
+
+  it('uses a prior-neutral Dawn announcement as exact night-death conversion evidence', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.citizen, alive: false },
+        { roleId: ROLE_IDS.godfather },
+      ],
+      { phase: 'dawn-announcement', nightNumber: 1 },
+    )
+    const deadTarget = fixture.game.players[1]
+    if (deadTarget === undefined) throw new Error('Expected dead target.')
+    const session: ActiveAppSession = {
+      stage: 'dawn',
+      workflow: {
+        status: 'dawn',
+        game: fixture.game,
+        participants: fixture.participants,
+        dawnAnnouncement: {
+          outcome: 'deaths',
+          nightNumber: 1,
+          deaths: [
+            {
+              playerId: deadTarget.playerId,
+              revealedRoleId: deadTarget.publiclyRevealedRoleId,
+            },
+          ],
+        },
+      },
+    }
+    const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
+    if (envelope.session.stage !== 'dawn') throw new Error('Expected Dawn save.')
+
+    const result = restorePersistedSessionEnvelopeV2({
+      ...envelope,
+      session: {
+        ...envelope.session,
+        game: toPriorNeutralGame(envelope.session.game),
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(`Expected Dawn upgrade: ${result.error.type}`)
+    if (result.value.session.stage !== 'dawn') throw new Error('Expected restored Dawn.')
+    expect(result.value.session.workflow.game.deathRecords).toHaveLength(1)
+    expect(result.value.session.workflow.game.executionerConversions).toHaveLength(1)
   })
 })

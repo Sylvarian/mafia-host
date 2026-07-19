@@ -40,7 +40,8 @@ Dawn applies the retained batch and resolution exactly once and drops all privat
 action/resolution material. It never advances to day discussion or evaluates a winner.
 
 `session-persistence` owns the cross-phase `ActiveAppSession`. Exactly one setup, distribution,
-Executioner-briefing, sequential-night, night-resolution, or Dawn workflow is authoritative.
+Executioner-briefing, sequential-night, night-resolution, Dawn, day-discussion, or day-outcome
+stage is authoritative.
 Completing the sequential workflow atomically creates final night resolution; preparing Dawn
 atomically creates the public-only Dawn session.
 
@@ -56,6 +57,12 @@ selector contains only player IDs and stable labels for living unrevealed Mayors
 role-instance ordinal then roster position. It is consumed only inside the deliberate host privacy
 boundary.
 
+Phase 7C adds `day-outcome`. Its living execution-candidate selector exposes only stable player IDs
+and duplicate-safe labels. Its public selector exposes only Day number, executed-player label, and
+an authorized role reveal, or no execution. The execute/no-execution use cases call one pure domain
+operation and replace editable Day authority atomically; no Dawn/night authority, temporary
+dialog state, winner, revenge victim, or next-night workflow survives or is created.
+
 The slice defines schema V2, envelope validation, stage-specific restoration, canonical
 reconstruction, deep freezing, public-safe summaries, and narrow V1 migration. V2 persists
 canonical sequential records, current immediate outcome and acknowledgement state, and the final
@@ -69,9 +76,13 @@ randomness. Safe V1 setup, distribution, Executioner briefing, and valid first-D
 to V2. Old in-progress night-action and private-result-replay saves fail closed because revealed
 information cannot be reconstructed without guessing. No generic migration framework exists.
 
-The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. Phase 7B
-compatibly extends V2 with the exact first-day stage and derives all public rows. New saves omit
+The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. Phase 7C
+extends V2 with neutral-state sub-version `2` and an exact post-day stage. It persists death causes,
+personal wins, conversions, pending revenge, and the day outcome together while deriving all
+candidate and summary views. Prior neutral-state saves receive empty defaults only where
+unambiguous; Dawn announcements can prove their deaths, while a prior Day save with an unexplained
+dead player returns an explicit compatibility failure. New saves omit
 the obsolete `mayorRevealed` value; restoration narrowly accepts its former generated `false`
-value for earlier V2 compatibility. It is never domain authority. Recovery remains limited to the
-first Dawn and Day 1. Phase 7E must deliberately distinguish current from historical deaths and
+value for earlier V2 compatibility. It is never domain authority. Recovery remains limited through
+the final Day 1 outcome. Phase 7E must deliberately distinguish current from historical
 announcements before later nights are added.

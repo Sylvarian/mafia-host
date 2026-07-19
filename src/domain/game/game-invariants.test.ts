@@ -523,7 +523,7 @@ describe('game invariants', () => {
     })
   })
 
-  it('requires an existing public reveal to match the immutable assigned role', () => {
+  it('requires an existing public reveal to match the assignment and have reveal authority', () => {
     const created = createGame(validInput())
     if (!created.ok) {
       throw new Error('Expected the test game to be valid.')
@@ -553,7 +553,14 @@ describe('game invariants', () => {
         players: created.value.players.map((player) =>
           player.playerId === aliceId ? { ...player, publiclyRevealedRoleId: citizenId } : player,
         ),
-      }).ok,
-    ).toBe(true)
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_DEATH_RECORDS',
+        reason: 'public-reveal-mismatch',
+        playerId: aliceId,
+      },
+    })
   })
 })

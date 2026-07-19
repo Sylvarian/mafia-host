@@ -21,6 +21,7 @@ import type {
   GameState,
   GameStateCandidate,
 } from './game-state.ts'
+import { copyAndValidateOutcomeState } from './outcome-state-invariants.ts'
 
 export function createGame(input: CreateGameInput): DomainResult<GameState, CreateGameError> {
   const rosterResult = validateRosterAssignments(input.roster, input.players)
@@ -40,6 +41,11 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     doctorPreviousTargets: [],
     executionerTargets: [],
     executionerBriefingStatus: 'not-started',
+    deathRecords: [],
+    personalWins: [],
+    executionerConversions: [],
+    pendingJesterRevenges: [],
+    dayOutcome: null,
   })
 
   if (!gameResult.ok) {
@@ -136,6 +142,28 @@ export function validateGameState(
     return executionerTargetResult
   }
 
+  const outcomeStateResult = copyAndValidateOutcomeState(
+    {
+      deathRecords: candidate.deathRecords,
+      personalWins: candidate.personalWins,
+      executionerConversions: candidate.executionerConversions,
+      pendingJesterRevenges: candidate.pendingJesterRevenges,
+      dayOutcome: candidate.dayOutcome,
+    },
+    {
+      gameId: candidate.id,
+      phase: candidate.phase,
+      players: playerResult.value,
+      executionerTargets: executionerTargetResult.value,
+      nightNumber: candidate.nightNumber,
+      dayNumber: candidate.dayNumber,
+      revealRoleOnDeath: settingsResult.value.revealRoleOnDeath,
+    },
+  )
+  if (!outcomeStateResult.ok) {
+    return outcomeStateResult
+  }
+
   return succeed({
     id: candidate.id,
     phase: candidate.phase,
@@ -147,6 +175,11 @@ export function validateGameState(
     doctorPreviousTargets: doctorHistoryResult.value,
     executionerTargets: executionerTargetResult.value,
     executionerBriefingStatus,
+    deathRecords: outcomeStateResult.value.deathRecords,
+    personalWins: outcomeStateResult.value.personalWins,
+    executionerConversions: outcomeStateResult.value.executionerConversions,
+    pendingJesterRevenges: outcomeStateResult.value.pendingJesterRevenges,
+    dayOutcome: outcomeStateResult.value.dayOutcome,
   })
 }
 

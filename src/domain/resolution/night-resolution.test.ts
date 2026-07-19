@@ -682,7 +682,7 @@ describe('night-resolution revalidation and scope boundary', () => {
     expect(fixture.game.phase).toBe('night-action-collection')
     expect(fixture.game.players.every((player) => player.alive)).toBe(true)
     expect(fixture.game.executionerTargets).toEqual([])
-    expect(fixture.game).not.toHaveProperty('personalWins')
+    expect(fixture.game.personalWins).toEqual([])
 
     expect(Object.keys(result).sort()).toEqual(
       [

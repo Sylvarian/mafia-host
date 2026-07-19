@@ -10,7 +10,7 @@ const ALLOWED_PHASE_TRANSITIONS: Readonly<Record<GamePhase, readonly GamePhase[]
   'night-action-collection': ['night-resolution'],
   'night-resolution': ['dawn-announcement'],
   'dawn-announcement': ['day-discussion', 'game-over'],
-  'day-discussion': ['trial', 'night-action-collection'],
+  'day-discussion': ['trial', 'execution-resolution', 'night-action-collection'],
   trial: ['trial-voting'],
   'trial-voting': ['execution-resolution', 'day-discussion'],
   'execution-resolution': ['night-action-collection', 'game-over'],

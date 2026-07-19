@@ -52,7 +52,7 @@ export type PersistedGameV2 = Readonly<{
     alive: boolean
     publiclyRevealedRoleId: string | null
   }>[]
-  neutralStateVersion: 1
+  neutralStateVersion: 2
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
   executionerTargets: readonly Readonly<{
     gameId: string
@@ -68,6 +68,63 @@ export type PersistedGameV2 = Readonly<{
     targetPlayerId: string
     nightNumber: number
   }>[]
+  deathRecords: readonly Readonly<{
+    gameId: string
+    playerId: string
+    roleInstanceId: string
+    cause:
+      | Readonly<{ kind: 'night-death'; nightNumber: number }>
+      | Readonly<{ kind: 'day-execution'; dayNumber: number }>
+      | Readonly<{
+          kind: 'jester-revenge'
+          nightNumber: number
+          jesterRoleInstanceId: string
+        }>
+  }>[]
+  personalWins: readonly (
+    | Readonly<{
+        kind: 'jester-executed'
+        gameId: string
+        playerId: string
+        roleInstanceId: string
+        dayNumber: number
+      }>
+    | Readonly<{
+        kind: 'executioner-target-executed'
+        gameId: string
+        playerId: string
+        roleInstanceId: string
+        targetPlayerId: string
+        dayNumber: number
+      }>
+  )[]
+  executionerConversions: readonly Readonly<{
+    kind: 'executioner-to-jester'
+    gameId: string
+    playerId: string
+    roleInstanceId: string
+    targetPlayerId: string
+  }>[]
+  pendingJesterRevenges: readonly Readonly<{
+    gameId: string
+    jesterPlayerId: string
+    jesterRoleInstanceId: string
+    triggeredOnDay: number
+    status: 'pending'
+  }>[]
+  dayOutcome:
+    | Readonly<{
+        kind: 'player-executed'
+        gameId: string
+        dayNumber: number
+        playerId: string
+      }>
+    | Readonly<{
+        kind: 'no-execution'
+        gameId: string
+        dayNumber: number
+      }>
+    | null
 }>
 
 export type PersistedSubmittedNightActionV2 = Readonly<{
@@ -290,6 +347,12 @@ export type PersistedAppSessionV2 =
       game: PersistedGameV2
       participants: readonly PersistedPlayerV2[]
     }>
+  | Readonly<{
+      stage: 'day-outcome'
+      workflowStatus: 'day-outcome'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+    }>
 
 export type PersistedSessionEnvelopeV2 = Readonly<{
   schemaVersion: 2
@@ -314,6 +377,7 @@ export type SessionStageSummary = Readonly<{
     | 'Night resolution'
     | 'Dawn announcement'
     | 'Day discussion'
+    | 'Day complete'
   playerCount: number
   nightNumber: number | null
   dayNumber: number | null
@@ -415,6 +479,13 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
         game: copyGame(session.game),
         participants: session.participants.map(copyPlayer),
       })
+    case 'day-outcome':
+      return deepFreeze({
+        stage: 'day-outcome',
+        workflowStatus: 'day-outcome',
+        game: copyGame(session.game),
+        participants: session.participants.map(copyPlayer),
+      })
   }
 }
 
@@ -509,6 +580,13 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
       })
+    case 'day-outcome':
+      return Object.freeze({
+        stage: 'Day complete',
+        playerCount: session.game.players.length,
+        nightNumber: session.game.nightNumber,
+        dayNumber: session.game.dayNumber,
+      })
   }
 }
 
@@ -543,13 +621,21 @@ function copyGame(game: GameState): PersistedGameV2 {
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
     })),
-    neutralStateVersion: 1,
+    neutralStateVersion: 2,
     executionerBriefingStatus: game.executionerBriefingStatus,
     executionerTargets: game.executionerTargets.map((target) => ({ ...target })),
     settings: copySettings(game.settings),
     nightNumber: game.nightNumber,
     dayNumber: game.dayNumber,
     doctorPreviousTargets: game.doctorPreviousTargets.map((entry) => ({ ...entry })),
+    deathRecords: game.deathRecords.map((record) => ({
+      ...record,
+      cause: { ...record.cause },
+    })),
+    personalWins: game.personalWins.map((record) => ({ ...record })),
+    executionerConversions: game.executionerConversions.map((record) => ({ ...record })),
+    pendingJesterRevenges: game.pendingJesterRevenges.map((record) => ({ ...record })),
+    dayOutcome: game.dayOutcome === null ? null : { ...game.dayOutcome },
   }
 }
 

@@ -14,20 +14,14 @@ import {
 
 function createDawnWorkflow(
   roles: Parameters<typeof createNightFixture>[0],
-  revealedIndexes: readonly number[] = [],
+  revealRoleOnDeath = false,
 ): DawnWorkflow {
   const fixture = createNightFixture(roles, {
     phase: 'dawn-announcement',
     nightNumber: 1,
+    settings: { revealRoleOnDeath },
   })
-  const game: GameState = {
-    ...fixture.game,
-    players: fixture.game.players.map((player, index) =>
-      revealedIndexes.includes(index)
-        ? { ...player, publiclyRevealedRoleId: player.role.roleId }
-        : player,
-    ),
-  }
+  const game: GameState = fixture.game
   const deaths = game.players
     .filter((player) => !player.alive)
     .map((player) => ({
@@ -48,10 +42,19 @@ function createDawnWorkflow(
 function createDayState(
   roles: Parameters<typeof createNightFixture>[0],
   revealedIndexes: readonly number[] = [],
+  revealRoleOnDeath = false,
 ): DayDiscussionState {
-  const result = createDayDiscussionState(createDawnWorkflow(roles, revealedIndexes))
+  const result = createDayDiscussionState(createDawnWorkflow(roles, revealRoleOnDeath))
   if (!result.ok) throw new Error(`Expected day state: ${result.error.type}`)
-  return result.value
+  let state = result.value
+  for (const revealIndex of revealedIndexes) {
+    const mayor = state.game.players[revealIndex]
+    if (mayor === undefined) throw new Error('Expected selected Mayor.')
+    const revealResult = confirmMayorRevealDuringDay(state, mayor.playerId)
+    if (!revealResult.ok) throw new Error(`Expected Mayor reveal: ${revealResult.error.type}`)
+    state = revealResult.value
+  }
+  return state
 }
 
 describe('day discussion application boundary', () => {
@@ -113,11 +116,12 @@ describe('public day view', () => {
       [
         { roleId: ROLE_IDS.mayor, name: 'Hidden Mayor' },
         { roleId: ROLE_IDS.mayor, name: 'Public Mayor' },
-        { roleId: ROLE_IDS.citizen, name: 'Public Citizen' },
+        { roleId: ROLE_IDS.citizen, name: 'Hidden Citizen' },
         { roleId: ROLE_IDS.doctor, name: 'Dead Doctor', alive: false },
-        { roleId: ROLE_IDS.jester, name: 'Dead Hidden', alive: false },
+        { roleId: ROLE_IDS.jester, name: 'Dead Jester', alive: false },
       ],
-      [1, 2, 3],
+      [1],
+      true,
     )
     const view = selectPublicDayDiscussionView(state)
 
@@ -145,9 +149,9 @@ describe('public day view', () => {
       },
       {
         playerId: state.game.players[2]?.playerId,
-        playerDisplayLabel: 'Public Citizen',
+        playerDisplayLabel: 'Hidden Citizen',
         status: 'alive',
-        publicRoleDisplayName: 'Citizen',
+        publicRoleDisplayName: null,
         publiclyRevealedMayor: false,
         hasThreeVoteReminder: false,
       },
@@ -163,9 +167,9 @@ describe('public day view', () => {
       },
       {
         playerId: state.game.players[4]?.playerId,
-        playerDisplayLabel: 'Dead Hidden',
+        playerDisplayLabel: 'Dead Jester',
         status: 'dead',
-        publicRoleDisplayName: null,
+        publicRoleDisplayName: 'Jester',
         publiclyRevealedMayor: false,
         hasThreeVoteReminder: false,
       },

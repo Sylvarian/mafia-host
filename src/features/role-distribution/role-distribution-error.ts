@@ -73,6 +73,16 @@ function getActiveGameRejectionMessage(error: ActiveGameRejection): string {
       return `The active game assigned role instance ${error.roleInstanceId} more than once.`
     case 'DUPLICATE_ROLE_DEFINITION':
       return `The active game contains duplicate role definition ${error.roleId}.`
+    case 'INVALID_DEATH_RECORDS':
+      return 'The active game contains invalid or incomplete death authority.'
+    case 'INVALID_EXECUTIONER_CONVERSIONS':
+      return 'The active game contains invalid Executioner conversion authority.'
+    case 'INVALID_PERSONAL_WINS':
+      return 'The active game contains invalid personal-win authority.'
+    case 'INVALID_PENDING_JESTER_REVENGES':
+      return 'The active game contains invalid pending Jester-revenge authority.'
+    case 'INVALID_DAY_OUTCOME':
+      return 'The active game contains an invalid final day outcome.'
     case 'NO_PARTICIPATING_PLAYERS':
       return 'The active game requires at least one participating player.'
     case 'MISSING_ROLE_ASSIGNMENT':

@@ -159,25 +159,7 @@ const counterTransitionCases = [
   { fromPhase: 'trial', toPhase: 'trial-voting', nightDelta: 0, dayDelta: 0 },
   {
     fromPhase: 'trial-voting',
-    toPhase: 'execution-resolution',
-    nightDelta: 0,
-    dayDelta: 0,
-  },
-  {
-    fromPhase: 'trial-voting',
     toPhase: 'day-discussion',
-    nightDelta: 0,
-    dayDelta: 0,
-  },
-  {
-    fromPhase: 'execution-resolution',
-    toPhase: 'night-action-collection',
-    nightDelta: 1,
-    dayDelta: 0,
-  },
-  {
-    fromPhase: 'execution-resolution',
-    toPhase: 'game-over',
     nightDelta: 0,
     dayDelta: 0,
   },

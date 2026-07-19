@@ -12,10 +12,12 @@ import { beginDayDiscussion, confirmMayorReveal } from './day-discussion.ts'
 function dawnGame(
   roles: Parameters<typeof createNightFixture>[0],
   publicRevealIndexes: readonly number[] = [],
+  revealRoleOnDeath = false,
 ): GameState {
   const fixture = createNightFixture(roles, {
     phase: 'dawn-announcement',
     nightNumber: 1,
+    settings: { revealRoleOnDeath },
   })
   return {
     ...fixture.game,
@@ -56,7 +58,8 @@ describe('Dawn-to-day domain transition', () => {
         { roleId: ROLE_IDS.doctor, alive: false },
         { roleId: ROLE_IDS.executioner },
       ],
-      [2],
+      [],
+      true,
     )
     const original = JSON.stringify(game)
     const result = beginDayDiscussion(game, announcementFor(game))
@@ -73,10 +76,10 @@ describe('Dawn-to-day domain transition', () => {
     expect(result.value.executionerTargets).toEqual(game.executionerTargets)
     expect(result.value.doctorPreviousTargets).toEqual(game.doctorPreviousTargets)
     expect(result.value.roleDefinitions).toEqual(game.roleDefinitions)
-    expect(result.value).not.toHaveProperty('personalWins')
+    expect(result.value.personalWins).toEqual([])
     expect(result.value).not.toHaveProperty('factionWinner')
-    expect(result.value).not.toHaveProperty('pendingJester')
-    expect(result.value).not.toHaveProperty('roleConversions')
+    expect(result.value.pendingJesterRevenges).toEqual([])
+    expect(result.value.executionerConversions).toEqual(game.executionerConversions)
     expect(result.value).not.toHaveProperty('nightWorkflow')
     expect(JSON.stringify(game)).toBe(original)
     expect(Object.isFrozen(result.value)).toBe(true)
@@ -165,8 +168,8 @@ describe('voluntary Mayor reveal domain operation', () => {
     expect(result.value.executionerTargets).toEqual(game.executionerTargets)
     expect(result.value.doctorPreviousTargets).toEqual(game.doctorPreviousTargets)
     expect(result.value.phase).toBe('day-discussion')
-    expect(result.value).not.toHaveProperty('personalWins')
-    expect(result.value).not.toHaveProperty('pendingJester')
+    expect(result.value.personalWins).toEqual([])
+    expect(result.value.pendingJesterRevenges).toEqual([])
     expect(result.value).not.toHaveProperty('winner')
     expect(JSON.stringify(game)).toBe(original)
     expect(Object.isFrozen(result.value)).toBe(true)

@@ -1,10 +1,17 @@
 import type { GameId } from '../identifiers.ts'
 import type { ExecutionerTarget } from '../executioner/executioner-target-model.ts'
+import type { DayOutcome } from '../day/day-outcome-model.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
 import type { RoleInstance } from '../roles/role-instance.ts'
+import type {
+  ExecutionerToJesterConversion,
+  PendingJesterRevenge,
+  PersonalWinRecord,
+} from '../neutral/neutral-outcome-model.ts'
+import type { DeathRecord } from './death-record.ts'
 import type { DoctorPreviousTarget } from './doctor-previous-target.ts'
 import type { DayNumber, NightNumber } from './game-records.ts'
 import type { GameSettings } from './game-settings.ts'
@@ -20,6 +27,11 @@ export type GameState = Readonly<{
   doctorPreviousTargets: readonly DoctorPreviousTarget[]
   executionerTargets: readonly ExecutionerTarget[]
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
+  deathRecords: readonly DeathRecord[]
+  personalWins: readonly PersonalWinRecord[]
+  executionerConversions: readonly ExecutionerToJesterConversion[]
+  pendingJesterRevenges: readonly PendingJesterRevenge[]
+  dayOutcome: DayOutcome | null
 }>
 
 export type GamePlayerCandidate = Readonly<
@@ -39,6 +51,11 @@ export type GameStateCandidate = Readonly<
     | 'doctorPreviousTargets'
     | 'executionerTargets'
     | 'executionerBriefingStatus'
+    | 'deathRecords'
+    | 'personalWins'
+    | 'executionerConversions'
+    | 'pendingJesterRevenges'
+    | 'dayOutcome'
   > & {
     phase: string
     players: readonly GamePlayerCandidate[]
@@ -48,6 +65,11 @@ export type GameStateCandidate = Readonly<
     doctorPreviousTargets: unknown
     executionerTargets: unknown
     executionerBriefingStatus: unknown
+    deathRecords: unknown
+    personalWins: unknown
+    executionerConversions: unknown
+    pendingJesterRevenges: unknown
+    dayOutcome: unknown
   }
 >
 
