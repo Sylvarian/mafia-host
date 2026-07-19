@@ -23,3 +23,16 @@ export type {
 } from './game-setup-validation.ts'
 export { createGameSetupWorkflow, reduceGameSetupWorkflow } from './game-setup-workflow.ts'
 export type { GameSetupWorkflowCommand, GameSetupWorkflowState } from './game-setup-workflow.ts'
+export {
+  clearRememberedPlayerNames,
+  loadRememberedPlayerNames,
+  saveRememberedPlayerNames,
+} from './remembered-player-names.ts'
+export type {
+  LoadedRememberedPlayerNames,
+  MalformedRememberedPlayerNamesError,
+  RememberedPlayerNamesRepository,
+  RememberedPlayerNamesRepositoryError,
+  RememberedPlayerNamesRepositoryLoadResult,
+  RememberedPlayerNamesRepositoryWriteResult,
+} from './remembered-player-names.ts'

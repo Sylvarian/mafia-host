@@ -166,16 +166,21 @@ export function DayDiscussion({
           ) : null}
         </aside>
 
-        <div className="day-discussion__guidance" aria-label="Day discussion guidance">
-          <p>Players handle nominations and trial voting verbally.</p>
+        <section className="day-discussion__guidance" aria-labelledby="voting-requirements-heading">
+          <h3 id="voting-requirements-heading">Voting requirements</h3>
           <p>
-            A nomination requires a majority.
-            <br />
-            More guilty than innocent means execution.
-            <br />A tie means innocent.
+            Votes to put someone on trial:{' '}
+            <strong>{view.votingRequirements.votesToPutOnTrial}</strong>
           </p>
-          <strong>Remember: each revealed Mayor counts as three votes.</strong>
-        </div>
+          <div>
+            <strong>Execution verdict:</strong>
+            <span>Guilty votes must exceed innocent votes.</span>
+            <span>A tie results in innocent.</span>
+          </div>
+          <p>
+            A revealed Mayor’s vote counts as 3. <strong>The host counts this manually.</strong>
+          </p>
+        </section>
 
         <div className="day-discussion__rosters">
           <PlayerSection
@@ -317,14 +322,13 @@ export function DayDiscussion({
                 <h3 id="private-day-dialog-heading">Execute a player</h3>
                 <p id="private-day-dialog-warning" className="mayor-reveal__warning">
                   Host-only warning: keep this selection hidden while you deliberately record the
-                  public result. Hidden roles and private consequences are not shown here.
+                  public result. Only the information needed to record the execution is shown here.
                 </p>
                 <CandidateList
                   legend="Select the living player who was executed"
                   name="execution-candidate"
                   candidates={privateExecutionCandidates}
                   selectedPlayerId={selectedExecutionPlayerId}
-                  detail="Living player"
                   onSelect={(playerId) => {
                     setSelectedExecutionPlayerId(playerId)
                     onClearOutcomeError()
@@ -335,6 +339,16 @@ export function DayDiscussion({
                 ) : (
                   <p className="mayor-reveal__confirmation-copy">
                     <strong>Execute {selectedExecution.playerDisplayLabel}?</strong>
+                    <br />
+                    Role: {selectedExecution.activeRoleDisplayName}
+                    <br />
+                    Alignment: {selectedExecution.alignmentDisplayName}
+                    {selectedExecution.originallyAssignedRoleDisplayName === null ? null : (
+                      <>
+                        <br />
+                        Originally assigned: {selectedExecution.originallyAssignedRoleDisplayName}
+                      </>
+                    )}
                     <br />
                     This permanently records {selectedExecution.playerDisplayLabel} as the player
                     executed on {view.dayLabel}. This action cannot be undone.
@@ -392,30 +406,46 @@ export function DayDiscussion({
 
 function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
   return (
-    <ul className="host-role-view__players" aria-label="Host-authoritative player roles">
-      {view.players.map((player) => (
-        <li key={player.playerDisplayLabel}>
-          <div>
-            <strong>{player.playerDisplayLabel}</strong>
-            <span>{player.status === 'alive' ? 'Alive' : 'Dead'}</span>
-          </div>
-          <div>
-            <strong>Host role: {player.activeRoleDisplayName}</strong>
-            {player.originallyAssignedRoleDisplayName === null ? null : (
-              <span>Originally assigned: {player.originallyAssignedRoleDisplayName}</span>
-            )}
-            {player.publicRole === null ? null : (
-              <span>
-                Public role: {player.publicRole.displayName}
-                {player.publicRole.status === 'publicly-revealed-mayor'
-                  ? ' — publicly revealed'
-                  : ''}
-              </span>
-            )}
-          </div>
-        </li>
+    <div className="host-role-view__groups">
+      {view.groups.map((group) => (
+        <section
+          key={group.alignment}
+          className={`host-role-group host-role-group--${group.alignment}`}
+          aria-labelledby={`host-role-${group.alignment}-heading`}
+        >
+          <h3 id={`host-role-${group.alignment}-heading`}>{group.alignmentDisplayName}</h3>
+          {group.players.length === 0 ? (
+            <p className="host-role-group__empty">No assigned players.</p>
+          ) : (
+            <ul className="host-role-view__players">
+              {group.players.map((player, playerIndex) => (
+                <li key={`${group.alignment}-${String(playerIndex)}`}>
+                  <div>
+                    <strong>{player.playerDisplayLabel}</strong>
+                    <span>{player.status === 'alive' ? 'Alive' : 'Dead'}</span>
+                  </div>
+                  <div>
+                    <strong>Host role: {player.activeRoleDisplayName}</strong>
+                    <span>Alignment: {player.alignmentDisplayName}</span>
+                    {player.originallyAssignedRoleDisplayName === null ? null : (
+                      <span>Originally assigned: {player.originallyAssignedRoleDisplayName}</span>
+                    )}
+                    {player.publicRole === null ? null : (
+                      <span>
+                        Public role: {player.publicRole.displayName}
+                        {player.publicRole.status === 'publicly-revealed-mayor'
+                          ? ' — publicly revealed'
+                          : ''}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ))}
-    </ul>
+    </div>
   )
 }
 
@@ -434,14 +464,23 @@ function getHostRoleViewErrorMessage(error: HostRoleDayViewError): string {
 type CandidateView = Readonly<{
   playerId: PlayerId
   playerDisplayLabel: string
-}>
+}> &
+  Partial<
+    Pick<
+      DayExecutionCandidateView,
+      | 'activeRoleDisplayName'
+      | 'originallyAssignedRoleDisplayName'
+      | 'alignment'
+      | 'alignmentDisplayName'
+    >
+  >
 
 type CandidateListProps = Readonly<{
   legend: string
   name: string
   candidates: readonly CandidateView[]
   selectedPlayerId: PlayerId | null
-  detail: string
+  detail?: string
   onSelect: (playerId: PlayerId) => void
 }>
 
@@ -457,7 +496,14 @@ function CandidateList({
     <fieldset className="mayor-reveal__candidates">
       <legend>{legend}</legend>
       {candidates.map((candidate, index) => (
-        <label key={candidate.playerId}>
+        <label
+          key={candidate.playerId}
+          className={
+            candidate.alignment === undefined
+              ? undefined
+              : `mayor-reveal__candidate mayor-reveal__candidate--${candidate.alignment}`
+          }
+        >
           <input
             type="radio"
             name={name}
@@ -467,7 +513,18 @@ function CandidateList({
             }}
           />
           <span>{candidate.playerDisplayLabel}</span>
-          <small>{detail}</small>
+          {candidate.activeRoleDisplayName === undefined ||
+          candidate.alignmentDisplayName === undefined ? (
+            <small>{detail}</small>
+          ) : (
+            <small>
+              {candidate.activeRoleDisplayName} · {candidate.alignmentDisplayName}
+              {candidate.originallyAssignedRoleDisplayName === null ||
+              candidate.originallyAssignedRoleDisplayName === undefined
+                ? ''
+                : ` · Originally assigned: ${candidate.originallyAssignedRoleDisplayName}`}
+            </small>
+          )}
           <span className="mayor-reveal__candidate-number" aria-hidden="true">
             {String(index + 1)}
           </span>

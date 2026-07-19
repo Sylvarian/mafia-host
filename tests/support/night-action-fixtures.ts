@@ -49,6 +49,7 @@ export function createNightFixture(
     distributionStatus?: RoleDistributionWorkflow['status']
     doctorPreviousTargets?: readonly DoctorPreviousTarget[]
     executionerBriefingStatus?: GameState['executionerBriefingStatus']
+    godfatherSuccessionStartNightNumber?: number
   }> = {},
 ): Readonly<{
   game: GameState
@@ -182,6 +183,8 @@ export function createNightFixture(
     deathRecords,
     personalWins: [],
     executionerConversions,
+    godfatherSuccessionStartNightNumber: options.godfatherSuccessionStartNightNumber ?? 2,
+    godfatherPromotions: [],
     pendingJesterRevenges: [],
     jesterRevengeResolutions: [],
     dayOutcomes: Array.from({ length: completedDayCount(phase, dayNumber) }, (_, index) => ({

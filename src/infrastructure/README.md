@@ -49,3 +49,14 @@ resolution, current public Dawn, later days, and later game over without changin
 transport. The adapter never selects or rerolls a revenge victim, derives a conversion, evaluates
 victory, or interprets history. Save failure/retry transports the same selected-victim session, so
 ordinary deaths, revenge death, conversions, and counters cannot be applied twice.
+
+Phase 7F keeps the active-session key and transport while the application writes neutral-state
+sub-version `4` for Godfather promotions and the private unacknowledged briefing. The adapter never
+chooses a successor, builds wake order, acknowledges the briefing, or interprets promotion
+history; it only transports the already-canonical payload.
+
+`BrowserRememberedPlayerNamesRepository` owns the separate
+`mafia-host:remembered-player-names:v1` key. It reads untrusted JSON and transports only string
+arrays through the application contract. It never shares or clears the active-session keys.
+Unavailable/read/write/clear failures are structured, and no error is logged to the console.
+Remembered names are browser/profile-local convenience data with no cloud or multi-tab behavior.

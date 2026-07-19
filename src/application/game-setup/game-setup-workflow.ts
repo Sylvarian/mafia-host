@@ -44,10 +44,12 @@ export type GameSetupWorkflowCommand =
   | Readonly<{ type: 'PREPARE_GAME' }>
   | Readonly<{ type: 'RETURN_TO_SETUP' }>
 
-export function createGameSetupWorkflow(): GameSetupWorkflowState {
+export function createGameSetupWorkflow(
+  rememberedPlayerNames: readonly string[] = [],
+): GameSetupWorkflowState {
   return {
     status: 'editing',
-    draft: createInitialGameSetupDraft(),
+    draft: createInitialGameSetupDraft(rememberedPlayerNames),
     editError: null,
   }
 }

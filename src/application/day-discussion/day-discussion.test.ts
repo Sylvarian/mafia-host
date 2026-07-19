@@ -3,15 +3,68 @@ import { describe, expect, it } from 'vitest'
 import type { DawnWorkflow } from '@/application/night-completion/index.ts'
 import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
+import { validateGameState } from '@/domain/game/game-invariants.ts'
 import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 import {
   confirmMayorRevealDuringDay,
   createDayDiscussionState,
   selectHostRoleDayView,
+  selectDayVotingRequirements,
   selectMayorRevealCandidates,
   selectPublicDayDiscussionView,
   type DayDiscussionState,
 } from './day-discussion.ts'
+
+describe('day voting requirements', () => {
+  it.each([
+    [10, 6],
+    [9, 5],
+    [8, 5],
+    [7, 4],
+    [6, 4],
+    [2, 2],
+    [1, 1],
+    [0, 1],
+  ])('derives %i living players as %i trial votes', (livingPlayerCount, expectedVotes) => {
+    expect(selectDayVotingRequirements(livingPlayerCount)).toEqual({
+      livingPlayerCount,
+      votesToPutOnTrial: expectedVotes,
+    })
+  })
+
+  it('excludes dead players and remains independent of one or more Mayor reveals', () => {
+    const unrevealed = createDayState([
+      { roleId: ROLE_IDS.mayor },
+      { roleId: ROLE_IDS.mayor },
+      { roleId: ROLE_IDS.citizen },
+      { roleId: ROLE_IDS.citizen, alive: false },
+      { roleId: ROLE_IDS.godfather },
+    ])
+    const firstMayor = unrevealed.game.players[0]
+    const secondMayor = unrevealed.game.players[1]
+    if (firstMayor === undefined || secondMayor === undefined) {
+      throw new Error('Expected two Mayors.')
+    }
+    const firstReveal = confirmMayorRevealDuringDay(unrevealed, firstMayor.playerId)
+    if (!firstReveal.ok) throw new Error('Expected first Mayor reveal.')
+    const secondReveal = confirmMayorRevealDuringDay(firstReveal.value, secondMayor.playerId)
+    if (!secondReveal.ok) throw new Error('Expected second Mayor reveal.')
+
+    expect(selectPublicDayDiscussionView(unrevealed).votingRequirements).toEqual({
+      livingPlayerCount: 4,
+      votesToPutOnTrial: 3,
+    })
+    expect(selectPublicDayDiscussionView(secondReveal.value).votingRequirements).toEqual({
+      livingPlayerCount: 4,
+      votesToPutOnTrial: 3,
+    })
+  })
+
+  it('rejects invalid counts without introducing voting state', () => {
+    expect(() => selectDayVotingRequirements(-1)).toThrow(RangeError)
+    expect(() => selectDayVotingRequirements(1.5)).toThrow(RangeError)
+  })
+})
 
 function createDawnWorkflow(
   roles: Parameters<typeof createNightFixture>[0],
@@ -269,6 +322,58 @@ describe('private Mayor candidate selector', () => {
 })
 
 describe('host-only day role selector', () => {
+  it('groups a promoted Mafia member as Godfather while preserving the original assignment', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.godfather, alive: false },
+        { roleId: ROLE_IDS.framer, name: 'Promoted Mafia' },
+        { roleId: ROLE_IDS.citizen },
+      ],
+      { phase: 'day-discussion', nightNumber: 2, dayNumber: 2 },
+    )
+    const originalGodfather = fixture.game.players[0]
+    const promotedPlayer = fixture.game.players[1]
+    if (originalGodfather === undefined || promotedPlayer === undefined) {
+      throw new Error('Expected promotion players.')
+    }
+    const game = validateGameState({
+      ...fixture.game,
+      deathRecords: [
+        {
+          gameId: fixture.game.id,
+          playerId: originalGodfather.playerId,
+          roleInstanceId: originalGodfather.role.instanceId,
+          cause: { kind: 'night-death' as const, nightNumber: 1 },
+        },
+      ],
+      godfatherPromotions: [
+        {
+          gameId: fixture.game.id,
+          playerId: promotedPlayer.playerId,
+          originalRoleInstanceId: promotedPlayer.role.instanceId,
+          promotedAtNightNumber: 2,
+          activeRoleId: ROLE_IDS.godfather,
+        },
+      ],
+    })
+    if (!game.ok) throw new Error(`Expected valid promotion: ${game.error.type}`)
+    const result = selectHostRoleDayView({
+      game: game.value,
+      participants: fixture.participants,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected host role view.')
+    expect(result.value.groups[0]?.players).toContainEqual(
+      expect.objectContaining({
+        playerDisplayLabel: 'Promoted Mafia',
+        activeRoleDisplayName: 'Godfather',
+        alignmentDisplayName: 'Mafia',
+        originallyAssignedRoleDisplayName: 'Framer',
+      }),
+    )
+  })
+
   it('derives every active role without exposing neutral mechanics or raw IDs', () => {
     const state = createDayState([
       { roleId: ROLE_IDS.executioner, name: 'Alex' },
@@ -280,32 +385,45 @@ describe('host-only day role selector', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected host role view.')
-    expect(result.value.players).toEqual([
+    expect(result.value.groups.map((group) => group.alignmentDisplayName)).toEqual([
+      'Mafia',
+      'Town',
+      'Neutral',
+    ])
+    expect(result.value.groups.flatMap((group) => group.players)).toEqual([
       {
-        playerDisplayLabel: 'Alex (Player 1)',
+        playerDisplayLabel: 'Alex (Player 3)',
         status: 'alive',
-        activeRoleDisplayName: 'Jester',
-        originallyAssignedRoleDisplayName: 'Executioner',
+        activeRoleDisplayName: 'Godfather',
+        alignment: 'mafia',
+        alignmentDisplayName: 'Mafia',
+        originallyAssignedRoleDisplayName: null,
         publicRole: null,
       },
       {
         playerDisplayLabel: 'Taylor',
         status: 'dead',
         activeRoleDisplayName: 'Citizen',
+        alignment: 'town',
+        alignmentDisplayName: 'Town',
         originallyAssignedRoleDisplayName: null,
         publicRole: null,
       },
       {
-        playerDisplayLabel: 'Alex (Player 3)',
+        playerDisplayLabel: 'Alex (Player 1)',
         status: 'alive',
-        activeRoleDisplayName: 'Godfather',
-        originallyAssignedRoleDisplayName: null,
+        activeRoleDisplayName: 'Jester',
+        alignment: 'neutral',
+        alignmentDisplayName: 'Neutral',
+        originallyAssignedRoleDisplayName: 'Executioner',
         publicRole: null,
       },
       {
         playerDisplayLabel: 'Dead neutral',
         status: 'dead',
         activeRoleDisplayName: 'Jester',
+        alignment: 'neutral',
+        alignmentDisplayName: 'Neutral',
         originallyAssignedRoleDisplayName: null,
         publicRole: null,
       },
@@ -325,12 +443,15 @@ describe('host-only day role selector', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected host role view.')
-    expect(result.value.players[0]).toMatchObject({
+    const executioner = result.value.groups
+      .flatMap((group) => group.players)
+      .find((player) => player.activeRoleDisplayName === 'Executioner')
+    expect(executioner).toMatchObject({
       activeRoleDisplayName: 'Executioner',
       originallyAssignedRoleDisplayName: null,
     })
-    expect(result.value.players[0]).not.toHaveProperty('targetPlayerId')
-    expect(result.value.players[0]).not.toHaveProperty('personalWins')
-    expect(result.value.players[0]).not.toHaveProperty('pendingJesterRevenges')
+    expect(executioner).not.toHaveProperty('targetPlayerId')
+    expect(executioner).not.toHaveProperty('personalWins')
+    expect(executioner).not.toHaveProperty('pendingJesterRevenges')
   })
 })

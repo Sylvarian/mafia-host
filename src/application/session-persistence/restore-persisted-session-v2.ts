@@ -23,6 +23,7 @@ import type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 import type { GamePlayer } from '@/domain/players/game-player.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_IDS, ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { validateCompleteGodfatherSuccessionHistory } from '@/domain/mafia/godfather-promotion-invariants.ts'
 import {
   createJesterRevengeResolutionId,
   createPendingJesterRevengeId,
@@ -79,6 +80,7 @@ import type {
   DawnAppSession,
   ExecutionerBriefingAppSession,
   GameOverAppSession,
+  GodfatherPromotionBriefingAppSession,
   NightResolutionAppSession,
   PendingRevengeWaitingAppSession,
   PostDayWaitingAppSession,
@@ -140,6 +142,15 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-fabricated-non-informational-outcome'
         | 'restore-position-mismatch'
         | 'stale-private-result-workflow'
+    }>
+  | Readonly<{
+      type: 'INVALID_GODFATHER_PROMOTION_BRIEFING_SESSION'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'missing-current-promotion'
+        | 'invalid-workflow'
     }>
   | Readonly<{
       type: 'INVALID_NIGHT_RESOLUTION_SESSION'
@@ -297,6 +308,10 @@ function restoreAppSession(
       return options.allowLegacyGameShape
         ? invalidSequential('invalid-shape')
         : restoreSequentialNightSession(candidate)
+    case 'godfather-promotion-briefing':
+      return options.allowLegacyGameShape
+        ? invalidGodfatherPromotionBriefing('invalid-shape')
+        : restoreGodfatherPromotionBriefingSession(candidate)
     case 'night-resolution':
       return options.allowLegacyGameShape
         ? invalidNightResolution('invalid-shape')
@@ -643,6 +658,61 @@ function restoreSequentialNightSession(
         initialResult.value,
         gameResult.value,
       )
+}
+
+function restoreGodfatherPromotionBriefingSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<GodfatherPromotionBriefingAppSession, RestorePersistedSessionV2Error> {
+  if (
+    !hasExactKeys(candidate, [
+      'stage',
+      'workflowStatus',
+      'game',
+      'participants',
+      'currentStepIndex',
+      'completedSteps',
+      'currentOutcome',
+    ]) ||
+    candidate.workflowStatus !== 'promotion-briefing' ||
+    candidate.currentStepIndex !== 0 ||
+    !Array.isArray(candidate.completedSteps) ||
+    candidate.completedSteps.length !== 0 ||
+    candidate.currentOutcome !== null
+  ) {
+    return invalidGodfatherPromotionBriefing('invalid-shape')
+  }
+
+  const sequentialCandidate = {
+    ...candidate,
+    stage: 'sequential-night',
+    workflowStatus: 'collecting',
+  }
+  const restored = restoreSequentialNightSession(sequentialCandidate)
+  if (!restored.ok) {
+    return invalidGodfatherPromotionBriefing('invalid-workflow')
+  }
+  if (
+    restored.value.stage !== 'sequential-night' ||
+    restored.value.workflow.status !== 'collecting' ||
+    restored.value.workflow.currentStepIndex !== 0 ||
+    restored.value.workflow.completedSteps.length !== 0
+  ) {
+    return invalidGodfatherPromotionBriefing('invalid-workflow')
+  }
+  const currentPromotions = restored.value.workflow.game.godfatherPromotions.filter(
+    (promotion) => promotion.promotedAtNightNumber === restored.value.workflow.game.nightNumber,
+  )
+  if (currentPromotions.length !== 1) {
+    return invalidGodfatherPromotionBriefing('missing-current-promotion')
+  }
+
+  const session = deepFreeze({
+    stage: 'godfather-promotion-briefing' as const,
+    workflow: restored.value.workflow,
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidGodfatherPromotionBriefing('invalid-shape')
 }
 
 function restoreCurrentSequentialNightProgress(
@@ -1210,7 +1280,7 @@ function restoreDawnSession(
   if (gameResult.value.nightNumber !== gameResult.value.dayNumber + 1) {
     return invalidDawn('invalid-counters')
   }
-  if (isCurrentNeutralStateGame(candidate.game)) {
+  if (isCurrentNeutralStateGame(candidate.game) || isPhase7ENeutralStateGame(candidate.game)) {
     const evaluation = evaluateFactionVictory({
       ...gameResult.value,
       phase: 'dawn-resolution',
@@ -1688,10 +1758,15 @@ function restoreGame(
     'deathRecords',
     'personalWins',
     'executionerConversions',
+    'godfatherSuccessionStartNightNumber',
+    'godfatherPromotions',
     'pendingJesterRevenges',
     'jesterRevengeResolutions',
     'dayOutcomes',
   ]
+  const phase7EKeys = currentKeys.filter(
+    (key) => key !== 'godfatherSuccessionStartNightNumber' && key !== 'godfatherPromotions',
+  )
   const legacyKeys = [
     'id',
     'phase',
@@ -1706,10 +1781,15 @@ function restoreGame(
     !legacyShape && hasExactKeys(candidate, priorNeutralKeys) && candidate.neutralStateVersion === 1
   const phase7DShape =
     !legacyShape && hasExactKeys(candidate, phase7DKeys) && candidate.neutralStateVersion === 2
+  const phase7EShape = hasExactKeys(candidate, phase7EKeys) && candidate.neutralStateVersion === 3
   const currentNeutralShape =
-    hasExactKeys(candidate, currentKeys) && candidate.neutralStateVersion === 3
+    hasExactKeys(candidate, currentKeys) && candidate.neutralStateVersion === 4
   if (
-    (!currentNeutralShape && !phase7DShape && !priorNeutralShape && !legacyShape) ||
+    (!currentNeutralShape &&
+      !phase7EShape &&
+      !phase7DShape &&
+      !priorNeutralShape &&
+      !legacyShape) ||
     typeof candidate.id !== 'string' ||
     candidate.id.trim().length === 0 ||
     typeof candidate.phase !== 'string' ||
@@ -1718,6 +1798,9 @@ function restoreGame(
     !Number.isSafeInteger(candidate.nightNumber) ||
     typeof candidate.dayNumber !== 'number' ||
     !Number.isSafeInteger(candidate.dayNumber) ||
+    (currentNeutralShape &&
+      (typeof candidate.godfatherSuccessionStartNightNumber !== 'number' ||
+        !Number.isSafeInteger(candidate.godfatherSuccessionStartNightNumber))) ||
     !Array.isArray(candidate.doctorPreviousTargets)
   ) {
     return invalidDistribution('invalid-game')
@@ -1831,7 +1914,7 @@ function restoreGame(
     (role) => ({ id: role.id, name: role.name, faction: role.faction }),
   )
   const provenNightDeaths = new Set(options.provenNightDeathPlayerIds ?? [])
-  const hasOutcomeAuthority = currentNeutralShape || phase7DShape
+  const hasOutcomeAuthority = currentNeutralShape || phase7EShape || phase7DShape
   const upgradedDeathRecords = hasOutcomeAuthority
     ? candidate.deathRecords
     : players
@@ -1876,32 +1959,45 @@ function restoreGame(
     deathRecords: upgradedDeathRecords,
     personalWins: hasOutcomeAuthority ? candidate.personalWins : [],
     executionerConversions: upgradedConversions,
-    pendingJesterRevenges: currentNeutralShape
-      ? candidate.pendingJesterRevenges
-      : phase7DShape && Array.isArray(candidate.pendingJesterRevenges)
-        ? candidate.pendingJesterRevenges.map((record: unknown): unknown =>
-            isUnknownRecord(record) &&
-            typeof record.jesterRoleInstanceId === 'string' &&
-            typeof record.triggeredOnDay === 'number'
-              ? {
-                  ...record,
-                  id: createPendingJesterRevengeId(
-                    roleInstanceId(record.jesterRoleInstanceId),
-                    record.triggeredOnDay,
-                  ),
-                }
-              : record,
-          )
-        : [],
-    jesterRevengeResolutions: currentNeutralShape ? candidate.jesterRevengeResolutions : [],
-    dayOutcomes: currentNeutralShape
-      ? candidate.dayOutcomes
-      : phase7DShape && candidate.dayOutcome !== null
-        ? [candidate.dayOutcome]
-        : [],
+    godfatherSuccessionStartNightNumber: currentNeutralShape
+      ? candidate.godfatherSuccessionStartNightNumber
+      : Math.max(2, candidate.nightNumber + 1),
+    godfatherPromotions: currentNeutralShape ? candidate.godfatherPromotions : [],
+    pendingJesterRevenges:
+      currentNeutralShape || phase7EShape
+        ? candidate.pendingJesterRevenges
+        : phase7DShape && Array.isArray(candidate.pendingJesterRevenges)
+          ? candidate.pendingJesterRevenges.map((record: unknown): unknown =>
+              isUnknownRecord(record) &&
+              typeof record.jesterRoleInstanceId === 'string' &&
+              typeof record.triggeredOnDay === 'number'
+                ? {
+                    ...record,
+                    id: createPendingJesterRevengeId(
+                      roleInstanceId(record.jesterRoleInstanceId),
+                      record.triggeredOnDay,
+                    ),
+                  }
+                : record,
+            )
+          : [],
+    jesterRevengeResolutions:
+      currentNeutralShape || phase7EShape ? candidate.jesterRevengeResolutions : [],
+    dayOutcomes:
+      currentNeutralShape || phase7EShape
+        ? candidate.dayOutcomes
+        : phase7DShape && candidate.dayOutcome !== null
+          ? [candidate.dayOutcome]
+          : [],
   }
   const result = validateGameState(gameCandidate)
-  return result.ok ? succeed(deepFreeze(result.value)) : invalidDistribution('invalid-game')
+  if (!result.ok) {
+    return invalidDistribution('invalid-game')
+  }
+  if (currentNeutralShape && !validateCompleteGodfatherSuccessionHistory(result.value).ok) {
+    return invalidDistribution('invalid-game')
+  }
+  return succeed(deepFreeze(result.value))
 }
 
 function restoreParticipants(
@@ -2102,6 +2198,9 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
   if (isCurrentNeutralStateGame(canonical) && isPhase7DNeutralStateGame(candidate)) {
     return hasSameCanonicalContent(toPhase7DNeutralStateGame(canonical), candidate)
   }
+  if (isCurrentNeutralStateGame(canonical) && isPhase7ENeutralStateGame(candidate)) {
+    return hasSameCanonicalContent(toPhase7ENeutralStateGame(canonical), candidate)
+  }
   if (isCurrentNeutralStateGame(canonical) && isPriorNeutralStateGame(candidate)) {
     return hasSameCanonicalContent(toPriorNeutralStateGame(canonical), candidate)
   }
@@ -2127,13 +2226,36 @@ function isPriorNeutralStateGame(
 function isCurrentNeutralStateGame(
   candidate: unknown,
 ): candidate is Readonly<Record<string, unknown>> {
-  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 3
+  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 4
 }
 
 function isSupportedNeutralStateGame(
   candidate: unknown,
 ): candidate is Readonly<Record<string, unknown>> {
-  return isCurrentNeutralStateGame(candidate) || isPhase7DNeutralStateGame(candidate)
+  return (
+    isCurrentNeutralStateGame(candidate) ||
+    isPhase7ENeutralStateGame(candidate) ||
+    isPhase7DNeutralStateGame(candidate)
+  )
+}
+
+function isPhase7ENeutralStateGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
+  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 3
+}
+
+function toPhase7ENeutralStateGame(
+  candidate: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(candidate).filter(
+        ([key]) => key !== 'godfatherSuccessionStartNightNumber' && key !== 'godfatherPromotions',
+      ),
+    ),
+    neutralStateVersion: 3,
+  }
 }
 
 function isPhase7DNeutralStateGame(
@@ -2156,7 +2278,11 @@ function toPhase7DNeutralStateGame(
   return {
     ...Object.fromEntries(
       Object.entries(candidate).filter(
-        ([key]) => key !== 'jesterRevengeResolutions' && key !== 'dayOutcomes',
+        ([key]) =>
+          key !== 'jesterRevengeResolutions' &&
+          key !== 'dayOutcomes' &&
+          key !== 'godfatherSuccessionStartNightNumber' &&
+          key !== 'godfatherPromotions',
       ),
     ),
     neutralStateVersion: 2,
@@ -2176,6 +2302,8 @@ function toPriorNeutralStateGame(
     'jesterRevengeResolutions',
     'dayOutcome',
     'dayOutcomes',
+    'godfatherSuccessionStartNightNumber',
+    'godfatherPromotions',
   ])
   return {
     ...Object.fromEntries(Object.entries(candidate).filter(([key]) => !phase7CFields.has(key))),
@@ -2262,6 +2390,15 @@ function invalidSequential(
   >['reason'],
 ): DomainResult<never, RestorePersistedSessionV2Error> {
   return fail({ type: 'INVALID_SEQUENTIAL_NIGHT_SESSION', reason })
+}
+
+function invalidGodfatherPromotionBriefing(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_GODFATHER_PROMOTION_BRIEFING_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_GODFATHER_PROMOTION_BRIEFING_SESSION', reason })
 }
 
 function invalidNightResolution(

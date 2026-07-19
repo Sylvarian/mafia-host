@@ -13,6 +13,7 @@ import type { Player } from '@/domain/players/player.ts'
 import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import type { Faction } from '@/domain/roles/faction.ts'
 
 import type { DawnWorkflow } from '../night-completion/index.ts'
 
@@ -65,6 +66,12 @@ export type PublicDayDiscussionView = Readonly<{
   livingPlayers: readonly PublicDayPlayerView[]
   deadPlayers: readonly PublicDayPlayerView[]
   mayorRevealAvailable: boolean
+  votingRequirements: DayVotingRequirementsView
+}>
+
+export type DayVotingRequirementsView = Readonly<{
+  livingPlayerCount: number
+  votesToPutOnTrial: number
 }>
 
 export type MayorRevealCandidateView = Readonly<{
@@ -76,6 +83,8 @@ export type HostRoleDayPlayerView = Readonly<{
   playerDisplayLabel: string
   status: 'alive' | 'dead'
   activeRoleDisplayName: string
+  alignment: Faction
+  alignmentDisplayName: 'Mafia' | 'Town' | 'Neutral'
   originallyAssignedRoleDisplayName: string | null
   publicRole: Readonly<{
     displayName: string
@@ -84,7 +93,11 @@ export type HostRoleDayPlayerView = Readonly<{
 }>
 
 export type HostRoleDayView = Readonly<{
-  players: readonly HostRoleDayPlayerView[]
+  groups: readonly Readonly<{
+    alignment: Faction
+    alignmentDisplayName: 'Mafia' | 'Town' | 'Neutral'
+    players: readonly HostRoleDayPlayerView[]
+  }>[]
 }>
 
 export type HostRoleDayViewError =
@@ -214,12 +227,24 @@ export function selectPublicDayDiscussionView(state: DayDiscussionState): Public
     })
   })
 
+  const livingPlayers = Object.freeze(rows.filter((row) => row.status === 'alive'))
   return Object.freeze({
     dayNumber: validatedState.game.dayNumber,
     dayLabel: `Day ${String(validatedState.game.dayNumber)}`,
-    livingPlayers: Object.freeze(rows.filter((row) => row.status === 'alive')),
+    livingPlayers,
     deadPlayers: Object.freeze(rows.filter((row) => row.status === 'dead')),
     mayorRevealAvailable: selectMayorRevealCandidates(validatedState).length > 0,
+    votingRequirements: selectDayVotingRequirements(livingPlayers.length),
+  })
+}
+
+export function selectDayVotingRequirements(livingPlayerCount: number): DayVotingRequirementsView {
+  if (!Number.isSafeInteger(livingPlayerCount) || livingPlayerCount < 0) {
+    throw new RangeError('Living player count must be a non-negative safe integer.')
+  }
+  return Object.freeze({
+    livingPlayerCount,
+    votesToPutOnTrial: Math.floor(livingPlayerCount / 2) + 1,
   })
 }
 
@@ -271,13 +296,7 @@ export function selectHostRoleDayView(
     const originalRole = findRoleDefinition(player.role.roleId)
     const activeRoleId = selectActiveRoleId(stateResult.value.game, player.playerId)
     const activeRole = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
-    const convertedExecutioner =
-      player.role.roleId === ROLE_IDS.executioner && activeRoleId === ROLE_IDS.jester
-    if (
-      originalRole === undefined ||
-      activeRole === undefined ||
-      (activeRoleId !== player.role.roleId && !convertedExecutioner)
-    ) {
+    if (originalRole === undefined || activeRole === undefined) {
       return fail({ type: 'INVALID_ACTIVE_DAY_ROLE', playerId: player.playerId })
     }
 
@@ -298,12 +317,16 @@ export function selectHostRoleDayView(
           player.playerId,
         ),
         status: player.alive ? ('alive' as const) : ('dead' as const),
-        activeRoleDisplayName: convertedExecutioner
-          ? activeRole.name
-          : getRoleInstanceDisplayName(player.role, activeRole),
-        originallyAssignedRoleDisplayName: convertedExecutioner
-          ? getRoleInstanceDisplayName(player.role, originalRole)
-          : null,
+        activeRoleDisplayName:
+          activeRoleId === player.role.roleId
+            ? getRoleInstanceDisplayName(player.role, activeRole)
+            : activeRole.name,
+        alignment: activeRole.faction,
+        alignmentDisplayName: formatAlignment(activeRole.faction),
+        originallyAssignedRoleDisplayName:
+          activeRoleId === player.role.roleId
+            ? null
+            : getRoleInstanceDisplayName(player.role, originalRole),
         publicRole:
           publicRole === undefined
             ? null
@@ -320,7 +343,30 @@ export function selectHostRoleDayView(
     )
   }
 
-  return succeed(Object.freeze({ players: Object.freeze(rows) }))
+  return succeed(
+    Object.freeze({
+      groups: Object.freeze(
+        (['mafia', 'town', 'neutral'] as const).map((alignment) =>
+          Object.freeze({
+            alignment,
+            alignmentDisplayName: formatAlignment(alignment),
+            players: Object.freeze(rows.filter((row) => row.alignment === alignment)),
+          }),
+        ),
+      ),
+    }),
+  )
+}
+
+function formatAlignment(faction: Faction): 'Mafia' | 'Town' | 'Neutral' {
+  switch (faction) {
+    case 'mafia':
+      return 'Mafia'
+    case 'town':
+      return 'Town'
+    case 'neutral':
+      return 'Neutral'
+  }
 }
 
 function requireValidDayDiscussionState(state: DayDiscussionState): DayDiscussionState {

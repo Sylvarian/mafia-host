@@ -48,6 +48,10 @@ function publicView(overrides: Partial<PublicDayDiscussionView> = {}): PublicDay
       },
     ],
     mayorRevealAvailable: true,
+    votingRequirements: {
+      livingPlayerCount: 2,
+      votesToPutOnTrial: 2,
+    },
     ...overrides,
   }
 }
@@ -58,6 +62,17 @@ const candidates: readonly MayorRevealCandidateView[] = [
     playerDisplayLabel: 'Alex (Player 1)',
   },
 ]
+
+function executionCandidate(playerId: typeof hiddenMayorId, playerDisplayLabel: string) {
+  return {
+    playerId,
+    playerDisplayLabel,
+    activeRoleDisplayName: 'Citizen',
+    originallyAssignedRoleDisplayName: null,
+    alignment: 'town' as const,
+    alignmentDisplayName: 'Town' as const,
+  }
+}
 
 describe('public day discussion UI', () => {
   it('focuses the day heading and renders semantic living/dead public-safe rosters', () => {
@@ -81,8 +96,10 @@ describe('public day discussion UI', () => {
     expect(living).toHaveTextContent('Mayor 2 — publicly revealed')
     expect(living).toHaveTextContent('Mayor revealed — this player counts as 3 votes.')
     expect(dead).toHaveTextContent('TaylorDeadRole not revealed')
-    expect(screen.getByText(/Players handle nominations and trial voting verbally/)).toBeVisible()
-    expect(screen.getByText(/More guilty than innocent means execution/)).toBeVisible()
+    expect(screen.getByText(/Votes to put someone on trial:/)).toHaveTextContent('2')
+    expect(screen.getByText('Guilty votes must exceed innocent votes.')).toBeVisible()
+    expect(screen.getByText('A tie results in innocent.')).toBeVisible()
+    expect(screen.getByText(/The host counts this manually/)).toBeVisible()
     expect(screen.queryByRole('spinbutton')).toBeNull()
     expect(screen.getByRole('button', { name: 'Execute a player' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
@@ -131,20 +148,41 @@ describe('public day discussion UI', () => {
 describe('temporary host-only role view', () => {
   it('constructs roles only when requested, warns clearly, and removes them when hidden', () => {
     const hostView: HostRoleDayView = {
-      players: [
+      groups: [
         {
-          playerDisplayLabel: 'Alex (Player 1)',
-          status: 'alive',
-          activeRoleDisplayName: 'Jester',
-          originallyAssignedRoleDisplayName: 'Executioner',
-          publicRole: null,
+          alignment: 'mafia',
+          alignmentDisplayName: 'Mafia',
+          players: [],
         },
         {
-          playerDisplayLabel: 'Taylor',
-          status: 'dead',
-          activeRoleDisplayName: 'Doctor',
-          originallyAssignedRoleDisplayName: null,
-          publicRole: { displayName: 'Doctor', status: 'revealed-on-death' },
+          alignment: 'town',
+          alignmentDisplayName: 'Town',
+          players: [
+            {
+              playerDisplayLabel: 'Taylor',
+              status: 'dead',
+              activeRoleDisplayName: 'Doctor',
+              alignment: 'town',
+              alignmentDisplayName: 'Town',
+              originallyAssignedRoleDisplayName: null,
+              publicRole: { displayName: 'Doctor', status: 'revealed-on-death' },
+            },
+          ],
+        },
+        {
+          alignment: 'neutral',
+          alignmentDisplayName: 'Neutral',
+          players: [
+            {
+              playerDisplayLabel: 'Alex (Player 1)',
+              status: 'alive',
+              activeRoleDisplayName: 'Jester',
+              alignment: 'neutral',
+              alignmentDisplayName: 'Neutral',
+              originallyAssignedRoleDisplayName: 'Executioner',
+              publicRole: null,
+            },
+          ],
         },
       ],
     }
@@ -333,8 +371,8 @@ describe('private final-day boundaries', () => {
         view={publicView()}
         privateMayorCandidates={candidates}
         privateExecutionCandidates={[
-          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
-          { playerId: revealedMayorId, playerDisplayLabel: 'Alex (Player 2)' },
+          executionCandidate(hiddenMayorId, 'Alex (Player 1)'),
+          executionCandidate(revealedMayorId, 'Alex (Player 2)'),
         ]}
         revealError={null}
         outcomeError={null}
@@ -354,10 +392,13 @@ describe('private final-day boundaries', () => {
     expect(container.querySelector('.day-discussion__public')).toHaveAttribute('inert')
     expect(within(dialog).getAllByRole('radio')).toHaveLength(2)
     expect(within(dialog).queryByText('Taylor')).toBeNull()
-    expect(dialog).not.toHaveTextContent(/Jester|Executioner|role instance|target|revenge|win/i)
+    expect(dialog).toHaveTextContent('Citizen · Town')
+    expect(dialog).not.toHaveTextContent(/role instance|target|revenge|personal win/i)
 
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Alex \(Player 2\)Living player/ }))
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Alex \(Player 2\)Citizen · Town/ }))
     expect(dialog).toHaveTextContent('Execute Alex (Player 2)?')
+    expect(dialog).toHaveTextContent('Role: Citizen')
+    expect(dialog).toHaveTextContent('Alignment: Town')
     expect(dialog).toHaveTextContent(
       'This permanently records Alex (Player 2) as the player executed on Day 1. This action cannot be undone.',
     )
@@ -380,9 +421,7 @@ describe('private final-day boundaries', () => {
       <DayDiscussion
         view={publicView()}
         privateMayorCandidates={candidates}
-        privateExecutionCandidates={[
-          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
-        ]}
+        privateExecutionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
         revealError={null}
         outcomeError={null}
         onConfirmMayorReveal={() => true}
@@ -409,9 +448,7 @@ describe('private final-day boundaries', () => {
       <DayDiscussion
         view={publicView()}
         privateMayorCandidates={candidates}
-        privateExecutionCandidates={[
-          { playerId: hiddenMayorId, playerDisplayLabel: 'Alex (Player 1)' },
-        ]}
+        privateExecutionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
         revealError={null}
         outcomeError={null}
         onConfirmMayorReveal={() => true}

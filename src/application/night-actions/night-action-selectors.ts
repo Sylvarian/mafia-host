@@ -2,6 +2,7 @@ import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
 import type { Faction } from '@/domain/roles/faction.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 
 import {
   validateCurrentNightActionTarget,
@@ -115,7 +116,8 @@ export function selectCurrentNightStepView(
   if (actor === undefined || participant === undefined) {
     throw new Error(`Night actor ${step.actorPlayerId} is missing from the active game.`)
   }
-  const role = findRoleDefinition(actor.role.roleId)
+  const activeRoleId = selectRequiredActiveRoleId(workflow.game, actor.playerId)
+  const role = findRoleDefinition(activeRoleId)
   if (role === undefined || !role.nightAction.hasNightAction) {
     throw new Error(`Night actor ${step.actorPlayerId} has no collection metadata.`)
   }
@@ -126,7 +128,8 @@ export function selectCurrentNightStepView(
     actorPlayerId: actor.playerId,
     actorDisplayLabel: selectPlayerDisplayLabel(workflow.participants, actor.playerId),
     actorRoleInstanceId: actor.role.instanceId,
-    roleDisplayName: getRoleInstanceDisplayName(actor.role, role),
+    roleDisplayName:
+      activeRoleId === actor.role.roleId ? getRoleInstanceDisplayName(actor.role, role) : role.name,
     faction: role.faction,
     factionLabel: formatFaction(role.faction),
     hostPrompt: role.nightAction.hostPrompt,
@@ -139,7 +142,8 @@ export function selectCurrentNightStepView(
         : 'advance-directly',
     targetOptions: Object.freeze(
       workflow.game.players.map((target) => {
-        const targetRole = findRoleDefinition(target.role.roleId)
+        const targetActiveRoleId = selectRequiredActiveRoleId(workflow.game, target.playerId)
+        const targetRole = findRoleDefinition(targetActiveRoleId)
         if (targetRole === undefined) {
           throw new Error(`Target ${target.playerId} has an unknown role.`)
         }
@@ -148,7 +152,10 @@ export function selectCurrentNightStepView(
         return Object.freeze({
           playerId: target.playerId,
           playerDisplayLabel: selectPlayerDisplayLabel(workflow.participants, target.playerId),
-          roleDisplayName: getRoleInstanceDisplayName(target.role, targetRole),
+          roleDisplayName:
+            targetActiveRoleId === target.role.roleId
+              ? getRoleInstanceDisplayName(target.role, targetRole)
+              : targetRole.name,
           faction: targetRole.faction,
           factionLabel: formatFaction(targetRole.faction),
           alive: target.alive,
@@ -170,7 +177,8 @@ export function selectImmediateNightOutcomeView(
   if (actor === undefined || actor.playerId !== outcome.actorPlayerId) {
     throw new Error('The current immediate outcome actor is unavailable.')
   }
-  const role = findRoleDefinition(actor.role.roleId)
+  const activeRoleId = selectRequiredActiveRoleId(workflow.game, actor.playerId)
+  const role = findRoleDefinition(activeRoleId)
   if (role === undefined || role.id !== outcome.actorRoleId) {
     throw new Error('The current immediate outcome role is unavailable.')
   }
@@ -180,7 +188,8 @@ export function selectImmediateNightOutcomeView(
     actorPlayerId: actor.playerId,
     actorDisplayLabel: selectPlayerDisplayLabel(workflow.participants, actor.playerId),
     actorRoleInstanceId: actor.role.instanceId,
-    roleDisplayName: getRoleInstanceDisplayName(actor.role, role),
+    roleDisplayName:
+      activeRoleId === actor.role.roleId ? getRoleInstanceDisplayName(actor.role, role) : role.name,
     faction: role.faction,
     factionLabel: formatFaction(role.faction),
   })
@@ -231,7 +240,8 @@ function selectMafiaMember(
   if (gamePlayer === undefined) {
     throw new Error(`Mafia overview player ${playerId} is missing from the active game.`)
   }
-  const role = findRoleDefinition(gamePlayer.role.roleId)
+  const activeRoleId = selectRequiredActiveRoleId(workflow.game, gamePlayer.playerId)
+  const role = findRoleDefinition(activeRoleId)
   if (role === undefined || role.faction !== 'mafia') {
     throw new Error(`Mafia overview player ${playerId} does not have a Mafia role.`)
   }
@@ -239,8 +249,22 @@ function selectMafiaMember(
   return Object.freeze({
     playerId,
     playerDisplayLabel: selectPlayerDisplayLabel(workflow.participants, playerId),
-    roleDisplayName: getRoleInstanceDisplayName(gamePlayer.role, role),
+    roleDisplayName:
+      activeRoleId === gamePlayer.role.roleId
+        ? getRoleInstanceDisplayName(gamePlayer.role, role)
+        : role.name,
   })
+}
+
+function selectRequiredActiveRoleId(
+  game: CollectingNightActionsWorkflow['game'],
+  selectedPlayerId: PlayerId,
+) {
+  const activeRoleId = selectActiveRoleId(game, selectedPlayerId)
+  if (activeRoleId === null) {
+    throw new Error('A validated night player has no active role.')
+  }
+  return activeRoleId
 }
 
 function selectPlayerDisplayLabel(

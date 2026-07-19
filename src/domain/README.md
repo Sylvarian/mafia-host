@@ -122,3 +122,19 @@ explicit no-survivor resolution without drawing randomness. Victory is evaluated
 due obligation is cleared, then the game enters current `dawn-announcement` or `game-over`.
 Multiple simultaneous obligations are rejected because their ordering is not defined by the
 one-execution-per-day rules. No generic effect queue or role-mutation framework was added.
+
+Phase 7F adds `mafia/godfather-promotion-model` and the focused succession rule. On a validated
+transition into Night 2 or later, one injected random sample selects from canonical living active
+Mafia candidates only when no living active Godfather exists. The immutable promotion record keeps
+game, player, original role-instance, and night identity; it stores no name or display metadata.
+Active-role derivation now composes Executioner-to-Jester conversion with Mafia-to-Godfather
+promotion and rejects contradictory transformations. Original assignment never mutates.
+
+Promotion invariants validate exact record shape, game/player/role ownership, Mafia eligibility,
+alive-at-start timing, Night 2+ timing, absence of a prior living Godfather, unique owner/night,
+canonical history order, and complete succession history from the game's explicit enforcement
+start night. New games use Night 2; upgraded saves may use a later cutover chosen by the
+application compatibility boundary. Wake order and every night mechanic use active roles, so
+promoted Framers and Consorts lose those abilities immediately and act only as Godfather. Sheriff
+and permanent investigation groups likewise inspect active Godfather authority. Death reveal and
+faction-victory disclosure remain governed by their existing original/public rules.

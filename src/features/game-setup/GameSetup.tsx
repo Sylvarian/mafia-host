@@ -26,16 +26,22 @@ type GameSetupProps = Readonly<{
   workflow: GameSetupWorkflowState
   editError: GameSetupEditError | null
   assignmentErrorMessage: string | null
+  rememberedNamesExist: boolean
+  rememberedNamesMessage: string | null
   onCommand: (command: GameSetupWorkflowCommand) => void
   onAssignRoles: () => void
+  onClearRememberedNames: () => void
 }>
 
 export function GameSetup({
   workflow,
   editError,
   assignmentErrorMessage,
+  rememberedNamesExist,
+  rememberedNamesMessage,
   onCommand,
   onAssignRoles,
+  onClearRememberedNames,
 }: GameSetupProps) {
   if (workflow.status === 'ready') {
     return (
@@ -64,6 +70,33 @@ export function GameSetup({
 
   return (
     <div className="game-setup">
+      {rememberedNamesExist || rememberedNamesMessage !== null ? (
+        <section className="remembered-names" aria-labelledby="remembered-player-names-heading">
+          <div>
+            <p className="section-kicker">Local convenience</p>
+            <h2 id="remembered-player-names-heading">Remembered player names</h2>
+            <p>
+              Names are stored only in this browser profile. Roles and previous game state are never
+              included.
+            </p>
+          </div>
+          {rememberedNamesExist ? (
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={onClearRememberedNames}
+            >
+              Clear remembered names
+            </button>
+          ) : null}
+          {rememberedNamesMessage === null ? null : (
+            <p className="remembered-names__status" role="status">
+              {rememberedNamesMessage}
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <PlayerRoster
         players={workflow.draft.roster}
         participatingPlayerCount={getParticipatingPlayerCount(workflow.draft)}

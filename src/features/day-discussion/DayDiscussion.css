@@ -81,6 +81,49 @@
   list-style: none;
 }
 
+.host-role-view__groups {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.host-role-group {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--surface-soft);
+}
+
+.host-role-group--mafia {
+  border-color: var(--mafia);
+  background: var(--faction-mafia-soft);
+}
+
+.host-role-group--town {
+  border-color: var(--town);
+  background: var(--faction-town-soft);
+}
+
+.host-role-group--neutral {
+  border-color: var(--neutral);
+  background: var(--faction-neutral-soft);
+}
+
+.host-role-group h3,
+.host-role-group__empty {
+  margin: 0;
+}
+
+.host-role-group h3 {
+  margin-bottom: 0.7rem;
+  color: var(--text-strong);
+}
+
+.host-role-group__empty {
+  color: var(--text-muted);
+}
+
 .host-role-view__players li {
   display: grid;
   gap: 0.7rem;
@@ -112,6 +155,15 @@
 
 .day-discussion__guidance > * {
   margin: 0;
+}
+
+.day-discussion__guidance h3 {
+  color: var(--text-strong);
+}
+
+.day-discussion__guidance > div {
+  display: grid;
+  gap: 0.2rem;
 }
 
 .day-discussion__rosters {
@@ -300,6 +352,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   cursor: pointer;
+}
+
+.mayor-reveal__candidate--mafia {
+  border-left: 5px solid var(--mafia) !important;
+  background: var(--faction-mafia-soft);
+}
+
+.mayor-reveal__candidate--town {
+  border-left: 5px solid var(--town) !important;
+  background: var(--faction-town-soft);
+}
+
+.mayor-reveal__candidate--neutral {
+  border-left: 5px solid var(--neutral) !important;
+  background: var(--faction-neutral-soft);
 }
 
 .mayor-reveal__candidates input {

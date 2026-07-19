@@ -10,6 +10,7 @@ import type {
   ProvisionalDeath,
 } from './night-resolution-models.ts'
 import { freezeResolutionSources } from './resolution-sources.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 
 export function resolveAttacks(
   game: GameState,
@@ -39,7 +40,7 @@ export function resolveAttacks(
           targetPlayerId: action.targetPlayerId,
           outcome: determineAttackOutcome(
             action.actorRoleId,
-            target.role.roleId,
+            selectActiveRoleId(game, target.playerId) ?? target.role.roleId,
             game.settings.godfatherAndSerialCanKillEachOther,
             protectedPlayerIds.has(target.playerId),
           ),

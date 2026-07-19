@@ -52,7 +52,7 @@ export type PersistedGameV2 = Readonly<{
     alive: boolean
     publiclyRevealedRoleId: string | null
   }>[]
-  neutralStateVersion: 3
+  neutralStateVersion: 4
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
   executionerTargets: readonly Readonly<{
     gameId: string
@@ -107,6 +107,14 @@ export type PersistedGameV2 = Readonly<{
     playerId: string
     roleInstanceId: string
     targetPlayerId: string
+  }>[]
+  godfatherSuccessionStartNightNumber: number
+  godfatherPromotions: readonly Readonly<{
+    gameId: string
+    playerId: string
+    originalRoleInstanceId: string
+    promotedAtNightNumber: number
+    activeRoleId: string
   }>[]
   pendingJesterRevenges: readonly Readonly<{
     id: string
@@ -362,6 +370,15 @@ export type PersistedAppSessionV2 =
       currentOutcome: PersistedImmediateNightOutcomeV2 | null
     }>
   | Readonly<{
+      stage: 'godfather-promotion-briefing'
+      workflowStatus: 'promotion-briefing'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      currentStepIndex: 0
+      completedSteps: readonly []
+      currentOutcome: null
+    }>
+  | Readonly<{
       stage: 'night-resolution'
       workflowStatus: 'ready-for-dawn'
       game: PersistedGameV2
@@ -514,6 +531,16 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
           session.workflow.currentOutcome === null
             ? null
             : copyImmediateOutcome(session.workflow.currentOutcome),
+      })
+    case 'godfather-promotion-briefing':
+      return deepFreeze({
+        stage: 'godfather-promotion-briefing',
+        workflowStatus: 'promotion-briefing',
+        game: copyGame(session.workflow.game),
+        participants: session.workflow.participants.map(copyPlayer),
+        currentStepIndex: 0,
+        completedSteps: [],
+        currentOutcome: null,
       })
     case 'night-resolution':
       return deepFreeze({
@@ -669,6 +696,14 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         dayNumber: session.workflow.game.dayNumber,
         resultLabel: null,
       })
+    case 'godfather-promotion-briefing':
+      return Object.freeze({
+        stage: 'Night actions',
+        playerCount: session.workflow.game.players.length,
+        nightNumber: session.workflow.game.nightNumber,
+        dayNumber: session.workflow.game.dayNumber,
+        resultLabel: null,
+      })
     case 'night-resolution':
       return Object.freeze({
         stage: 'Night resolution',
@@ -775,7 +810,7 @@ function copyGame(game: GameState): PersistedGameV2 {
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
     })),
-    neutralStateVersion: 3,
+    neutralStateVersion: 4,
     executionerBriefingStatus: game.executionerBriefingStatus,
     executionerTargets: game.executionerTargets.map((target) => ({ ...target })),
     settings: copySettings(game.settings),
@@ -788,6 +823,8 @@ function copyGame(game: GameState): PersistedGameV2 {
     })),
     personalWins: game.personalWins.map((record) => ({ ...record })),
     executionerConversions: game.executionerConversions.map((record) => ({ ...record })),
+    godfatherSuccessionStartNightNumber: game.godfatherSuccessionStartNightNumber,
+    godfatherPromotions: game.godfatherPromotions.map((record) => ({ ...record })),
     pendingJesterRevenges: game.pendingJesterRevenges.map((record) => ({ ...record })),
     jesterRevengeResolutions: game.jesterRevengeResolutions.map((record) => ({ ...record })),
     dayOutcomes: game.dayOutcomes.map((record) => ({ ...record })),

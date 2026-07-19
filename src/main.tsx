@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from '@/App.tsx'
+import { loadRememberedPlayerNames } from '@/application/game-setup/index.ts'
 import type { RoleAssignmentDependencies } from '@/application/role-assignment/index.ts'
 import {
   migratePersistedSessionEnvelopeV1,
@@ -9,6 +10,7 @@ import {
 } from '@/application/session-persistence/index.ts'
 import { BrowserRoleAssignmentIdentitySource } from '@/infrastructure/identifiers/browser-role-assignment-identity-source.ts'
 import { createBrowserGameSessionStore } from '@/infrastructure/persistence/browser-game-session-store.ts'
+import { createBrowserRememberedPlayerNamesRepository } from '@/infrastructure/persistence/browser-remembered-player-names-repository.ts'
 import { BrowserSessionClock } from '@/infrastructure/persistence/browser-session-clock.ts'
 import { BrowserRandomSource } from '@/infrastructure/randomness/browser-random-source.ts'
 
@@ -28,6 +30,8 @@ const sessionStore = createBrowserGameSessionStore(
 )
 const sessionClock = new BrowserSessionClock()
 const initialLoadResult = sessionStore.load()
+const rememberedPlayerNamesRepository = createBrowserRememberedPlayerNamesRepository()
+const initialRememberedPlayerNames = loadRememberedPlayerNames(rememberedPlayerNamesRepository)
 
 createRoot(rootElement).render(
   <StrictMode>
@@ -36,6 +40,8 @@ createRoot(rootElement).render(
       sessionStore={sessionStore}
       sessionClock={sessionClock}
       initialLoadResult={initialLoadResult}
+      rememberedPlayerNamesRepository={rememberedPlayerNamesRepository}
+      initialRememberedPlayerNames={initialRememberedPlayerNames}
     />
   </StrictMode>,
 )

@@ -16,6 +16,7 @@ import type { DeathRecord } from './death-record.ts'
 import type { DoctorPreviousTarget } from './doctor-previous-target.ts'
 import type { DayNumber, NightNumber } from './game-records.ts'
 import type { GameSettings } from './game-settings.ts'
+import type { GodfatherPromotion } from '../mafia/godfather-promotion-model.ts'
 
 export type GameState = Readonly<{
   id: GameId
@@ -31,6 +32,8 @@ export type GameState = Readonly<{
   deathRecords: readonly DeathRecord[]
   personalWins: readonly PersonalWinRecord[]
   executionerConversions: readonly ExecutionerToJesterConversion[]
+  godfatherSuccessionStartNightNumber: number
+  godfatherPromotions: readonly GodfatherPromotion[]
   pendingJesterRevenges: readonly PendingJesterRevenge[]
   jesterRevengeResolutions: readonly JesterRevengeResolution[]
   dayOutcomes: readonly DayOutcome[]
@@ -56,6 +59,8 @@ export type GameStateCandidate = Readonly<
     | 'deathRecords'
     | 'personalWins'
     | 'executionerConversions'
+    | 'godfatherSuccessionStartNightNumber'
+    | 'godfatherPromotions'
     | 'pendingJesterRevenges'
     | 'jesterRevengeResolutions'
     | 'dayOutcomes'
@@ -71,6 +76,8 @@ export type GameStateCandidate = Readonly<
     deathRecords: unknown
     personalWins: unknown
     executionerConversions: unknown
+    godfatherSuccessionStartNightNumber: unknown
+    godfatherPromotions: unknown
     pendingJesterRevenges: unknown
     jesterRevengeResolutions: unknown
     dayOutcomes: unknown

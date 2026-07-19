@@ -7,6 +7,7 @@ import {
 import type { SubmittedNightAction } from '../night-actions/night-action.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
 import type { FrameRecord, InvestigationResult } from './night-resolution-models.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 
 export function resolveInvestigationResults(
   game: GameState,
@@ -30,7 +31,7 @@ export function resolveInvestigationResults(
     }
 
     const groupResult = resolveInvestigationGroup(
-      target.role.roleId,
+      selectActiveRoleId(game, target.playerId) ?? target.role.roleId,
       framedPlayerIds.has(target.playerId),
     )
     if (!groupResult.ok) {

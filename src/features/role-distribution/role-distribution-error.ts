@@ -85,6 +85,10 @@ function getActiveGameRejectionMessage(error: ActiveGameRejection): string {
       return 'The active game contains invalid resolved Jester-revenge authority.'
     case 'INVALID_DAY_OUTCOMES':
       return 'The active game contains invalid completed-day authority.'
+    case 'INVALID_GODFATHER_PROMOTIONS':
+      return 'The active game contains invalid Godfather succession authority.'
+    case 'INVALID_GODFATHER_SUCCESSION_START':
+      return 'The active game contains an invalid Godfather succession start night.'
     case 'NO_PARTICIPATING_PLAYERS':
       return 'The active game requires at least one participating player.'
     case 'MISSING_ROLE_ASSIGNMENT':

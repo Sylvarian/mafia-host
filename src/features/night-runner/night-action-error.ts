@@ -85,5 +85,14 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return 'The Detective visit ledger is invalid and the result was not shown.'
     case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
       return 'The current role has no supported immediate-outcome rule.'
+    case 'GODFATHER_SUCCESSION_GAME_REJECTED':
+    case 'GODFATHER_PROMOTION_APPLICATION_REJECTED':
+      return 'Godfather succession could not be validated, so the next night was not started.'
+    case 'GODFATHER_SUCCESSION_WRONG_PHASE':
+      return `Godfather succession cannot run while the game is in ${error.currentPhase}.`
+    case 'GODFATHER_PROMOTION_NOT_ALLOWED_ON_NIGHT_ONE':
+      return 'Godfather succession is available only when starting Night 2 or later.'
+    case 'INVALID_GODFATHER_PROMOTION_RANDOM_OUTPUT':
+      return `The random source returned ${String(error.value)} instead of a value from 0 inclusive to 1 exclusive.`
   }
 }

@@ -5,6 +5,7 @@ import type { SubmittedNightAction } from '../night-actions/night-action.ts'
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
 import type { InvalidResolutionRoleMetadataError } from './night-resolution-errors.ts'
 import type { FrameRecord, SheriffResult } from './night-resolution-models.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 
 export function resolveSheriffResults(
   game: GameState,
@@ -25,7 +26,7 @@ export function resolveSheriffResults(
     }
 
     const suspicionResult = isSuspiciousToSheriff(
-      target.role.roleId,
+      selectActiveRoleId(game, target.playerId) ?? target.role.roleId,
       framedPlayerIds.has(target.playerId),
       game.settings.godfatherAppearsSuspiciousToSheriff,
     )

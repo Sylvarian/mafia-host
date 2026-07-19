@@ -33,16 +33,37 @@ function dayState(revealRoleOnDeath = false): Parameters<typeof selectDayExecuti
 }
 
 describe('day-outcome application boundary', () => {
-  it('selects only living participants with duplicate-safe labels and no private metadata', () => {
+  it('selects living participants with duplicate-safe active role details and no neutral metadata', () => {
     const candidates = selectDayExecutionCandidates(dayState())
 
     expect(candidates).toEqual([
-      { playerId: 'player-1', playerDisplayLabel: 'Alex (Player 1)' },
-      { playerId: 'player-2', playerDisplayLabel: 'Alex (Player 2)' },
-      { playerId: 'player-3', playerDisplayLabel: 'Taylor' },
+      {
+        playerId: 'player-1',
+        playerDisplayLabel: 'Alex (Player 1)',
+        activeRoleDisplayName: 'Jester',
+        originallyAssignedRoleDisplayName: null,
+        alignment: 'neutral',
+        alignmentDisplayName: 'Neutral',
+      },
+      {
+        playerId: 'player-2',
+        playerDisplayLabel: 'Alex (Player 2)',
+        activeRoleDisplayName: 'Executioner',
+        originallyAssignedRoleDisplayName: null,
+        alignment: 'neutral',
+        alignmentDisplayName: 'Neutral',
+      },
+      {
+        playerId: 'player-3',
+        playerDisplayLabel: 'Taylor',
+        activeRoleDisplayName: 'Citizen',
+        originallyAssignedRoleDisplayName: null,
+        alignment: 'town',
+        alignmentDisplayName: 'Town',
+      },
     ])
     expect(JSON.stringify(candidates)).not.toMatch(
-      /jester|executioner|citizen|godfather|target|faction|roleInstance/i,
+      /target|personalWin|pendingJester|revenge|roleInstance/i,
     )
     expect(candidates.every(Object.isFrozen)).toBe(true)
   })

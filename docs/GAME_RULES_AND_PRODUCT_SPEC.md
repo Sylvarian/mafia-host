@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7E<br>
+**Status:** Authoritative rules finalized through R-012 and Godfather succession; implementation complete through Phase 7F<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -35,7 +35,11 @@ The implemented product currently includes:
 - Deterministic ordinary night resolution.
 - Repeated public Dawns.
 - Repeated day discussion with a public-safe living/dead roster.
+- Public strict-majority trial guidance with execution verdict guidance kept separate.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
+- Alignment-grouped host-only roles and role/alignment detail inside the private execution flow.
+- A browser-local remembered player-name preference that contains names only.
+- Deterministic Godfather succession at the start of Night 2 or later, with a private briefing.
 - One final execution or no-execution record per day and a public-safe post-day summary.
 - Explicit death causes, permanent neutral personal wins, pending Jester revenge creation, and
   Executioner-to-Jester conversion after proven non-execution target death.
@@ -124,9 +128,13 @@ cannot be reconstructed safely. A rejected V1 save is not silently deleted. A sa
 V2 before removing V1 and preserves V1 if the V2 write fails.
 
 Current V2 persistence supports repeated night/day cycles, selected mid-revenge Dawn resolution,
-waiting, and game over. Neutral-state sub-version `3` persists explicit death causes, permanent
-personal wins, conversions, pending and resolved revenge authority, and canonical day-outcome
-history together. Public rows,
+waiting, and game over. Phase 7F neutral-state sub-version `4` adds exact Godfather promotion
+records, the succession enforcement start night, and the unacknowledged promotion-briefing stage.
+An exact sub-version `3` save is accepted with empty promotion history and a cutover at its next
+future night. Restoration therefore never invents a historical random promotion. Every
+sub-version `4` save must contain complete promotion history from its recorded cutover.
+Sub-version `3` persists explicit death causes, permanent personal wins, conversions, pending and
+resolved revenge authority, and canonical day-outcome history together. Public rows,
 revealed-Mayor reminders, living execution candidates, and post-day prose remain derived. A prior
 neutral-state Dawn save can be upgraded from the exact death identities in its announcement. A
 prior Day save with any dead player and no cause evidence is rejected explicitly rather than
@@ -145,6 +153,14 @@ first-cycle authority is unambiguous. No generic migration framework exists.
 ## 4. Player roster
 
 The application maintains a reusable on-screen roster of player names for the current browser session.
+
+After setup is successfully completed and role distribution begins, the app also stores the latest
+roster names under a separate browser-local preference key. A fresh setup with no active saved
+session may prefill those editable names. The preference stores no IDs, roles, alignments, targets,
+settings, deaths, phase, or other game state. Active recovery always takes precedence and never
+merges remembered names. Clearing remembered names affects only future prefill and leaves the
+visible setup and active-game save unchanged. This is local convenience data, not cloud
+synchronization.
 
 Each roster entry contains:
 
@@ -294,6 +310,23 @@ On night two and later, Godfather and Serial Killer act normally regardless of t
 - Interaction with Serial Killer depends on game settings.
 - Sheriff treatment follows `godfatherAppearsSuspiciousToSheriff`; framing always makes the Godfather appear suspicious.
 - Canonical investigation group: Group A.
+
+At the start of each Night 2 or later, if no living active Godfather exists, exactly one living
+participating active Mafia member is selected with the injected random source and permanently
+promoted. Candidates are ordered by stable role-instance ordinal and participating roster order.
+The promotion is stored before night actions, preserves the original role assignment and role
+instance, changes the active role to Godfather, and removes the prior active ability immediately.
+The same night's wake order is rebuilt from active roles, so the promoted player acts once as
+Godfather and never also acts under the old role. A living original or previously promoted
+Godfather prevents another promotion; duplicate living Godfathers are preserved. If a promoted
+Godfather later dies, another eligible Mafia member may be promoted at the start of a later night.
+No living Mafia means no promotion. Night 1 never promotes.
+
+Promotion identity remains private. Before the new Godfather's first action, the host receives one
+private briefing that survives refresh until acknowledged. Restore and save retry never select or
+reroll. Public Dawn, day, post-day, recovery, and game-over disclosure continue to follow their
+existing public-role rules; promotion does not itself reveal a role, cause a death, or change a
+faction victory rule.
 
 ### Framer
 
@@ -835,7 +868,7 @@ roster order without revealing either cause. Persisted Dawn authority is current
 
 ## 14. Day discussion
 
-Implemented for repeated daytime discussion and one final outcome per day through Phase 7E.
+Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.
 
 During day discussion, the public-safe screen shows every player with:
 
@@ -844,6 +877,8 @@ During day discussion, the public-safe screen shows every player with:
 - Publicly revealed role, if any
 - Confirmed Mayor badge
 - A visible reminder that each living revealed Mayor has three votes
+- Votes required to put a player on trial, derived from living participating players
+- Execution guidance that guilty votes must exceed innocent votes and a tie is innocent
 
 Available controls:
 
@@ -860,34 +895,45 @@ targets, or night state. Multiple Mayor copies reveal independently. The existin
 The host-role control is hidden by default and is React-only: it never changes or autosaves the
 game/session and returns hidden on refresh, recovery, and new-day entry. The public day selector
 remains role-free. A separate sanitized selector is invoked only while the host-only list is
-visible and returns duplicate-safe player labels, alive/dead status, current active role, immutable
-original assignment where different, and legitimate public-role status. Converted Executioners
-display active Jester and original Executioner. Executioner targets, personal wins, pending
+visible and returns canonical Mafia, Town, and Neutral groups with duplicate-safe player labels,
+alive/dead status, current active role/alignment, immutable original assignment where different,
+and legitimate public-role status. Converted Executioners display active Jester/original
+Executioner; promoted Mafia display active Godfather/original assignment. Executioner targets, personal wins, pending
 revenge, raw IDs, and other private neutral mechanics are excluded. A textual **HOST-ONLY VIEW**
 warning remains visible until the host hides the list.
 
 Both final controls use deliberate private host-only confirmations. The execution candidate list
-contains only living duplicate-safe player labels and no roles, factions, targets, personal
-effects, or revenge information. Dialog state and temporary selection are not persisted.
+contains living duplicate-safe player labels plus current active role/alignment and an original
+assignment only when changed. It excludes targets, personal wins, pending revenge, and night data.
+Dialog state and temporary selection are not persisted.
 
 ---
 
 ## 15. Trial, voting, and execution
 
 Rules finalized. Verbal trial guidance and final outcome recording are implemented through Phase
-7C.
+7F.
 
 Any number of trials may occur during a day. Players manage nominations, discussion, and voting
-verbally, while the host counts votes manually. A nomination requires a majority, but the host is
-responsible for determining that majority.
+verbally, while the host counts votes manually. Putting a player on trial requires a strict
+majority of living participating players:
+
+```text
+floor(living participating players / 2) + 1
+```
+
+The public day display derives this threshold after deaths. Zero living players safely displays
+one under the same formula; one living player displays one. The threshold does not include Mayor
+weight.
 
 Trial verdict options are guilty and innocent. A player is executed only when guilty votes exceed
 innocent votes; a tie means innocent. The host may conduct another verbal trial after an innocent
 verdict or end the day without an execution.
 
 A revealed Mayor counts as three votes in nomination voting, guilty/innocent verdict voting, and
-every other player vote. The app displays the reminder but does not calculate or record the
-weighted vote.
+every other player vote. The host manually counts that vote as three. Mayor reveal does not change
+the displayed strict-majority threshold, and the app does not calculate or record the weighted
+vote.
 
 The app does not record:
 
@@ -897,7 +943,7 @@ The app does not record:
 - Individual guilty votes.
 - Individual innocent votes.
 - Vote totals.
-- Majority calculations.
+- Stored majority calculations.
 
 The host records only the final outcome by selecting **Execute a player** or **End day without
 execution**. There is no app-managed trial or vote-counting workflow.
@@ -1181,7 +1227,10 @@ Minimum scenarios:
 - First-night Godfather and Serial Killer actors are omitted when configured.
 - Godfather and Serial mutual attack setting behaves correctly.
 - Mayor reveal remains public and reminds the host to count every vote as three.
-- The app records no trial nominations, voters, verdict votes, totals, or majority calculations.
+- Trial guidance derives the strict majority from living participants; Mayor weight does not change it.
+- The app records no nominations, voters, abstentions, verdict votes, totals, thresholds, or trial history.
+- A missing living Godfather on Night 2+ promotes one canonical eligible Mafia member using injected
+  randomness; restore/retry never rerolls and the old active ability is absent.
 - Jester wins when executed but not when killed overnight or by revenge.
 - Jester revenge selects only from post-ordinary-death survivors using injected randomness.
 - Jester revenge is unavoidable and blocks every faction victory until resolved.
@@ -1345,16 +1394,19 @@ personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-010 — Day discussion, trials, voting, and execution
 
-**Status: Finalized and implemented for repeated numbered days through Phase 7E.**
+**Status: Finalized and implemented for repeated numbered days through Phase 7F.**
 
 - Any number of trials may occur during a day.
 - Trial nominations and votes are managed verbally by the players and manually by the host.
-- A nomination requires a majority, but the host is responsible for counting it.
+- Putting a player on trial requires
+  `floor(living participating players / 2) + 1` votes. The day UI displays this derived number,
+  while the host remains responsible for counting.
 - Trial verdict options are guilty and innocent.
 - A player is executed when guilty votes exceed innocent votes.
 - A tie means innocent.
+- Execution does not use the fixed trial threshold.
 - The app records only the final outcome and does not record nomination attempts,
-  voters, trial count, individual votes, vote totals, or majority calculations.
+  voters, abstentions, trial count/history, individual votes, or vote totals.
 - Phase 7C provides **Execute a player** and **End day without execution**.
 - The host may end the day without an execution.
 - Executing a player immediately ends the day.
@@ -1364,7 +1416,8 @@ personal win and performs no conversion, revenge, or victory evaluation.
 - If executing a Jester creates pending revenge, faction victory remains blocked and play proceeds
   toward the next night.
 
-The app must not implement a managed trial or vote-counting workflow.
+The app must not implement a managed trial or vote-counting workflow. It stores no nomination,
+voter, abstention, guilty/innocent, threshold, or trial-history state.
 
 ### Mayor — daytime reveal and vote weight
 
@@ -1380,6 +1433,7 @@ reminder are implemented in Phase 7B. Vote tracking is deliberately absent.**
   guilty/innocent verdicts, and any other player vote.
 - The app does not calculate or record the Mayor's weighted votes.
 - The host is responsible for counting the Mayor as three.
+- Mayor weight does not alter the living-player strict-majority trial threshold.
 - The day UI visibly reminds the host that a revealed Mayor has three votes.
 
 ### R-011 — Town victory

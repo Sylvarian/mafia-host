@@ -49,11 +49,20 @@ export function selectActiveRoleId(game: GameState, selectedPlayerId: PlayerId):
   if (player === undefined) {
     return null
   }
-  return game.executionerConversions.some(
+  const convertedToJester = game.executionerConversions.some(
     (conversion) => conversion.roleInstanceId === player.role.instanceId,
   )
+  const promotedToGodfather = game.godfatherPromotions.some(
+    (promotion) => promotion.originalRoleInstanceId === player.role.instanceId,
+  )
+  if (convertedToJester && promotedToGodfather) {
+    throw new Error('A role instance cannot be both a converted Jester and a promoted Godfather.')
+  }
+  return convertedToJester
     ? ROLE_IDS.jester
-    : player.role.roleId
+    : promotedToGodfather
+      ? ROLE_IDS.godfather
+      : player.role.roleId
 }
 
 export function isExecutionerRoleInstanceConverted(

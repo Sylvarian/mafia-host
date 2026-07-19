@@ -22,6 +22,7 @@ import type {
   GameStateCandidate,
 } from './game-state.ts'
 import { copyAndValidateOutcomeState } from './outcome-state-invariants.ts'
+import { copyAndValidateGodfatherPromotions } from '../mafia/godfather-promotion-invariants.ts'
 
 export function createGame(input: CreateGameInput): DomainResult<GameState, CreateGameError> {
   const rosterResult = validateRosterAssignments(input.roster, input.players)
@@ -44,6 +45,8 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     deathRecords: [],
     personalWins: [],
     executionerConversions: [],
+    godfatherSuccessionStartNightNumber: 2,
+    godfatherPromotions: [],
     pendingJesterRevenges: [],
     jesterRevengeResolutions: [],
     dayOutcomes: [],
@@ -179,6 +182,31 @@ export function validateGameState(
     return outcomeStateResult
   }
 
+  if (
+    typeof candidate.godfatherSuccessionStartNightNumber !== 'number' ||
+    !Number.isSafeInteger(candidate.godfatherSuccessionStartNightNumber) ||
+    candidate.godfatherSuccessionStartNightNumber < 2 ||
+    candidate.godfatherSuccessionStartNightNumber > Math.max(2, candidate.nightNumber + 1)
+  ) {
+    return fail({
+      type: 'INVALID_GODFATHER_SUCCESSION_START',
+      value: candidate.godfatherSuccessionStartNightNumber,
+    })
+  }
+
+  const promotionResult = copyAndValidateGodfatherPromotions(candidate.godfatherPromotions, {
+    gameId: candidate.id,
+    phase: candidate.phase,
+    players: playerResult.value,
+    deathRecords: outcomeStateResult.value.deathRecords,
+    executionerConversions: outcomeStateResult.value.executionerConversions,
+    nightNumber: candidate.nightNumber,
+    godfatherSuccessionStartNightNumber: candidate.godfatherSuccessionStartNightNumber,
+  })
+  if (!promotionResult.ok) {
+    return promotionResult
+  }
+
   return succeed({
     id: candidate.id,
     phase: candidate.phase,
@@ -193,6 +221,8 @@ export function validateGameState(
     deathRecords: outcomeStateResult.value.deathRecords,
     personalWins: outcomeStateResult.value.personalWins,
     executionerConversions: outcomeStateResult.value.executionerConversions,
+    godfatherSuccessionStartNightNumber: candidate.godfatherSuccessionStartNightNumber,
+    godfatherPromotions: promotionResult.value,
     pendingJesterRevenges: outcomeStateResult.value.pendingJesterRevenges,
     jesterRevengeResolutions: outcomeStateResult.value.jesterRevengeResolutions,
     dayOutcomes: outcomeStateResult.value.dayOutcomes,

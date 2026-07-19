@@ -54,18 +54,22 @@ No Dawn workflow, night workflow, resolution, immediate outcome, private queue, 
 assignment map survives as day-session authority.
 
 `day-discussion` constructs separate views. The public view contains the numbered day, stable player
-labels, alive/dead status, legitimate public role labels, and revealed-Mayor reminder booleans. It
+labels, alive/dead status, legitimate public role labels, revealed-Mayor reminder booleans, and the
+derived strict-majority trial threshold. Execution remains separate guilty-greater-than-innocent
+guidance and has no fixed displayed threshold. It
 contains no hidden role IDs, factions, Executioner targets, or night data. The private candidate
 selector contains only player IDs and stable labels for living unrevealed Mayors, ordered by
 role-instance ordinal then roster position. It is consumed only inside the deliberate host privacy
 boundary. A distinct host-role selector is constructed only when the React feature requests it.
-It returns duplicate-safe labels, alive/dead status, active role labels, immutable original-role
-labels when different, and separate legitimate public-role status. It reuses canonical active-role
-derivation so converted Executioners show Jester plus original Executioner. It cannot return
+It returns canonical Mafia/Town/Neutral groups, duplicate-safe labels, alive/dead status, active
+role/alignment labels, immutable original-role labels when different, and separate legitimate
+public-role status. It reuses canonical active-role derivation so converted Executioners show
+Jester/original Executioner and promoted Mafia show Godfather/original assignment. It cannot return
 targets, personal wins, pending revenge, raw IDs, or full game state.
 
-Phase 7C adds `day-outcome`. Its living execution-candidate selector exposes only stable player IDs
-and duplicate-safe labels. Its public selector exposes only Day number, executed-player label, and
+Phase 7C adds `day-outcome`. Phase 7F extends its private living execution-candidate selector with
+current active role/alignment and optional original assignment while excluding neutral targets,
+wins, revenge, and night data. Its public selector exposes only Day number, executed-player label, and
 an authorized role reveal, or no execution. The execute/no-execution use cases call one pure domain
 operation and replace editable Day authority atomically; no Dawn/night authority, temporary
 dialog state, winner, revenge victim, or next-night workflow survives or is created.
@@ -137,3 +141,15 @@ multi-day outcomes, linked revenge resolutions/deaths, and selected mid-revenge 
 restorer accepts unambiguous neutral-state sub-version 2 saves, upgrades their singular day
 outcome and victim-free obligation, rejects partial/forged cross-cycle authority, and never reruns
 mechanics or randomness. Recovery summarizes the private revenge stage only as `Dawn resolution`.
+
+Phase 7F keeps schema V2 and writes neutral-state sub-version `4`, adding exact canonical
+Godfather-promotion history, its enforcement start night, and an unacknowledged private briefing
+stage. Restoration reconstructs the already-promoted wake order without consuming randomness,
+rejects partial/forged version-4 histories, and summarizes the briefing only as generic Night
+actions. Exact Phase 7E sub-version 3 saves receive empty promotion history with enforcement
+starting on their next future night, so migration never fabricates a past random choice.
+
+`game-setup/remembered-player-names` is a separate application contract and use-case boundary. It
+strictly accepts arrays of nonblank strings, applies setup-equivalent trimming, reports structured
+load/save/clear errors, and never imports browser storage. These names never enter
+`ActiveAppSession` or schema V2. Fresh setup receives them only when no active save is recovered.

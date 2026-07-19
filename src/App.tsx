@@ -18,11 +18,16 @@ import {
   type ExecutionerBriefingId,
   type FinalizeRoleDistributionError,
 } from '@/application/executioner-briefing/index.ts'
-import type {
-  GameSetupEditError,
-  GameSetupWorkflowCommand,
+import {
+  clearRememberedPlayerNames,
+  saveRememberedPlayerNames,
+  type LoadedRememberedPlayerNames,
+  type RememberedPlayerNamesRepository,
+  type GameSetupEditError,
+  type GameSetupWorkflowCommand,
 } from '@/application/game-setup/index.ts'
 import { selectPublicGameOverView } from '@/application/game-over/index.ts'
+import { selectGodfatherPromotionBriefingView } from '@/application/godfather-promotion/index.ts'
 import type { NightActionCollectionError } from '@/application/night-actions/index.ts'
 import type { NightCompletionError } from '@/application/night-completion/index.ts'
 import {
@@ -36,6 +41,7 @@ import type {
 } from '@/application/role-assignment/index.ts'
 import {
   acknowledgeSessionExecutionerBriefing,
+  acknowledgeSessionGodfatherPromotion,
   assignSessionRoles,
   beginSessionDayDiscussion,
   beginSessionFirstNight,
@@ -81,6 +87,7 @@ import {
 } from '@/features/executioner-briefing/index.ts'
 import { GameSetup } from '@/features/game-setup/index.ts'
 import { GameOver } from '@/features/game-over/index.ts'
+import { GodfatherPromotionBriefing } from '@/features/godfather-promotion/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import { RevengeResolution } from '@/features/revenge-resolution/index.ts'
 import {
@@ -100,6 +107,8 @@ export type AppProps = Readonly<{
   sessionStore: GameSessionStore
   sessionClock: SessionClock
   initialLoadResult: LoadPersistedSessionResult
+  rememberedPlayerNamesRepository?: RememberedPlayerNamesRepository
+  initialRememberedPlayerNames?: LoadedRememberedPlayerNames
 }>
 
 type AppState =
@@ -131,9 +140,19 @@ export default function App({
   sessionStore,
   sessionClock,
   initialLoadResult,
+  rememberedPlayerNamesRepository = NOOP_REMEMBERED_PLAYER_NAMES_REPOSITORY,
+  initialRememberedPlayerNames = EMPTY_REMEMBERED_PLAYER_NAMES,
 }: AppProps) {
-  const [initialState] = useState<InitialAppState>(() => createInitialAppState(initialLoadResult))
+  const [initialState] = useState<InitialAppState>(() =>
+    createInitialAppState(initialLoadResult, initialRememberedPlayerNames.names),
+  )
   const [appState, setAppState] = useState<AppState>(initialState.state)
+  const [rememberedPlayerNames, setRememberedPlayerNames] = useState(
+    initialRememberedPlayerNames.names,
+  )
+  const [rememberedNamesMessage, setRememberedNamesMessage] = useState<string | null>(() =>
+    getRememberedNamesLoadMessage(initialRememberedPlayerNames),
+  )
   const [setupError, setSetupError] = useState<GameSetupEditError | null>(null)
   const [distributionError, setDistributionError] = useState<RoleDistributionError | null>(null)
   const [nightError, setNightError] = useState<NightActionCollectionError | null>(null)
@@ -148,6 +167,9 @@ export default function App({
   const [postDayErrorMessage, setPostDayErrorMessage] = useState<string | null>(null)
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
+  const [promotionBriefingErrorMessage, setPromotionBriefingErrorMessage] = useState<string | null>(
+    null,
+  )
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
   const [dayPrivatePresentationOpen, setDayPrivatePresentationOpen] = useState(false)
   const persistedFingerprintRef = useRef<string | null>(initialState.persistedFingerprint)
@@ -210,6 +232,7 @@ export default function App({
     setPostDayErrorMessage(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
+    setPromotionBriefingErrorMessage(null)
   }
 
   function clearSavedSession(): void {
@@ -225,7 +248,7 @@ export default function App({
       return
     }
 
-    const freshSession = createActiveAppSession()
+    const freshSession = createActiveAppSession(rememberedPlayerNames)
     const fingerprint = createSessionFingerprint(freshSession)
     persistedFingerprintRef.current = fingerprint
     clearOperationPendingRef.current = false
@@ -242,7 +265,7 @@ export default function App({
 
   function retryLoad(): void {
     const result = sessionStore.load()
-    const nextState = createInitialAppState(result)
+    const nextState = createInitialAppState(result, rememberedPlayerNames)
     persistedFingerprintRef.current = nextState.persistedFingerprint
     setAppState(nextState.state)
   }
@@ -327,6 +350,8 @@ export default function App({
           <GameSetup
             workflow={session.workflow}
             editError={setupError}
+            rememberedNamesExist={rememberedPlayerNames.length > 0}
+            rememberedNamesMessage={rememberedNamesMessage}
             assignmentErrorMessage={
               distributionError === null ? null : getRoleDistributionErrorMessage(distributionError)
             }
@@ -352,10 +377,38 @@ export default function App({
                   setDistributionError(result.error)
                   return false
                 }
+                const names = Object.freeze(
+                  session.workflow.draft.roster.map((player) => player.name),
+                )
+                const rememberedNamesResult = saveRememberedPlayerNames(
+                  rememberedPlayerNamesRepository,
+                  names,
+                )
+                if (rememberedNamesResult.ok) {
+                  setRememberedPlayerNames(names)
+                  setRememberedNamesMessage('Player names remembered for the next new game.')
+                } else {
+                  setRememberedNamesMessage(
+                    'The game started, but player names could not be remembered in this browser.',
+                  )
+                }
                 clearErrors()
                 setActiveSession(result.value)
                 return true
               })
+            }}
+            onClearRememberedNames={() => {
+              const result = clearRememberedPlayerNames(rememberedPlayerNamesRepository)
+              if (!result.ok) {
+                setRememberedNamesMessage(
+                  'Remembered names could not be cleared. The current setup was not changed.',
+                )
+                return
+              }
+              setRememberedPlayerNames(Object.freeze([]))
+              setRememberedNamesMessage(
+                'Remembered names cleared. The current setup remains unchanged.',
+              )
             }}
           />
         )
@@ -499,6 +552,53 @@ export default function App({
             }}
           />
         )
+      case 'godfather-promotion-briefing': {
+        const viewResult = selectGodfatherPromotionBriefingView(session.workflow)
+        if (!viewResult.ok) {
+          throw new Error(`Invalid Godfather promotion briefing: ${viewResult.error.type}.`)
+        }
+        return (
+          <GodfatherPromotionBriefing
+            view={viewResult.value}
+            errorMessage={promotionBriefingErrorMessage}
+            onContinue={() => {
+              runBriefingOperation(() => {
+                const result = acknowledgeSessionGodfatherPromotion(session)
+                if (!result.ok) {
+                  handleInvalidStage(result.error)
+                }
+                if (appState.mode !== 'active') {
+                  throw new Error('Godfather promotion acknowledgement requires an active session.')
+                }
+                const envelope = createPersistedSessionEnvelopeV2(result.value, sessionClock.now())
+                const saveResult = sessionStore.save(envelope)
+                if (!saveResult.ok) {
+                  setPromotionBriefingErrorMessage(
+                    'The promotion is preserved, but it could not be saved. Retry before beginning night actions.',
+                  )
+                  setAppState({
+                    ...appState,
+                    session,
+                    saveStatus: { status: 'failed', error: saveResult.error },
+                    clearError: null,
+                  })
+                  return false
+                }
+                persistedFingerprintRef.current = createSessionFingerprint(result.value)
+                setPromotionBriefingErrorMessage(null)
+                setAppState({
+                  ...appState,
+                  session: result.value,
+                  saveStatus: { status: 'saved', savedAt: envelope.savedAt },
+                  hasStoredSave: true,
+                  clearError: null,
+                })
+                return true
+              })
+            }}
+          />
+        )
+      }
       case 'sequential-night':
         return (
           <NightRunner
@@ -700,11 +800,16 @@ export default function App({
               participants: session.participants,
             })}
             status="game-continues"
-            errorMessage={null}
+            errorMessage={
+              nightError === null ? null : 'The next night could not be started safely. Retry.'
+            }
             nextNightNumber={session.game.nightNumber + 1}
             onBeginNextNight={() => {
               runNightOperation(() => {
-                const result = beginSessionNextNight(session)
+                const result = beginSessionNextNight(
+                  session,
+                  roleAssignmentDependencies.randomSource,
+                )
                 if (!result.ok) {
                   if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
                     handleInvalidStage(result.error)
@@ -905,7 +1010,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7E · Complete multi-day game loop</p>
+        <p>Phase 7F · Safer day guidance and Mafia succession</p>
       </header>
 
       <main className="app-main">
@@ -981,7 +1086,10 @@ export default function App({
   )
 }
 
-function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialAppState {
+function createInitialAppState(
+  loadResult: LoadPersistedSessionResult,
+  rememberedPlayerNames: readonly string[],
+): InitialAppState {
   if (loadResult.ok) {
     return {
       state: {
@@ -1003,7 +1111,7 @@ function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialA
     }
   }
 
-  const session = createActiveAppSession()
+  const session = createActiveAppSession(rememberedPlayerNames)
   const fingerprint = createSessionFingerprint(session)
   return {
     state: {
@@ -1015,6 +1123,26 @@ function createInitialAppState(loadResult: LoadPersistedSessionResult): InitialA
     },
     persistedFingerprint: fingerprint,
   }
+}
+
+const EMPTY_REMEMBERED_PLAYER_NAMES: LoadedRememberedPlayerNames = Object.freeze({
+  names: Object.freeze([]),
+  error: null,
+})
+
+const NOOP_REMEMBERED_PLAYER_NAMES_REPOSITORY: RememberedPlayerNamesRepository = Object.freeze({
+  load: () => ({ ok: true as const, value: null }),
+  save: () => ({ ok: true as const }),
+  clear: () => ({ ok: true as const }),
+})
+
+function getRememberedNamesLoadMessage(result: LoadedRememberedPlayerNames): string | null {
+  if (result.error === null) {
+    return null
+  }
+  return result.error.type === 'MALFORMED_REMEMBERED_PLAYER_NAMES'
+    ? 'Stored player names were invalid and were not loaded.'
+    : 'Player names could not be loaded from this browser. You can still set up a game.'
 }
 
 function createSessionFingerprint(session: ActiveAppSession): string {
@@ -1128,6 +1256,11 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'DETECTIVE_ACTION_RECORDED_AS_VISIT':
     case 'IMMEDIATE_RESULT_DISAGREEMENT':
     case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
+    case 'GODFATHER_SUCCESSION_GAME_REJECTED':
+    case 'GODFATHER_SUCCESSION_WRONG_PHASE':
+    case 'GODFATHER_PROMOTION_NOT_ALLOWED_ON_NIGHT_ONE':
+    case 'INVALID_GODFATHER_PROMOTION_RANDOM_OUTPUT':
+    case 'GODFATHER_PROMOTION_APPLICATION_REJECTED':
       return getNightActionCollectionErrorMessage(error)
   }
 }

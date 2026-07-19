@@ -34,9 +34,11 @@ function pendingNight(
   if (jester === undefined) throw new Error('Expected a Jester.')
   const execution = executePlayerDuringDay(fixture.game, jester.playerId)
   if (!execution.ok) throw new Error('Expected Jester execution.')
-  const begun = beginNextNightActionCollection(execution.value, fixture.participants)
+  const begun = beginNextNightActionCollection(execution.value, fixture.participants, {
+    next: () => 0,
+  })
   if (!begun.ok) throw new Error(`Expected Night 2: ${begun.error.type}`)
-  const advanced = continueNightActionCollection(begun.value)
+  const advanced = continueNightActionCollection(begun.value.workflow)
   if (!advanced.ok) throw new Error('Expected Mafia overview continuation.')
   return advanced.value
 }

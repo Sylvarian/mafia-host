@@ -144,26 +144,26 @@ export function createSubmittedNightAction(
     })
   }
 
-  if (actor.role.roleId !== action.actorRoleId) {
+  const activeRoleId = selectActiveRoleId(game, actor.playerId)
+  if (activeRoleId !== action.actorRoleId) {
     return fail({
       type: 'ACTOR_ROLE_MISMATCH',
       actorPlayerId: actor.playerId,
-      expectedRoleId: actor.role.roleId,
+      expectedRoleId: activeRoleId ?? actor.role.roleId,
       submittedRoleId: action.actorRoleId,
     })
   }
 
-  const activeRoleId = selectActiveRoleId(game, actor.playerId)
-  const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
+  const role = findRoleDefinition(activeRoleId)
 
   if (role === undefined || !role.nightAction.hasNightAction) {
-    return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: actor.role.roleId })
+    return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: action.actorRoleId })
   }
 
   if (role.nightAction.actionKind !== action.actionKind) {
     return fail({
       type: 'WRONG_ACTION_KIND',
-      actorRoleId: actor.role.roleId,
+      actorRoleId: action.actorRoleId,
       expectedActionKind: role.nightAction.actionKind,
       submittedActionKind: action.actionKind,
     })
@@ -181,19 +181,19 @@ export function createSubmittedNightAction(
 
   if (target.playerId === actor.playerId) {
     const doctorMaySelfTarget =
-      actor.role.roleId === ROLE_IDS.doctor && game.settings.doctorCanSelfProtect
+      action.actorRoleId === ROLE_IDS.doctor && game.settings.doctorCanSelfProtect
 
     if (!doctorMaySelfTarget) {
       return fail({
         type: 'INVALID_SELF_TARGET',
         actorPlayerId: actor.playerId,
-        actorRoleId: actor.role.roleId,
+        actorRoleId: action.actorRoleId,
       })
     }
   }
 
   if (
-    actor.role.roleId === ROLE_IDS.doctor &&
+    action.actorRoleId === ROLE_IDS.doctor &&
     game.settings.doctorCannotRepeatPreviousTarget &&
     previousTargetId === target.playerId
   ) {

@@ -7,6 +7,7 @@ import {
   completeDayWithoutExecution,
   executePlayerAndCompleteDay,
 } from '@/application/day-outcome/index.ts'
+import type { RememberedPlayerNamesRepository } from '@/application/game-setup/index.ts'
 import {
   beginFinalNightResolution,
   prepareDawnAnnouncement,
@@ -30,6 +31,7 @@ import type {
   ActiveAppSession,
 } from '@/application/session-persistence/index.ts'
 import {
+  createActiveAppSession,
   restorePersistedSessionEnvelopeV2,
   settleSessionAfterDayOutcome,
 } from '@/application/session-persistence/index.ts'
@@ -64,6 +66,39 @@ class MemorySessionStore implements GameSessionStore {
   }
 }
 
+class MemoryRememberedPlayerNamesRepository implements RememberedPlayerNamesRepository {
+  loadValue: unknown = null
+  savedNames: readonly string[] | null = null
+  saveCount = 0
+  clearCount = 0
+  failSave = false
+
+  load() {
+    return { ok: true as const, value: this.loadValue }
+  }
+
+  save(names: readonly string[]) {
+    this.saveCount += 1
+    if (this.failSave) {
+      return {
+        ok: false as const,
+        error: {
+          type: 'REMEMBERED_PLAYER_NAMES_SAVE_FAILURE' as const,
+          errorName: 'TestFailure',
+        },
+      }
+    }
+    this.savedNames = [...names]
+    return { ok: true as const }
+  }
+
+  clear() {
+    this.clearCount += 1
+    this.savedNames = null
+    return { ok: true as const }
+  }
+}
+
 function dependencies(randomNext = vi.fn(() => 0)): RoleAssignmentDependencies {
   return {
     randomSource: { next: randomNext },
@@ -91,6 +126,26 @@ function renderLoaded(
     </StrictMode>,
   )
   return { ...view, store, randomNext }
+}
+
+function renderFreshRememberedNames(
+  names: readonly string[],
+  repository = new MemoryRememberedPlayerNamesRepository(),
+  store = new MemorySessionStore(),
+) {
+  const view = render(
+    <StrictMode>
+      <App
+        roleAssignmentDependencies={dependencies()}
+        sessionStore={store}
+        sessionClock={CLOCK}
+        initialLoadResult={{ ok: false, error: { type: 'NO_SAVED_SESSION' } }}
+        rememberedPlayerNamesRepository={repository}
+        initialRememberedPlayerNames={{ names, error: null }}
+      />
+    </StrictMode>,
+  )
+  return { ...view, repository, store }
 }
 
 function activeWorkflow(
@@ -200,9 +255,13 @@ function revengeResolutionSession(): ActiveAppSession {
     executedJester.playerId,
   )
   if (!dayOutcome.ok) throw new Error(`Expected Jester execution: ${dayOutcome.error.type}`)
-  const begun = beginNextNightActionCollection(dayOutcome.value.game, dayOutcome.value.participants)
+  const begun = beginNextNightActionCollection(
+    dayOutcome.value.game,
+    dayOutcome.value.participants,
+    { next: () => 0 },
+  )
   if (!begun.ok) throw new Error(`Expected Night 2: ${begun.error.type}`)
-  const advanced = continueNightActionCollection(begun.value)
+  const advanced = continueNightActionCollection(begun.value.workflow)
   if (!advanced.ok || advanced.value.status !== 'collecting') {
     throw new Error('Expected the Night 2 Godfather.')
   }
@@ -219,8 +278,132 @@ function revengeResolutionSession(): ActiveAppSession {
   return { stage: 'revenge-resolution', workflow: revenge.value }
 }
 
+function godfatherPromotionBriefingSession(): ActiveAppSession {
+  const fixture = createNightFixture(
+    [
+      { roleId: ROLE_IDS.godfather, alive: false },
+      { roleId: ROLE_IDS.framer, name: 'Secret promoted player' },
+      { roleId: ROLE_IDS.citizen, name: 'Public target' },
+    ],
+    { phase: 'execution-resolution', nightNumber: 1, dayNumber: 1 },
+  )
+  const begun = beginNextNightActionCollection(fixture.game, fixture.participants, {
+    next: () => 0,
+  })
+  if (!begun.ok || begun.value.promotion === null) {
+    throw new Error('Expected promotion briefing.')
+  }
+  return {
+    stage: 'godfather-promotion-briefing',
+    workflow: begun.value.workflow,
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('Phase 7F remembered player names', () => {
+  it('prefills a fresh setup and clears only future prefill without wiping visible fields', () => {
+    const { repository } = renderFreshRememberedNames(['Alex', 'Alex', 'Taylor'])
+
+    expect(screen.getAllByDisplayValue('Alex')).toHaveLength(2)
+    expect(screen.getByDisplayValue('Taylor')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear remembered names' }))
+
+    expect(repository.clearCount).toBe(1)
+    expect(screen.getAllByDisplayValue('Alex')).toHaveLength(2)
+    expect(screen.getByDisplayValue('Taylor')).toBeVisible()
+    expect(
+      screen.getByText('Remembered names cleared. The current setup remains unchanged.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Clear remembered names' })).toBeNull()
+  })
+
+  it('saves the latest roster at successful role assignment without blocking game start', () => {
+    const repository = new MemoryRememberedPlayerNamesRepository()
+    repository.failSave = true
+    const { store } = renderFreshRememberedNames(['Alex', 'Taylor'], repository)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+
+    expect(repository.saveCount).toBe(1)
+    expect(repository.savedNames).toBeNull()
+    expect(store.saveCount).toBe(4)
+    expect(screen.getByRole('heading', { name: 'Distribute physical role cards' })).toBeVisible()
+  })
+
+  it('does not merge remembered names into a recovered setup session', () => {
+    const repository = new MemoryRememberedPlayerNamesRepository()
+    const setupSession = createActiveAppSession()
+    render(
+      <StrictMode>
+        <App
+          roleAssignmentDependencies={dependencies()}
+          sessionStore={new MemorySessionStore()}
+          sessionClock={CLOCK}
+          initialLoadResult={{
+            ok: true,
+            value: { schemaVersion: 2, savedAt: CLOCK.now(), session: setupSession },
+          }}
+          rememberedPlayerNamesRepository={repository}
+          initialRememberedPlayerNames={{ names: ['Should not merge'], error: null }}
+        />
+      </StrictMode>,
+    )
+
+    expect(screen.queryByText('Should not merge')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.queryByDisplayValue('Should not merge')).toBeNull()
+    expect(screen.getByText('No players yet.')).toBeVisible()
+  })
+})
+
+describe('Phase 7F Godfather promotion briefing', () => {
+  it('keeps recovery generic, restores the exact promotion, and advances once after saving', () => {
+    const store = new MemorySessionStore()
+    const randomNext = vi.fn(() => 0.9)
+    const { container } = renderLoaded(godfatherPromotionBriefingSession(), store, randomNext)
+
+    expect(screen.getByText('Night 2 — Night actions')).toBeVisible()
+    expect(container).not.toHaveTextContent('Secret promoted player')
+    expect(container).not.toHaveTextContent('Godfather')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByRole('heading', { name: 'New Godfather' })).toHaveFocus()
+    expect(
+      screen.getByRole('heading', { name: 'New Godfather' }).closest('section'),
+    ).toHaveTextContent('Secret promoted player has been promoted to Godfather.')
+
+    const continueButton = screen.getByRole('button', { name: 'Continue to night actions' })
+    act(() => {
+      continueButton.click()
+      continueButton.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+    expect(randomNext).not.toHaveBeenCalled()
+  })
+
+  it('preserves the same briefing and acknowledgement payload after save failure', () => {
+    const store = new MemorySessionStore()
+    store.failSave = true
+    renderLoaded(godfatherPromotionBriefingSession(), store)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to night actions' }))
+    expect(screen.getByRole('heading', { name: 'New Godfather' })).toBeVisible()
+    expect(screen.getByText(/promotion is preserved/)).toBeVisible()
+    const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to night actions' }))
+    expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
+    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+  })
 })
 
 describe('Phase 7A.1 App integration', () => {
@@ -696,8 +879,8 @@ describe('Phase 7C App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
     const dialog = screen.getByRole('alertdialog', { name: 'Execute a player' })
     expect(screen.getByLabelText('Local save status').parentElement).toHaveAttribute('inert')
-    expect(within(dialog).queryByText(/Mayor|Citizen|Jester|Executioner/)).toBeNull()
-    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyLiving player/ }))
+    expect(within(dialog).getByText('Citizen · Town')).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyCitizen · Town/ }))
     const confirm = within(dialog).getByRole('button', { name: 'Execute Casey' })
     act(() => {
       confirm.click()
@@ -762,6 +945,32 @@ describe('Phase 7C App integration', () => {
     })
   })
 
+  it('shows a public-safe retry error when Godfather succession cannot start the next night', () => {
+    const randomNext = vi.fn(() => 1)
+    const { store } = renderLoaded(
+      postDaySession([
+        { roleId: ROLE_IDS.godfather, name: 'Dead Mafia', alive: false },
+        { roleId: ROLE_IDS.framer, name: 'Hidden successor' },
+        { roleId: ROLE_IDS.citizen, name: 'Town 1' },
+        { roleId: ROLE_IDS.citizen, name: 'Town 2' },
+        { roleId: ROLE_IDS.citizen, name: 'Town 3' },
+      ]),
+      new MemorySessionStore(),
+      randomNext,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    const saveCountBeforeAttempt = store.saveCount
+
+    fireEvent.click(screen.getByRole('button', { name: 'Begin Night 2' }))
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('The next night could not be started safely. Retry.')
+    expect(alert).not.toHaveTextContent(/Godfather|promotion|Framer|successor/i)
+    expect(screen.getByRole('button', { name: 'Begin Night 2' })).toBeVisible()
+    expect(store.saveCount).toBe(saveCountBeforeAttempt)
+    expect(randomNext).toHaveBeenCalledOnce()
+  })
+
   it('keeps post-day recovery generic until Continue and leaks no neutral authority', () => {
     const store = new MemorySessionStore()
     const active = renderLoaded(dawnSession(), store)
@@ -769,7 +978,7 @@ describe('Phase 7C App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
     const dialog = screen.getByRole('alertdialog')
-    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyLiving player/ }))
+    fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyCitizen · Town/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Execute Casey' }))
     const saved = store.lastSuccessfulEnvelope
     if (saved === null) throw new Error('Expected saved outcome.')

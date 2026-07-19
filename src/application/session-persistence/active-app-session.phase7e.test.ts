@@ -74,7 +74,7 @@ describe('Phase 7E next-night application flow', () => {
     )
     expect(waiting.stage).toBe('post-day-waiting')
     if (waiting.stage !== 'post-day-waiting') throw new Error('Expected ordinary waiting.')
-    const result = beginSessionNextNight(waiting)
+    const result = beginSessionNextNight(waiting, { next: () => 0 })
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error(`Expected Night 2: ${result.error.type}`)
@@ -120,7 +120,7 @@ describe('Phase 7E next-night application flow', () => {
     if (waiting.stage !== 'pending-revenge-waiting') {
       throw new Error('Expected pending waiting.')
     }
-    const result = beginSessionNextNight(waiting)
+    const result = beginSessionNextNight(waiting, { next: () => 0 })
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected Night 2 with pending revenge.')
@@ -152,7 +152,7 @@ describe('Phase 7E next-night application flow', () => {
     expect(
       selectActiveRoleId(waiting.game, waiting.game.players[0]?.playerId ?? playerId('x')),
     ).toBe(ROLE_IDS.jester)
-    const result = beginSessionNextNight(waiting)
+    const result = beginSessionNextNight(waiting, { next: () => 0 })
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected converted-role Night 2.')
@@ -176,7 +176,7 @@ describe('Phase 7E next-night application flow', () => {
       game: fixture.game,
       participants: fixture.participants,
     }
-    expect(beginSessionNextNight(daySession)).toMatchObject({
+    expect(beginSessionNextNight(daySession, { next: () => 0 })).toMatchObject({
       ok: false,
       error: {
         type: 'INVALID_ACTIVE_APP_SESSION_STAGE',
@@ -192,7 +192,7 @@ describe('Phase 7E next-night application flow', () => {
       ]),
     )
     expect(gameOver.stage).toBe('game-over')
-    expect(beginSessionNextNight(gameOver)).toMatchObject({
+    expect(beginSessionNextNight(gameOver, { next: () => 0 })).toMatchObject({
       ok: false,
       error: {
         type: 'INVALID_ACTIVE_APP_SESSION_STAGE',
@@ -212,7 +212,7 @@ describe('Phase 7E next-night application flow', () => {
       ]),
     )
     if (dayOne.stage !== 'post-day-waiting') throw new Error('Expected Day 1 waiting.')
-    const nightTwo = beginSessionNextNight(dayOne)
+    const nightTwo = beginSessionNextNight(dayOne, { next: () => 0 })
     if (!nightTwo.ok) throw new Error('Expected Night 2.')
     const dawnGame = validateGameState({
       ...nightTwo.value.workflow.game,
@@ -239,7 +239,7 @@ describe('Phase 7E next-night application flow', () => {
       participants: completedDayTwo.value.participants,
     })
     if (!settledDayTwo.ok) throw new Error('Expected Day 2 settlement.')
-    const nightThree = beginSessionNextNight(settledDayTwo.value)
+    const nightThree = beginSessionNextNight(settledDayTwo.value, { next: () => 0 })
 
     expect(nightThree.ok).toBe(true)
     if (!nightThree.ok) throw new Error('Expected Night 3.')

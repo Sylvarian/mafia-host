@@ -65,6 +65,7 @@ import {
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
   type ActiveNightActionCollectionWorkflow,
+  type CollectingNightActionsWorkflow,
   type NightActionCollectionError,
 } from '../night-actions/index.ts'
 import {
@@ -100,6 +101,11 @@ export type ExecutionerBriefingAppSession = Readonly<{
 export type SequentialNightAppSession = Readonly<{
   stage: 'sequential-night'
   workflow: Exclude<ActiveNightActionCollectionWorkflow, Readonly<{ status: 'complete' }>>
+}>
+
+export type GodfatherPromotionBriefingAppSession = Readonly<{
+  stage: 'godfather-promotion-briefing'
+  workflow: CollectingNightActionsWorkflow
 }>
 
 export type NightResolutionAppSession = Readonly<{
@@ -152,6 +158,7 @@ export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
   | ExecutionerBriefingAppSession
+  | GodfatherPromotionBriefingAppSession
   | SequentialNightAppSession
   | NightResolutionAppSession
   | DawnAppSession
@@ -176,6 +183,7 @@ export type ActiveAppSessionOperation =
   | 'previous-executioner-briefing'
   | 'next-executioner-briefing'
   | 'complete-executioner-briefings'
+  | 'acknowledge-godfather-promotion'
   | 'confirm-night-target'
   | 'continue-night'
   | 'prepare-dawn'
@@ -217,10 +225,12 @@ export type SettlePostDaySessionError =
   | InvalidActiveAppSessionStageError
   | Readonly<{ type: 'RESULT_ALREADY_FINALIZED' }>
 
-export function createActiveAppSession(): SetupAppSession {
+export function createActiveAppSession(
+  rememberedPlayerNames: readonly string[] = [],
+): SetupAppSession {
   return Object.freeze({
     stage: 'setup',
-    workflow: createGameSetupWorkflow(),
+    workflow: createGameSetupWorkflow(rememberedPlayerNames),
   })
 }
 
@@ -632,17 +642,40 @@ export function settleSessionAfterDayOutcome(
 
 export function beginSessionNextNight(
   session: ActiveAppSession,
+  randomSource: RandomSource,
 ): DomainResult<
-  SequentialNightAppSession,
+  SequentialNightAppSession | GodfatherPromotionBriefingAppSession,
   NightActionCollectionError | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'post-day-waiting' && session.stage !== 'pending-revenge-waiting') {
     return invalidStage('begin-next-night', session.stage)
   }
-  const result = beginNextNightActionCollection(session.game, session.participants)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
-    : result
+  const result = beginNextNightActionCollection(session.game, session.participants, randomSource)
+  if (!result.ok) {
+    return result
+  }
+  return result.value.promotion === null
+    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value.workflow }))
+    : succeed(
+        Object.freeze({
+          stage: 'godfather-promotion-briefing',
+          workflow: result.value.workflow,
+        }),
+      )
+}
+
+export function acknowledgeSessionGodfatherPromotion(
+  session: ActiveAppSession,
+): DomainResult<SequentialNightAppSession, InvalidActiveAppSessionStageError> {
+  if (session.stage !== 'godfather-promotion-briefing') {
+    return invalidStage('acknowledge-godfather-promotion', session.stage)
+  }
+  return succeed(
+    Object.freeze({
+      stage: 'sequential-night',
+      workflow: session.workflow,
+    }),
+  )
 }
 
 function toDayOutcomeSession(state: DayOutcomeState): DayOutcomeAppSession {

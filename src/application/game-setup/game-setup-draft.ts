@@ -58,12 +58,25 @@ const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
   allowFirstNightKills: false,
 })
 
-export function createInitialGameSetupDraft(): GameSetupDraft {
+export function createInitialGameSetupDraft(
+  rememberedPlayerNames: readonly string[] = [],
+): GameSetupDraft {
+  const roster = rememberedPlayerNames.map((submittedName, index) => {
+    const name = submittedName.trim()
+    if (name.length === 0) {
+      throw new RangeError('A remembered player name cannot be blank.')
+    }
+    return Object.freeze({
+      id: playerId(`player-${String(index + 1)}`),
+      name,
+      playing: true,
+    })
+  })
   return {
-    roster: [],
+    roster: Object.freeze(roster),
     roleCounts: ROLE_REGISTRY.map((role) => ({ roleId: role.id, count: 0 })),
     settings: { ...DEFAULT_GAME_SETTINGS },
-    nextPlayerNumber: 1,
+    nextPlayerNumber: roster.length + 1,
   }
 }
 

@@ -37,7 +37,8 @@ data beyond the announcement. The deliberate **Continue to Day N** transition en
 numbered day.
 
 `day-discussion` renders a public-safe numbered-day display with semantic living/dead sections, only
-authoritative public role reveals, verbal trial guidance, and textual three-vote reminders for
+authoritative public role reveals, the living-player strict-majority trial threshold, separate
+guilty-greater-than-innocent execution guidance, and textual three-vote reminders for
 each living revealed Mayor. Phase 7C adds only **Execute a player** and **End day without
 execution** as final controls; it still contains no nomination, vote, winner, revenge-resolution,
 or next-night controls.
@@ -45,9 +46,11 @@ or next-night controls.
 Phase 7C.1 adds **Show host-only roles** / **Hide host-only roles** only to editable day discussion.
 The list and prominent textual warning are absent by default. The component requests the separate
 sanitized host-role selector only while visible, and toggle state never autosaves or enters the
-application session. Rows show duplicate-safe labels, alive/dead state, current role, optional
-original assignment, and separate legitimate public-role status. Converted Executioners appear as
-active Jester/original Executioner; targets, wins, pending revenge, and raw IDs never enter props or
+application session. Rows are grouped under accessible Mafia, Town, and Neutral headings with
+textual red/green/grey treatments. They show duplicate-safe labels, alive/dead state, current
+role/alignment, optional original assignment, and separate legitimate public-role status.
+Converted Executioners appear as active Jester/original Executioner and promoted Mafia as active
+Godfather/original assignment; targets, wins, pending revenge, and raw IDs never enter props or
 DOM. Hiding, refresh, recovery, and new-day entry all return to the public-safe view. Controls retain
 44px minimum targets, and the owned grid avoids horizontal overflow at 320px and 390px.
 
@@ -57,8 +60,9 @@ labels, never a game, role map, faction, or Executioner target. Radio selection,
 focus, and operation guards are temporary React state. Escape and Cancel restore focus; rapid
 confirmation is guarded.
 
-The execution control opens a host-only alert dialog containing only living duplicate-safe player
-labels. It never shows roles, factions, Executioner targets, or predicted neutral effects. The
+The execution control opens a host-only alert dialog containing living duplicate-safe player
+labels, current active roles, textual alignments, and an optional changed original assignment. It
+never shows Executioner targets, personal wins, pending revenge, or predicted neutral effects. The
 no-execution control has its own irreversible confirmation. Both make the background inert,
 support Escape/cancel and focus restoration, keep selection and guards in React only, and guard
 rapid confirmation. `day-outcome` renders a focused public summary with only the executed name and
@@ -93,3 +97,12 @@ the unavoidable death once. The public Dawn then combines only current ordinary/
 without causes, or the app goes directly to public-safe Game Over. **Continue to Day N** and the
 existing day controls repeat for later cycles; host-role visibility resets hidden on each entry
 and recovery.
+
+Phase 7F adds `godfather-promotion`, a focused host-only screen before a newly promoted player's
+first later-night action. Its heading receives focus, its warning and duplicate-safe identity wrap
+at 320px/390px, and its only 44px control continues to night actions. It cannot be dismissed with
+Escape. Save failure leaves the same briefing visible.
+
+Fresh setup may show editable remembered names and a setup-only **Clear remembered names** control.
+Clearing affects future prefill, keeps the current fields intact, and never deletes an active save.
+The feature receives only application callbacks and status text; it never accesses browser storage.

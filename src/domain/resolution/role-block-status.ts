@@ -1,6 +1,7 @@
 import type { GameState } from '../game/game-state.ts'
 import type { PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 
 export type RoleBlockAction = Readonly<{
   actorPlayerId: PlayerId
@@ -21,7 +22,8 @@ export function selectBlockedRoleInstanceIds(
 
   return new Set(
     game.players.flatMap((player): readonly RoleInstanceId[] =>
-      player.role.roleId !== ROLE_IDS.consort && consortTargetPlayerIds.has(player.playerId)
+      selectActiveRoleId(game, player.playerId) !== ROLE_IDS.consort &&
+      consortTargetPlayerIds.has(player.playerId)
         ? [player.role.instanceId]
         : [],
     ),

@@ -8,6 +8,7 @@ import type {
 } from './night-resolution-models.ts'
 import { selectBlockedRoleInstanceIds } from './role-block-status.ts'
 import { freezeResolutionSources } from './resolution-sources.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 
 export type RoleBlockResolution = Readonly<{
   attempts: readonly RoleBlockAttempt[]
@@ -31,13 +32,16 @@ export function resolveRoleBlocks(
         actorRoleInstanceId: action.actorRoleInstanceId,
         targetPlayerId: target.playerId,
         targetRoleInstanceId: target.role.instanceId,
-        outcome: target.role.roleId === ROLE_IDS.consort ? 'target-immune' : 'blocked-target',
+        outcome:
+          selectActiveRoleId(game, target.playerId) === ROLE_IDS.consort
+            ? 'target-immune'
+            : 'blocked-target',
       })
     }),
   )
 
   const blockedActors = game.players.flatMap((player): readonly BlockedActorRecord[] => {
-    if (player.role.roleId === ROLE_IDS.consort) {
+    if (selectActiveRoleId(game, player.playerId) === ROLE_IDS.consort) {
       return []
     }
 

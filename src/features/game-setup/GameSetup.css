@@ -3,6 +3,44 @@
   gap: 1.5rem;
 }
 
+.remembered-names {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-large);
+  background: var(--surface-soft);
+}
+
+.remembered-names h2,
+.remembered-names p {
+  margin: 0;
+}
+
+.remembered-names h2 {
+  color: var(--text-strong);
+  font-size: 1.1rem;
+}
+
+.remembered-names div > p:last-child {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+}
+
+.remembered-names .button {
+  min-height: 2.75rem;
+}
+
+.remembered-names__status {
+  grid-column: 1 / -1;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
 .setup-section,
 .setup-readiness,
 .prepared-setup {
@@ -541,6 +579,15 @@
 }
 
 @media (max-width: 48rem) {
+  .remembered-names {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .remembered-names .button {
+    width: 100%;
+  }
+
   .section-heading,
   .prepare-action,
   .setting-option {

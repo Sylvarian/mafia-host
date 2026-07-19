@@ -17,6 +17,7 @@ import {
 } from '@/domain/night-actions/night-action.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 import { resolveDetectiveResults } from '@/domain/resolution/detective-results.ts'
 import { resolveFrames } from '@/domain/resolution/frames.ts'
 import { resolveInvestigationResults } from '@/domain/resolution/investigation-results.ts'
@@ -24,6 +25,12 @@ import type { DetectiveResult, SheriffResult } from '@/domain/resolution/night-r
 import { isActorBlockedByConfirmedConsortActions } from '@/domain/resolution/role-blocks.ts'
 import { resolveSheriffResults } from '@/domain/resolution/sheriff-results.ts'
 import { buildFinalVisits } from '@/domain/resolution/visits.ts'
+import {
+  applyGodfatherSuccessionForStartedNight,
+  type GodfatherSuccessionError,
+} from '@/domain/mafia/godfather-succession.ts'
+import type { GodfatherPromotion } from '@/domain/mafia/godfather-promotion-model.ts'
+import type { RandomSource } from '@/domain/randomness/random-source.ts'
 
 import type { RoleDistributionWorkflow } from '../role-assignment/role-distribution-workflow.ts'
 import {
@@ -198,6 +205,12 @@ export type NightActionCollectionError =
       type: 'INVALID_IMMEDIATE_OUTCOME_ROLE'
       actorRoleId: RoleId
     }>
+  | GodfatherSuccessionError
+
+export type BegunNextNightActionCollection = Readonly<{
+  workflow: CollectingNightActionsWorkflow
+  promotion: GodfatherPromotion | null
+}>
 
 export function createNightActionCollectionWorkflow(
   distribution: RoleDistributionWorkflow,
@@ -306,7 +319,8 @@ export function createNightActionCollectionForStartedNight(
 export function beginNextNightActionCollection(
   game: GameState,
   participants: readonly Player[],
-): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
+  randomSource: RandomSource,
+): DomainResult<BegunNextNightActionCollection, NightActionCollectionError> {
   if (game.phase !== 'execution-resolution') {
     return fail({ type: 'INVALID_NEXT_NIGHT_PHASE', currentPhase: game.phase })
   }
@@ -327,7 +341,25 @@ export function beginNextNightActionCollection(
   if (!transitionResult.ok) {
     return fail({ type: 'ACTIVE_GAME_REJECTED', error: transitionResult.error })
   }
-  return createNightActionCollectionForStartedNight(transitionResult.value.state, participants)
+  const successionResult = applyGodfatherSuccessionForStartedNight(
+    transitionResult.value.state,
+    randomSource,
+  )
+  if (!successionResult.ok) {
+    return successionResult
+  }
+  const workflowResult = createNightActionCollectionForStartedNight(
+    successionResult.value.game,
+    participants,
+  )
+  return workflowResult.ok
+    ? succeed(
+        Object.freeze({
+          workflow: workflowResult.value,
+          promotion: successionResult.value.promotion,
+        }),
+      )
+    : workflowResult
 }
 
 export function selectDoctorPreviousTargetsForNight(
@@ -577,14 +609,14 @@ function advanceToStep(
   const outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>> = Object.freeze({
     kind: 'blocked',
     actorPlayerId: actor.playerId,
-    actorRoleId: actor.role.roleId,
+    actorRoleId: selectRequiredActiveRoleId(workflow.game, actor.playerId),
     actorRoleInstanceId: actor.role.instanceId,
   })
   const record: SequentialNightStepRecord = deepFreeze({
     stepIndex: nextIndex,
     status: 'blocked',
     actorPlayerId: actor.playerId,
-    actorRoleId: actor.role.roleId,
+    actorRoleId: selectRequiredActiveRoleId(workflow.game, actor.playerId),
     actorRoleInstanceId: actor.role.instanceId,
     outcome,
   })
@@ -752,9 +784,10 @@ function createActionForStep(
   if (actor === undefined) {
     return fail({ type: 'UNKNOWN_ACTOR', actorPlayerId: step.actorPlayerId })
   }
-  const role = findRoleDefinition(actor.role.roleId)
+  const activeRoleId = selectRequiredActiveRoleId(game, actor.playerId)
+  const role = findRoleDefinition(activeRoleId)
   if (role === undefined || !role.nightAction.hasNightAction) {
-    return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: actor.role.roleId })
+    return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: activeRoleId })
   }
 
   return createSubmittedNightAction(
@@ -762,12 +795,20 @@ function createActionForStep(
     {
       actorPlayerId: actor.playerId,
       actorRoleInstanceId: step.actorRoleInstanceId,
-      actorRoleId: actor.role.roleId,
+      actorRoleId: activeRoleId,
       actionKind: role.nightAction.actionKind,
       targetPlayerId,
     },
     previousTargetId,
   )
+}
+
+function selectRequiredActiveRoleId(game: GameState, selectedPlayerId: PlayerId): RoleId {
+  const activeRoleId = selectActiveRoleId(game, selectedPlayerId)
+  if (activeRoleId === null) {
+    throw new Error('A validated night actor has no active role.')
+  }
+  return activeRoleId
 }
 
 function getCurrentStep(

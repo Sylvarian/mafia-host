@@ -6,8 +6,9 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7E completes the repeated night/Dawn/day loop, including next-Dawn Jester revenge and
-post-revenge faction victory. Phase 7C.1 still supplies the streamlined host workflow and
+Phase 7F adds public trial guidance, alignment-aware private host views, remembered player names,
+and deterministic Godfather succession to the repeated Phase 7E night/Dawn/day loop. Phase 7C.1
+still supplies the streamlined host workflow and
 corrected Phase 7D remains the post-day victory gate.
 After verbal nominations, trials, and voting, the host records
 exactly one final result with **Execute a player** or **End day without execution**. Both operations
@@ -16,18 +17,24 @@ the existing `execution-resolution` phase.
 
 The public day screen separates living and dead players, shows only authoritative public role
 reveals, and never receives hidden assignments, factions, Executioner targets, or night data.
-Duplicate player names use stable labels such as `Alex (Player 1)`. Trials, nominations, verdict
-votes, and majority counting remain verbal and are not recorded by the app.
+Duplicate player names use stable labels such as `Alex (Player 1)`. The public screen displays the
+strict majority needed to put someone on trial as
+`floor(living participating players / 2) + 1`. Execution does not use that fixed threshold:
+guilty votes must exceed innocent votes, and a tie is innocent. Trials, nominations, voters,
+abstentions, guilty/innocent votes, and trial history remain verbal and are not recorded.
 
 Day discussion also has a temporary **Show host-only roles** control. Roles are absent from the
 public day model and DOM until requested, and visibility is React-only, hidden by default, never
 autosaved, and hidden again after refresh, recovery, or entry into a new day. The separate
-sanitized host view shows active role labels and alive/dead state. A converted Executioner appears
-as Jester with Executioner as the immutable original assignment; Executioner targets, personal
-wins, and pending revenge are never included.
+sanitized host view groups current active roles under Mafia, Town, and Neutral with red, green, and
+grey treatments plus textual alignment labels. A converted Executioner appears as Jester with
+Executioner as the immutable original assignment; a promoted Mafia member appears as Godfather
+with the original assignment retained. Executioner targets, personal wins, and pending revenge are
+never included.
 
-A private host-only execution dialog lists only living participants with duplicate-safe names and
-does not disclose assignments, targets, wins, conversions, or revenge. A separate irreversible
+A private host-only execution dialog lists only living participants with duplicate-safe names,
+current active roles, textual alignments, and an original assignment only when changed. It does not
+disclose targets, wins, or revenge. A separate irreversible
 confirmation ends the day without execution. The public post-day summary reports only who was
 executed and a role when `revealRoleOnDeath` authorizes it, or that nobody was executed. A
 non-terminal summary offers the explicit next numbered night.
@@ -51,7 +58,19 @@ A private host-only Mayor dialog lists only living, unrevealed Mayor players. A 
 sets the existing `publiclyRevealedRoleId` authority to Mayor; there is no second Mayor-reveal
 authority. Multiple Mayor copies reveal independently. Every living revealed Mayor has a persistent
 public reminder that the player counts as three votes, while the host remains responsible for all
-vote counting.
+vote counting. Mayor weight never changes the displayed living-player trial threshold.
+
+At the start of Night 2 or later, if no living active Godfather remains, the domain selects exactly
+one living participating active Mafia member through the injected random source. The promotion is
+persisted before actions, preserves the original assignment and role instance, rebuilds wake order,
+and makes that player act only as Godfather for the same night. A private briefing must be
+acknowledged before actions. Save retry and refresh preserve the same selection without rerolling;
+a later replacement may be chosen after a promoted Godfather dies.
+
+The most recently completed setup roster is also stored as a separate names-only local preference.
+It prefills an editable fresh setup only when there is no active save. **Clear remembered names**
+affects future prefill without changing the current fields or active-game save. This preference
+contains no roles, IDs, settings, deaths, or prior game state and is not synchronized to the cloud.
 
 The first night is now one sealed canonical sequence: Mafia overview, Consorts, Framers,
 Godfathers, Serial Killers, Doctors, Sheriffs, Investigators, Consiglieres, and Detectives. Duplicate
@@ -85,7 +104,8 @@ every briefing before the application creates the Night 1 action workflow. Games
 Executioner skip the briefing.
 
 One authoritative application session spans setup, role distribution, Executioner briefing,
-sequential night, final night resolution, private Dawn resolution, public Dawn, repeated day
+Godfather-promotion briefing, sequential night, final night resolution, private Dawn resolution,
+public Dawn, repeated day
 discussion/outcomes, waiting, and game over. Each successful authoritative transition, Mayor
 reveal, revenge application, and day completion is saved under
 `mafia-host:active-session:v2`.
@@ -114,9 +134,12 @@ authority while selectors derive converted Jester behavior. Corrected Phase 7D e
 victory only when pending revenge is absent and adds safe waiting and game-over presentation.
 Phase 7E resolves ordinary deaths before one due random Jester revenge, converts shared-target
 Executioners after the revenge death, and reevaluates victory before public Dawn or game over.
+Phase 7F leaves those rules unchanged while deriving active Godfather succession before later-night
+wake order is created.
 
-Still not implemented: automated trials/votes, undo/history correction, backend/cloud
-synchronization, online multiplayer, or multi-tab synchronization.
+Still not implemented: automated trials/votes, vote entry or trial history, undo/history correction,
+cloud name synchronization, backend/cloud synchronization, online multiplayer, or multi-tab
+synchronization.
 
 ## Local save and privacy
 
@@ -142,7 +165,11 @@ which information players already saw. Such a V1 save is not silently deleted. O
 V2 is written before the legacy key is removed; a failed V2 write preserves V1.
 
 V2 recovery supports later nights, selected mid-revenge Dawn resolution, later Dawns/days,
-multi-day outcomes, waiting, and game over. Neutral-state sub-version `3` requires explicit death
+multi-day outcomes, waiting, and game over. Phase 7F neutral-state sub-version `4` adds exact
+Godfather promotions, their enforcement start night, and the private unacknowledged briefing
+stage. An exact sub-version `3` save begins succession enforcement on its next future night, so
+restoration never invents a historical random promotion; once written as sub-version `4`, the
+promotion history must be complete from that cutover. Sub-version `3` requires explicit death
 records, personal wins, conversions, pending/reconciled revenge authority, and canonical day
 outcome history together. Earlier neutral-state V2
 saves receive canonical empty defaults only where unambiguous. A prior Dawn announcement can prove
@@ -151,6 +178,10 @@ cause evidence fails with an explicit compatibility error rather than inferring 
 false`. Dialogs, temporary selections, focus, guards, labels, and summary prose are never
 persisted. A selected revenge victim is durable mid-workflow so refresh and save retry never
 reroll it; the recovery summary exposes only the broad `Dawn resolution` stage.
+
+Remembered player names use `mafia-host:remembered-player-names:v1`, not the active-session key or
+schema. Malformed preference data safely produces an empty prefill. Loading, saving, or clearing
+that preference can fail without invalidating setup or a successfully assigned game.
 
 Phase 7C.1 new V2 saves persist no non-informational private outcome and no acknowledged-screen
 state. Earlier V2 `Action recorded` states are replayed through validation and canonicalized to the

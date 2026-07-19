@@ -50,6 +50,7 @@ function startedWorkflow(
     phase: 'night-action-collection',
     nightNumber,
     settings: { allowFirstNightKills: true, doctorCanSelfProtect: true },
+    godfatherSuccessionStartNightNumber: nightNumber + 1,
   })
   const result = createNightActionCollectionForStartedNight(fixture.game, fixture.participants)
   if (!result.ok) throw new Error(`Could not start workflow: ${result.error.type}`)
@@ -216,6 +217,8 @@ function toPriorNeutralGame(
     'jesterRevengeResolutions',
     'dayOutcome',
     'dayOutcomes',
+    'godfatherSuccessionStartNightNumber',
+    'godfatherPromotions',
   ])
   return {
     ...Object.fromEntries(Object.entries(game).filter(([key]) => !phase7CFields.has(key))),
@@ -227,7 +230,11 @@ function toPhase7DNeutralGame(game: PersistedGameV2): Readonly<Record<string, un
   return {
     ...Object.fromEntries(
       Object.entries(game).filter(
-        ([key]) => key !== 'jesterRevengeResolutions' && key !== 'dayOutcomes',
+        ([key]) =>
+          key !== 'jesterRevengeResolutions' &&
+          key !== 'dayOutcomes' &&
+          key !== 'godfatherSuccessionStartNightNumber' &&
+          key !== 'godfatherPromotions',
       ),
     ),
     neutralStateVersion: 2,
@@ -1071,7 +1078,7 @@ describe('persisted Phase 7C final day outcome V2', () => {
         stage: 'day-outcome',
         workflowStatus: 'day-outcome',
         game: {
-          neutralStateVersion: 3,
+          neutralStateVersion: 4,
           phase: 'execution-resolution',
         },
       })
@@ -1273,7 +1280,8 @@ describe('persisted Phase 7C final day outcome V2', () => {
     expect(toPersistedAppSessionV2(compatible.value.session)).toMatchObject({
       stage: 'day-discussion',
       game: {
-        neutralStateVersion: 3,
+        neutralStateVersion: 4,
+        godfatherPromotions: [],
         deathRecords: [],
         personalWins: [],
         executionerConversions: [],

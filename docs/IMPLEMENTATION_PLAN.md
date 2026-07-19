@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7E retains schema V2 with neutral-state sub-version 3 and exact multi-cycle stages<br>
+**Persistence:** One versioned local active-session save; Phase 7F retains schema V2 with neutral-state sub-version 4 for Godfather promotions, plus a separate names-only local preference<br>
 **Backend:** None
 
 ---
@@ -136,7 +136,8 @@ type GameCommand =
 ```
 
 Day commands record only deliberate host-confirmed outcomes. The domain and application do not
-record nominations, voters, individual verdict votes, totals, or majority calculations.
+record nominations, voters, abstentions, individual verdict votes, totals, thresholds, or trial
+history. Phase 7F derives public trial guidance without adding command or game state.
 
 ### Tests
 
@@ -534,7 +535,7 @@ Only current-night deaths are announced. No generic migration framework exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7E implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7F implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -663,8 +664,8 @@ recovery only.**
 - Add deliberate host confirmation of a Mayor's verbal reveal.
 - Keep confirmed Mayor reveal public and permanent, including after death.
 - Display that a living revealed Mayor counts as three in every player vote.
-- Keep nominations, trial count, voters, individual guilty/innocent votes, totals, and majority
-  calculations outside the app.
+- Keep nominations, trial count/history, voters, abstentions, individual guilty/innocent votes,
+  totals, and stored thresholds outside the app.
 - Add no final-outcome controls, execution, end-day transition, personal effects, victory, or
   next-night loop; stop safely in `day-discussion`.
 - Compatibly extend persistence V2 with the exact first-day game and participants while deriving
@@ -855,6 +856,60 @@ evaluateGameOutcome(gameState): GameOutcome
   current numbered public Dawn/day; terminal games skip day discussion.
 - Multiple simultaneous pending revenge obligations remain rejected because the one-execution-per-
   day product rules do not define an inter-obligation ordering.
+
+---
+
+### Phase 7F — Day guidance, alignment views, remembered names, and Godfather succession
+
+**Status: Implemented.**
+
+#### Work
+
+- Derive and publicly display the trial threshold as
+  `floor(living participating players / 2) + 1`.
+- Keep execution verdict authority separate: guilty votes must exceed innocent votes, and a tie is
+  innocent. Keep Mayor weighting manual and do not store votes, voters, abstentions, nominations,
+  thresholds, or trial history.
+- Group the temporary host-only role view under Mafia, Town, and Neutral using active roles,
+  textual alignments, and red/green/grey treatments. Show current role/alignment inside the private
+  execution boundary without exposing neutral targets, wins, revenge, or night data.
+- Store the most recently completed setup roster as a separate browser-local names-only
+  preference. Fresh setup may prefill it; active recovery never merges it. Clearing the preference
+  leaves the current setup and active save unchanged.
+- At the atomic transition into Night 2 or later, promote one canonical living active Mafia member
+  when no living active Godfather exists. Use exactly one injected random sample, persist the
+  promotion, preserve original assignment/role instance, rebuild wake order, and remove the old
+  active ability.
+- Restore an unacknowledged promotion as a generic recovery stage, then show one private briefing.
+  Acknowledgement must save before ordinary night actions begin; failure preserves the exact
+  briefing and promotion without rerolling.
+- Keep schema V2 and advance the nested neutral-state version from 3 to 4. Accept exact Phase 7E
+  version-3 saves with empty promotion history and begin succession enforcement on their next
+  future night, avoiding any invented historical random selection. Require version-4 promotion
+  history to be complete from its recorded cutover.
+
+#### Tests
+
+- Strict-majority boundaries from zero through ten living players, dead-player exclusion, and
+  Mayor independence.
+- Canonical alignment grouping, active/original role display, hidden-DOM privacy, accessible color
+  treatments, and execution details.
+- Names-only validation, separate storage key, fresh prefill, clear behavior, active-save
+  precedence, and non-blocking preference failures.
+- Succession eligibility, duplicate living Godfathers, no-candidate behavior, canonical
+  randomness, invalid output, later replacement, wake-order replacement, investigation behavior,
+  persistence round-trip, current-history completeness, Phase 7E cutover compatibility, recovery
+  privacy, acknowledgement save failure, and replay prevention.
+
+#### Acceptance criteria
+
+- Public day guidance never claims execution uses the trial threshold and no vote-entry state is
+  introduced.
+- Host-only role visibility and execution selection remain temporary React state.
+- Remembered names contain no role or game authority and never pollute the active-session schema.
+- Promotion is authoritative before night actions, never rerolls on restore/retry, and the promoted
+  player acts only as Godfather while their immutable original assignment remains available to
+  private host views.
 
 ---
 
@@ -1056,7 +1111,7 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7E are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7F are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
 Do not start Phase 8 automatically. App-managed voting, undo/history, backend/cloud sync, online
