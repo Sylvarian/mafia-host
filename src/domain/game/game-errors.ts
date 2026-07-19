@@ -98,6 +98,12 @@ export type InvalidGameStateError = Readonly<{
     | Readonly<{ type: 'INVALID_PHASE'; phase: string }>
     | Readonly<{ type: 'INVALID_COUNTER'; counter: 'day' | 'night'; value: number }>
     | Readonly<{
+        type: 'PHASE_COUNTER_MISMATCH'
+        phase: GamePhase
+        nightNumber: number
+        dayNumber: number
+      }>
+    | Readonly<{
         type: 'INVALID_IDENTITY'
         field: 'gameId' | 'playerId' | 'roleDefinitionId' | 'roleId' | 'roleInstanceId'
         index?: number

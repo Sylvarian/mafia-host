@@ -1,4 +1,8 @@
 import type { GameId, PlayerId, RoleInstanceId } from '../identifiers.ts'
+import type {
+  JesterRevengeResolutionId,
+  PendingJesterRevengeId,
+} from '../neutral/neutral-outcome-model.ts'
 
 export type DeathCause =
   | Readonly<{
@@ -12,7 +16,10 @@ export type DeathCause =
   | Readonly<{
       kind: 'jester-revenge'
       nightNumber: number
+      jesterPlayerId: PlayerId
       jesterRoleInstanceId: RoleInstanceId
+      obligationId: PendingJesterRevengeId
+      resolutionId: JesterRevengeResolutionId
     }>
 
 export type DeathRecord = Readonly<{

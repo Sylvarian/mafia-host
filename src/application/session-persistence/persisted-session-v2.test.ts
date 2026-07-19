@@ -35,10 +35,12 @@ import { migratePersistedSessionEnvelopeV1 } from './migrate-persisted-session-v
 import {
   createPersistedSessionEnvelopeV2,
   toPersistedAppSessionV2,
+  type PersistedGameV2,
 } from './persisted-session-v2.ts'
 import { restorePersistedSessionEnvelopeV2 } from './restore-persisted-session-v2.ts'
 
 const SAVED_AT = '2026-07-18T10:00:00.000Z'
+const LOWEST_RANDOM_SOURCE = Object.freeze({ next: (): number => 0 })
 
 function startedWorkflow(
   roles: Parameters<typeof createNightFixture>[0],
@@ -120,8 +122,12 @@ function roundTrip(session: ActiveAppSession): ActiveAppSession {
 
 function completeDoctorNight(nightNumber = 2) {
   let workflow = continueSuccessfully(
-    startedWorkflow([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }], nightNumber),
+    startedWorkflow(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }, { roleId: ROLE_IDS.godfather }],
+      nightNumber,
+    ),
   )
+  workflow = confirmSuccessfully(workflow, 1)
   workflow = confirmSuccessfully(workflow, 1)
   if (workflow.status !== 'complete') throw new Error('Expected completed workflow.')
   return workflow
@@ -207,11 +213,32 @@ function toPriorNeutralGame(
     'personalWins',
     'executionerConversions',
     'pendingJesterRevenges',
+    'jesterRevengeResolutions',
     'dayOutcome',
+    'dayOutcomes',
   ])
   return {
     ...Object.fromEntries(Object.entries(game).filter(([key]) => !phase7CFields.has(key))),
     neutralStateVersion: 1,
+  }
+}
+
+function toPhase7DNeutralGame(game: PersistedGameV2): Readonly<Record<string, unknown>> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(game).filter(
+        ([key]) => key !== 'jesterRevengeResolutions' && key !== 'dayOutcomes',
+      ),
+    ),
+    neutralStateVersion: 2,
+    pendingJesterRevenges: game.pendingJesterRevenges.map((record) => ({
+      gameId: record.gameId,
+      jesterPlayerId: record.jesterPlayerId,
+      jesterRoleInstanceId: record.jesterRoleInstanceId,
+      triggeredOnDay: record.triggeredOnDay,
+      status: record.status,
+    })),
+    dayOutcome: game.dayOutcomes[0] ?? null,
   }
 }
 
@@ -721,8 +748,8 @@ describe('persisted sequential session V2', () => {
     }
     expect(restoredReady.workflow.game.players.every((player) => player.alive)).toBe(true)
 
-    const dawnResult = prepareDawnAnnouncement(readyResult.value)
-    if (!dawnResult.ok) throw new Error('Expected Dawn.')
+    const dawnResult = prepareDawnAnnouncement(readyResult.value, LOWEST_RANDOM_SOURCE)
+    if (!dawnResult.ok || dawnResult.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const dawnSession: ActiveAppSession = { stage: 'dawn', workflow: dawnResult.value }
     const persistedDawn = toPersistedAppSessionV2(dawnSession)
     expect(roundTrip(dawnSession)).toEqual(dawnSession)
@@ -740,8 +767,8 @@ describe('persisted sequential session V2', () => {
     const complete = completeDoctorNight(1)
     const readyResult = beginFinalNightResolution(complete)
     if (!readyResult.ok) throw new Error('Expected final night resolution.')
-    const dawnResult = prepareDawnAnnouncement(readyResult.value)
-    if (!dawnResult.ok) throw new Error('Expected Dawn.')
+    const dawnResult = prepareDawnAnnouncement(readyResult.value, LOWEST_RANDOM_SOURCE)
+    if (!dawnResult.ok || dawnResult.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const envelope = JSON.parse(
       JSON.stringify(
         createPersistedSessionEnvelopeV2({ stage: 'dawn', workflow: dawnResult.value }, SAVED_AT),
@@ -755,7 +782,7 @@ describe('persisted sequential session V2', () => {
       ok: false,
       error: {
         type: 'INVALID_DAWN_SESSION',
-        reason: 'invalid-counters',
+        reason: 'invalid-game',
       },
     })
   })
@@ -799,8 +826,8 @@ describe('narrow V1 migration', () => {
 
     const ready = beginFinalNightResolution(completeDoctorNight(1))
     if (!ready.ok) throw new Error('Expected resolution.')
-    const dawn = prepareDawnAnnouncement(ready.value)
-    if (!dawn.ok) throw new Error('Expected Dawn.')
+    const dawn = prepareDawnAnnouncement(ready.value, LOWEST_RANDOM_SOURCE)
+    if (!dawn.ok || dawn.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const dawnSession: ActiveAppSession = { stage: 'dawn', workflow: dawn.value }
 
     for (const safeSession of [setup, distribution, briefing, dawnSession]) {
@@ -880,6 +907,7 @@ describe('persisted Phase 7B day discussion V2', () => {
       session: { game: { phase: string; dayNumber: number } }
     }
     envelope.session.game.phase = 'dawn-announcement'
+    envelope.session.game.dayNumber = 0
     expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
       ok: false,
       error: {
@@ -899,8 +927,44 @@ describe('persisted Phase 7B day discussion V2', () => {
       ok: false,
       error: {
         type: 'INVALID_DAY_DISCUSSION_SESSION',
-        reason: 'invalid-counters',
+        reason: 'invalid-game',
       },
+    })
+  })
+
+  it('rejects a forged later-cycle Executioner briefing save', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.godfather },
+      ],
+      {
+        phase: 'executioner-briefing',
+        nightNumber: 1,
+        executionerBriefingStatus: 'pending',
+      },
+    )
+    const workflow = createExecutionerBriefingWorkflow(fixture.game)
+    if (!workflow.ok) throw new Error('Expected a valid first-night briefing.')
+    const envelope = createPersistedSessionEnvelopeV2(
+      {
+        stage: 'executioner-briefing',
+        game: fixture.game,
+        participants: fixture.participants,
+        workflow: workflow.value,
+      },
+      SAVED_AT,
+    )
+    const forged = JSON.parse(JSON.stringify(envelope)) as {
+      session: { game: { nightNumber: number; dayNumber: number } }
+    }
+    forged.session.game.nightNumber = 3
+    forged.session.game.dayNumber = 2
+
+    expect(restorePersistedSessionEnvelopeV2(forged)).toEqual({
+      ok: false,
+      error: { type: 'INVALID_EXECUTIONER_BRIEFING_SESSION', reason: 'invalid-game' },
     })
   })
 
@@ -1007,7 +1071,7 @@ describe('persisted Phase 7C final day outcome V2', () => {
         stage: 'day-outcome',
         workflowStatus: 'day-outcome',
         game: {
-          neutralStateVersion: 2,
+          neutralStateVersion: 3,
           phase: 'execution-resolution',
         },
       })
@@ -1094,13 +1158,15 @@ describe('persisted Phase 7C final day outcome V2', () => {
         game: {
           nightNumber: number
           dayNumber: number
-          dayOutcome: { dayNumber: number }
+          dayOutcomes: { dayNumber: number }[]
         }
       }
     }
     envelope.session.game.nightNumber = 2
     envelope.session.game.dayNumber = 2
-    envelope.session.game.dayOutcome.dayNumber = 2
+    const firstOutcome = envelope.session.game.dayOutcomes[0]
+    if (firstOutcome === undefined) throw new Error('Expected a completed day outcome.')
+    firstOutcome.dayNumber = 2
 
     expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
       ok: false,
@@ -1207,12 +1273,13 @@ describe('persisted Phase 7C final day outcome V2', () => {
     expect(toPersistedAppSessionV2(compatible.value.session)).toMatchObject({
       stage: 'day-discussion',
       game: {
-        neutralStateVersion: 2,
+        neutralStateVersion: 3,
         deathRecords: [],
         personalWins: [],
         executionerConversions: [],
         pendingJesterRevenges: [],
-        dayOutcome: null,
+        jesterRevengeResolutions: [],
+        dayOutcomes: [],
       },
     })
 
@@ -1372,6 +1439,56 @@ describe('persisted corrected Phase 7D sessions in schema V2', () => {
     expect(JSON.stringify(persisted)).not.toMatch(/victimPlayerId|revengeResolution|nextNight/)
   })
 
+  it('upgrades unambiguous Phase 7D day and terminal sessions from neutral sub-version 2', () => {
+    const sessions = [
+      createDayOutcomeSession('no-execution', [
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+      settleDayOutcome(
+        createDayOutcomeSession('no-execution', [
+          { roleId: ROLE_IDS.godfather },
+          { roleId: ROLE_IDS.citizen },
+          { roleId: ROLE_IDS.citizen },
+        ]),
+      ),
+      settleDayOutcome(
+        createDayOutcomeSession('execution', [
+          { roleId: ROLE_IDS.jester },
+          { roleId: ROLE_IDS.godfather },
+          { roleId: ROLE_IDS.citizen },
+        ]),
+      ),
+      settleDayOutcome(
+        createDayOutcomeSession('no-execution', [
+          { roleId: ROLE_IDS.framer },
+          { roleId: ROLE_IDS.consort },
+          { roleId: ROLE_IDS.citizen },
+          { roleId: ROLE_IDS.citizen },
+        ]),
+      ),
+    ]
+
+    for (const session of sessions) {
+      const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
+      if (!('game' in envelope.session)) {
+        throw new Error('Expected a Phase 7D session with game authority.')
+      }
+      const legacyEnvelope = {
+        ...envelope,
+        session: {
+          ...envelope.session,
+          game: toPhase7DNeutralGame(envelope.session.game),
+        },
+      }
+      const restored = restorePersistedSessionEnvelopeV2(legacyEnvelope)
+      expect(restored.ok).toBe(true)
+      if (!restored.ok) throw new Error(`Expected Phase 7D upgrade: ${restored.error.type}`)
+      expect(restored.value.session).toEqual(session)
+    }
+  })
+
   it('rejects partial, forged, unknown, duplicate, reordered, and cross-game terminal results', () => {
     const session = settleDayOutcome(
       createDayOutcomeSession('no-execution', [
@@ -1522,11 +1639,11 @@ describe('persisted corrected Phase 7D sessions in schema V2', () => {
       }),
     ).toMatchObject({
       ok: false,
-      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-result' },
+      error: { type: 'INVALID_GAME_OVER_SESSION', reason: 'invalid-game' },
     })
   })
 
-  it('rejects a game-over result outside the supported Day 1 counter boundary', () => {
+  it('rejects a forged later-day game over with incomplete history', () => {
     const session = settleDayOutcome(
       createDayOutcomeSession('no-execution', [
         { roleId: ROLE_IDS.citizen },
@@ -1534,7 +1651,10 @@ describe('persisted corrected Phase 7D sessions in schema V2', () => {
       ]),
     )
     const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
-    if (envelope.session.stage !== 'game-over' || envelope.session.game.dayOutcome === null) {
+    if (
+      envelope.session.stage !== 'game-over' ||
+      envelope.session.game.dayOutcomes[0] === undefined
+    ) {
       throw new Error('Expected persisted Day 1 game over.')
     }
     expect(
@@ -1546,7 +1666,7 @@ describe('persisted corrected Phase 7D sessions in schema V2', () => {
             ...envelope.session.game,
             nightNumber: 2,
             dayNumber: 2,
-            dayOutcome: { ...envelope.session.game.dayOutcome, dayNumber: 2 },
+            dayOutcomes: [{ ...envelope.session.game.dayOutcomes[0], dayNumber: 2 }],
           },
         },
       }),
@@ -1554,7 +1674,7 @@ describe('persisted corrected Phase 7D sessions in schema V2', () => {
       ok: false,
       error: {
         type: 'INVALID_GAME_OVER_SESSION',
-        reason: 'game-over-result-mismatch',
+        reason: 'invalid-game',
       },
     })
   })

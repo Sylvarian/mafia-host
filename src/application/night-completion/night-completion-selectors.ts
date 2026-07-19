@@ -1,7 +1,11 @@
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
-import type { DawnWorkflow, NightCompletionWorkflow } from './night-completion-workflow.ts'
+import type {
+  DawnWorkflow,
+  ReadyForDawnWorkflow,
+  RevengeResolutionWorkflow,
+} from './night-completion-workflow.ts'
 
 export type DawnDeathView = Readonly<{
   playerId: DawnWorkflow['game']['players'][number]['playerId']
@@ -21,7 +25,14 @@ export type NightCompletionView =
   | Readonly<{ status: 'ready-for-dawn' }>
   | Readonly<{ status: 'dawn'; announcement: DawnAnnouncementView }>
 
-export function selectNightCompletionView(workflow: NightCompletionWorkflow): NightCompletionView {
+export type RevengeResolutionView = Readonly<{
+  nightNumber: number
+  victimDisplayLabel: string
+}>
+
+export function selectNightCompletionView(
+  workflow: ReadyForDawnWorkflow | DawnWorkflow,
+): NightCompletionView {
   return workflow.status === 'ready-for-dawn'
     ? Object.freeze({ status: 'ready-for-dawn' })
     : Object.freeze({
@@ -74,4 +85,31 @@ export function selectDawnAnnouncementView(workflow: DawnWorkflow): DawnAnnounce
       }),
     ),
   })
+}
+
+export function selectRevengeResolutionView(
+  workflow: RevengeResolutionWorkflow,
+): RevengeResolutionView {
+  return Object.freeze({
+    nightNumber: workflow.game.nightNumber,
+    victimDisplayLabel: selectPlayerDisplayLabel(
+      workflow.participants,
+      workflow.selectedRevenge.victimPlayerId,
+    ),
+  })
+}
+
+function selectPlayerDisplayLabel(
+  participants: readonly Readonly<{ id: string; name: string }>[],
+  selectedPlayerId: string,
+): string {
+  const index = participants.findIndex((participant) => participant.id === selectedPlayerId)
+  const participant = participants[index]
+  if (participant === undefined) {
+    throw new Error('The selected revenge victim is absent from the participant roster.')
+  }
+  const duplicate = participants.some(
+    (candidate, candidateIndex) => candidateIndex !== index && candidate.name === participant.name,
+  )
+  return duplicate ? `${participant.name} (Player ${String(index + 1)})` : participant.name
 }

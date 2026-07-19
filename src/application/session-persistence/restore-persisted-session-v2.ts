@@ -23,7 +23,16 @@ import type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 import type { GamePlayer } from '@/domain/players/game-player.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_IDS, ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role-registry.ts'
-import type { DawnAnnouncement, DawnDeath } from '@/domain/resolution/dawn-announcement.ts'
+import {
+  createJesterRevengeResolutionId,
+  createPendingJesterRevengeId,
+} from '@/domain/neutral/jester-revenge-identity.ts'
+import { selectEligibleJesterRevengeVictims } from '@/domain/neutral/jester-revenge.ts'
+import type { SelectedJesterRevenge } from '@/domain/neutral/neutral-outcome-model.ts'
+import {
+  buildCurrentDawnAnnouncement,
+  type DawnAnnouncement,
+} from '@/domain/resolution/dawn-announcement.ts'
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
 import {
@@ -73,6 +82,7 @@ import type {
   NightResolutionAppSession,
   PendingRevengeWaitingAppSession,
   PostDayWaitingAppSession,
+  RevengeResolutionAppSession,
   RoleDistributionAppSession,
   SequentialNightAppSession,
   SetupAppSession,
@@ -150,6 +160,10 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-announcement'
         | 'invalid-counters'
         | 'contains-private-night-data'
+    }>
+  | Readonly<{
+      type: 'INVALID_REVENGE_RESOLUTION_SESSION'
+      reason: 'invalid-shape' | 'invalid-game' | 'invalid-participants' | 'invalid-selection'
     }>
   | Readonly<{
       type: 'INVALID_DAY_DISCUSSION_SESSION'
@@ -287,6 +301,10 @@ function restoreAppSession(
       return options.allowLegacyGameShape
         ? invalidNightResolution('invalid-shape')
         : restoreNightResolutionSession(candidate)
+    case 'revenge-resolution':
+      return options.allowLegacyGameShape
+        ? invalidRevengeResolution('invalid-shape')
+        : restoreRevengeResolutionSession(candidate)
     case 'dawn':
       return restoreDawnSession(candidate, options)
     case 'day-discussion':
@@ -1189,8 +1207,17 @@ function restoreDawnSession(
       phase: gameResult.value.phase,
     })
   }
-  if (gameResult.value.nightNumber !== 1 || gameResult.value.dayNumber !== 0) {
+  if (gameResult.value.nightNumber !== gameResult.value.dayNumber + 1) {
     return invalidDawn('invalid-counters')
+  }
+  if (isCurrentNeutralStateGame(candidate.game)) {
+    const evaluation = evaluateFactionVictory({
+      ...gameResult.value,
+      phase: 'dawn-resolution',
+    })
+    if (!evaluation.ok || evaluation.value.kind !== 'none') {
+      return invalidDawn('invalid-game')
+    }
   }
   const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
   if (!participantsResult.ok) {
@@ -1213,6 +1240,100 @@ function restoreDawnSession(
     !hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? invalidDawn('invalid-shape')
     : succeed(session)
+}
+
+function restoreRevengeResolutionSession(
+  candidate: Readonly<Record<string, unknown>>,
+): DomainResult<RevengeResolutionAppSession, RestorePersistedSessionV2Error> {
+  if (
+    !hasExactKeys(candidate, [
+      'stage',
+      'workflowStatus',
+      'game',
+      'participants',
+      'selectedRevenge',
+    ]) ||
+    candidate.workflowStatus !== 'revenge-resolution' ||
+    !isUnknownRecord(candidate.selectedRevenge) ||
+    !hasExactKeys(candidate.selectedRevenge, [
+      'id',
+      'kind',
+      'gameId',
+      'obligationId',
+      'jesterPlayerId',
+      'jesterRoleInstanceId',
+      'victimPlayerId',
+      'resolvedAtNightNumber',
+    ])
+  ) {
+    return invalidRevengeResolution('invalid-shape')
+  }
+  const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
+  if (!gameResult.ok || gameResult.value.phase !== 'dawn-resolution') {
+    return invalidRevengeResolution('invalid-game')
+  }
+  const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
+  if (!participantsResult.ok) {
+    return invalidRevengeResolution('invalid-participants')
+  }
+  const selectedCandidate = candidate.selectedRevenge
+  if (
+    selectedCandidate.kind !== 'victim-selected' ||
+    typeof selectedCandidate.id !== 'string' ||
+    typeof selectedCandidate.gameId !== 'string' ||
+    typeof selectedCandidate.obligationId !== 'string' ||
+    typeof selectedCandidate.jesterPlayerId !== 'string' ||
+    typeof selectedCandidate.jesterRoleInstanceId !== 'string' ||
+    typeof selectedCandidate.victimPlayerId !== 'string' ||
+    typeof selectedCandidate.resolvedAtNightNumber !== 'number' ||
+    !Number.isSafeInteger(selectedCandidate.resolvedAtNightNumber)
+  ) {
+    return invalidRevengeResolution('invalid-selection')
+  }
+  const obligation = gameResult.value.pendingJesterRevenges[0]
+  if (
+    obligation === undefined ||
+    gameResult.value.pendingJesterRevenges.length !== 1 ||
+    obligation.id !== selectedCandidate.obligationId ||
+    obligation.id !==
+      createPendingJesterRevengeId(obligation.jesterRoleInstanceId, obligation.triggeredOnDay) ||
+    createJesterRevengeResolutionId(obligation.id) !== selectedCandidate.id ||
+    gameResult.value.id !== selectedCandidate.gameId ||
+    obligation.jesterPlayerId !== selectedCandidate.jesterPlayerId ||
+    obligation.jesterRoleInstanceId !== selectedCandidate.jesterRoleInstanceId ||
+    gameResult.value.nightNumber !== selectedCandidate.resolvedAtNightNumber
+  ) {
+    return invalidRevengeResolution('invalid-selection')
+  }
+  const selection: SelectedJesterRevenge = Object.freeze({
+    id: selectedCandidate.id,
+    kind: 'victim-selected',
+    gameId: gameId(selectedCandidate.gameId),
+    obligationId: selectedCandidate.obligationId,
+    jesterPlayerId: playerId(selectedCandidate.jesterPlayerId),
+    jesterRoleInstanceId: roleInstanceId(selectedCandidate.jesterRoleInstanceId),
+    victimPlayerId: playerId(selectedCandidate.victimPlayerId),
+    resolvedAtNightNumber: selectedCandidate.resolvedAtNightNumber,
+  })
+  if (
+    !selectEligibleJesterRevengeVictims(gameResult.value, obligation).includes(
+      selection.victimPlayerId,
+    )
+  ) {
+    return invalidRevengeResolution('invalid-selection')
+  }
+  const session = deepFreeze({
+    stage: 'revenge-resolution' as const,
+    workflow: {
+      status: 'revenge-resolution' as const,
+      game: gameResult.value,
+      participants: participantsResult.value,
+      selectedRevenge: selection,
+    },
+  })
+  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+    ? succeed(session)
+    : invalidRevengeResolution('invalid-shape')
 }
 
 function restoreDayDiscussionSession(
@@ -1328,7 +1449,7 @@ function restoreDayOutcomeSession(
   if (
     !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants']) ||
     candidate.workflowStatus !== 'day-outcome' ||
-    !isCurrentNeutralStateGame(candidate.game)
+    !isSupportedNeutralStateGame(candidate.game)
   ) {
     return invalidDayOutcome('invalid-shape')
   }
@@ -1384,7 +1505,7 @@ function restorePostDayWaitingSession(
   if (
     !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants']) ||
     candidate.workflowStatus !== stage ||
-    !isCurrentNeutralStateGame(candidate.game)
+    !isSupportedNeutralStateGame(candidate.game)
   ) {
     return invalidPostDayWaiting('invalid-shape')
   }
@@ -1443,7 +1564,7 @@ function restoreGameOverSession(
   if (
     !hasExactKeys(candidate, ['stage', 'workflowStatus', 'game', 'participants', 'result']) ||
     candidate.workflowStatus !== 'game-over' ||
-    !isCurrentNeutralStateGame(candidate.game)
+    !isSupportedNeutralStateGame(candidate.game)
   ) {
     return invalidGameOver('invalid-shape')
   }
@@ -1554,13 +1675,22 @@ function restoreGame(
     'dayNumber',
     'doctorPreviousTargets',
   ]
-  const currentKeys = [
+  const phase7DKeys = [
     ...priorNeutralKeys,
     'deathRecords',
     'personalWins',
     'executionerConversions',
     'pendingJesterRevenges',
     'dayOutcome',
+  ]
+  const currentKeys = [
+    ...priorNeutralKeys,
+    'deathRecords',
+    'personalWins',
+    'executionerConversions',
+    'pendingJesterRevenges',
+    'jesterRevengeResolutions',
+    'dayOutcomes',
   ]
   const legacyKeys = [
     'id',
@@ -1574,10 +1704,12 @@ function restoreGame(
   const legacyShape = options.allowLegacyGameShape && hasExactKeys(candidate, legacyKeys)
   const priorNeutralShape =
     !legacyShape && hasExactKeys(candidate, priorNeutralKeys) && candidate.neutralStateVersion === 1
+  const phase7DShape =
+    !legacyShape && hasExactKeys(candidate, phase7DKeys) && candidate.neutralStateVersion === 2
   const currentNeutralShape =
-    hasExactKeys(candidate, currentKeys) && candidate.neutralStateVersion === 2
+    hasExactKeys(candidate, currentKeys) && candidate.neutralStateVersion === 3
   if (
-    (!currentNeutralShape && !priorNeutralShape && !legacyShape) ||
+    (!currentNeutralShape && !phase7DShape && !priorNeutralShape && !legacyShape) ||
     typeof candidate.id !== 'string' ||
     candidate.id.trim().length === 0 ||
     typeof candidate.phase !== 'string' ||
@@ -1699,7 +1831,8 @@ function restoreGame(
     (role) => ({ id: role.id, name: role.name, faction: role.faction }),
   )
   const provenNightDeaths = new Set(options.provenNightDeathPlayerIds ?? [])
-  const upgradedDeathRecords = currentNeutralShape
+  const hasOutcomeAuthority = currentNeutralShape || phase7DShape
+  const upgradedDeathRecords = hasOutcomeAuthority
     ? candidate.deathRecords
     : players
         .filter((player) => provenNightDeaths.has(player.playerId))
@@ -1712,7 +1845,7 @@ function restoreGame(
             nightNumber: candidate.nightNumber,
           },
         }))
-  const upgradedConversions = currentNeutralShape
+  const upgradedConversions = hasOutcomeAuthority
     ? candidate.executionerConversions
     : executionerTargets
         .filter((target) => provenNightDeaths.has(target.targetPlayerId))
@@ -1741,10 +1874,31 @@ function restoreGame(
           : 'not-required'
       : candidate.executionerBriefingStatus,
     deathRecords: upgradedDeathRecords,
-    personalWins: currentNeutralShape ? candidate.personalWins : [],
+    personalWins: hasOutcomeAuthority ? candidate.personalWins : [],
     executionerConversions: upgradedConversions,
-    pendingJesterRevenges: currentNeutralShape ? candidate.pendingJesterRevenges : [],
-    dayOutcome: currentNeutralShape ? candidate.dayOutcome : null,
+    pendingJesterRevenges: currentNeutralShape
+      ? candidate.pendingJesterRevenges
+      : phase7DShape && Array.isArray(candidate.pendingJesterRevenges)
+        ? candidate.pendingJesterRevenges.map((record: unknown): unknown =>
+            isUnknownRecord(record) &&
+            typeof record.jesterRoleInstanceId === 'string' &&
+            typeof record.triggeredOnDay === 'number'
+              ? {
+                  ...record,
+                  id: createPendingJesterRevengeId(
+                    roleInstanceId(record.jesterRoleInstanceId),
+                    record.triggeredOnDay,
+                  ),
+                }
+              : record,
+          )
+        : [],
+    jesterRevengeResolutions: currentNeutralShape ? candidate.jesterRevengeResolutions : [],
+    dayOutcomes: currentNeutralShape
+      ? candidate.dayOutcomes
+      : phase7DShape && candidate.dayOutcome !== null
+        ? [candidate.dayOutcome]
+        : [],
   }
   const result = validateGameState(gameCandidate)
   return result.ok ? succeed(deepFreeze(result.value)) : invalidDistribution('invalid-game')
@@ -1811,76 +1965,10 @@ function restoreDawnAnnouncement(
   candidate: unknown,
   game: GameState,
 ): DomainResult<DawnAnnouncement, RestorePersistedSessionV2Error> {
-  if (
-    !isUnknownRecord(candidate) ||
-    typeof candidate.nightNumber !== 'number' ||
-    !Number.isSafeInteger(candidate.nightNumber) ||
-    candidate.nightNumber !== game.nightNumber
-  ) {
-    return invalidDawn('invalid-announcement')
-  }
-  if (candidate.outcome === 'no-deaths') {
-    return hasExactKeys(candidate, ['outcome', 'nightNumber']) &&
-      game.players.every((player) => player.alive)
-      ? succeed(Object.freeze({ outcome: 'no-deaths', nightNumber: candidate.nightNumber }))
-      : invalidDawn('invalid-announcement')
-  }
-  if (
-    candidate.outcome !== 'deaths' ||
-    !hasExactKeys(candidate, ['outcome', 'nightNumber', 'deaths']) ||
-    !Array.isArray(candidate.deaths)
-  ) {
-    return invalidDawn('invalid-announcement')
-  }
-  const deaths: DawnDeath[] = []
-  const seen = new Set<PlayerId>()
-  for (const deathCandidate of candidate.deaths) {
-    if (
-      !isUnknownRecord(deathCandidate) ||
-      !hasExactKeys(deathCandidate, ['playerId', 'revealedRoleId']) ||
-      typeof deathCandidate.playerId !== 'string' ||
-      (deathCandidate.revealedRoleId !== null && typeof deathCandidate.revealedRoleId !== 'string')
-    ) {
-      return invalidDawn('invalid-announcement')
-    }
-    const id = playerId(deathCandidate.playerId)
-    const player = game.players.find((entry) => entry.playerId === id)
-    const expectedReveal =
-      player !== undefined && game.settings.revealRoleOnDeath ? player.role.roleId : null
-    if (
-      player === undefined ||
-      player.alive ||
-      seen.has(id) ||
-      deathCandidate.revealedRoleId !== expectedReveal ||
-      player.publiclyRevealedRoleId !== expectedReveal
-    ) {
-      return invalidDawn('invalid-announcement')
-    }
-    seen.add(id)
-    deaths.push({
-      playerId: id,
-      revealedRoleId:
-        deathCandidate.revealedRoleId === null ? null : roleId(deathCandidate.revealedRoleId),
-    })
-  }
-  if (
-    deaths.length === 0 ||
-    game.players.some((player) => !player.alive && !seen.has(player.playerId))
-  ) {
-    return invalidDawn('invalid-announcement')
-  }
-  deaths.sort(
-    (left, right) =>
-      game.players.findIndex((player) => player.playerId === left.playerId) -
-      game.players.findIndex((player) => player.playerId === right.playerId),
-  )
-  return succeed(
-    Object.freeze({
-      outcome: 'deaths',
-      nightNumber: candidate.nightNumber,
-      deaths: Object.freeze(deaths.map((death) => Object.freeze(death))),
-    }),
-  )
+  const announcement = buildCurrentDawnAnnouncement(game)
+  return hasSameCanonicalContent(announcement, candidate)
+    ? succeed(announcement)
+    : invalidDawn('invalid-announcement')
 }
 
 function restoreRoster(
@@ -2011,6 +2099,9 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
   if (!isUnknownRecord(canonical) || !isUnknownRecord(candidate)) {
     return false
   }
+  if (isCurrentNeutralStateGame(canonical) && isPhase7DNeutralStateGame(candidate)) {
+    return hasSameCanonicalContent(toPhase7DNeutralStateGame(canonical), candidate)
+  }
   if (isCurrentNeutralStateGame(canonical) && isPriorNeutralStateGame(candidate)) {
     return hasSameCanonicalContent(toPriorNeutralStateGame(canonical), candidate)
   }
@@ -2036,7 +2127,42 @@ function isPriorNeutralStateGame(
 function isCurrentNeutralStateGame(
   candidate: unknown,
 ): candidate is Readonly<Record<string, unknown>> {
+  return isUnknownRecord(candidate) && candidate.neutralStateVersion === 3
+}
+
+function isSupportedNeutralStateGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
+  return isCurrentNeutralStateGame(candidate) || isPhase7DNeutralStateGame(candidate)
+}
+
+function isPhase7DNeutralStateGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
   return isUnknownRecord(candidate) && candidate.neutralStateVersion === 2
+}
+
+function toPhase7DNeutralStateGame(
+  candidate: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const dayOutcomes = Array.isArray(candidate.dayOutcomes) ? candidate.dayOutcomes : []
+  const pendingJesterRevenges = Array.isArray(candidate.pendingJesterRevenges)
+    ? candidate.pendingJesterRevenges.map((record: unknown): unknown =>
+        isUnknownRecord(record)
+          ? Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'id'))
+          : record,
+      )
+    : candidate.pendingJesterRevenges
+  return {
+    ...Object.fromEntries(
+      Object.entries(candidate).filter(
+        ([key]) => key !== 'jesterRevengeResolutions' && key !== 'dayOutcomes',
+      ),
+    ),
+    neutralStateVersion: 2,
+    pendingJesterRevenges,
+    dayOutcome: dayOutcomes[0] ?? null,
+  }
 }
 
 function toPriorNeutralStateGame(
@@ -2047,7 +2173,9 @@ function toPriorNeutralStateGame(
     'personalWins',
     'executionerConversions',
     'pendingJesterRevenges',
+    'jesterRevengeResolutions',
     'dayOutcome',
+    'dayOutcomes',
   ])
   return {
     ...Object.fromEntries(Object.entries(candidate).filter(([key]) => !phase7CFields.has(key))),
@@ -2152,6 +2280,15 @@ function invalidDawn(
   >['reason'],
 ): DomainResult<never, RestorePersistedSessionV2Error> {
   return fail({ type: 'INVALID_DAWN_SESSION', reason })
+}
+
+function invalidRevengeResolution(
+  reason: Extract<
+    RestorePersistedSessionV2Error,
+    Readonly<{ type: 'INVALID_REVENGE_RESOLUTION_SESSION' }>
+  >['reason'],
+): DomainResult<never, RestorePersistedSessionV2Error> {
+  return fail({ type: 'INVALID_REVENGE_RESOLUTION_SESSION', reason })
 }
 
 function invalidDayDiscussion(

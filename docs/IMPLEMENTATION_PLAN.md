@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; corrected Phase 7D retains schema V2 and adds exact waiting/game-over states<br>
+**Persistence:** One versioned local active-session save; Phase 7E retains schema V2 with neutral-state sub-version 3 and exact multi-cycle stages<br>
 **Backend:** None
 
 ---
@@ -497,21 +497,19 @@ Phase 7C.1 simplifies current V2 night semantics without changing the schema ver
 
 ### Current V2 boundary
 
-V2 recovery is implemented through the first Dawn, resulting Day 1 discussion, and final Day 1
-outcome. Neutral-state sub-version `2` persists explicit death records, permanent personal wins,
-Executioner conversions, pending Jester revenge, and the singular day outcome. Prior
+V2 recovery is implemented through repeated nights, private Dawn resolution, public Dawn, later
+days, waiting, and game over. Neutral-state sub-version `3` persists explicit death records,
+permanent personal wins, Executioner conversions, pending/resolved Jester revenge, and canonical
+day-outcome history. Prior
 neutral-state V2 saves receive empty defaults only when unambiguous: an exact first-Dawn
 announcement can prove night-death causes and conversion evidence, while a prior Day save with a
-dead player and no cause evidence fails closed. The current Dawn representation still must not be
-reused unchanged for later Dawns, where it could reannounce deaths from earlier nights or days.
-
-Before later-day or later-night persistence is implemented, the session contract must distinguish:
+dead player and no cause evidence fails closed. The current Dawn representation distinguishes:
 
 - Deaths newly announced at the current Dawn.
 - Players who died on earlier nights or days.
 - Current versus historical public announcements.
 
-Phase 7E must update the persisted contract deliberately. No generic migration framework exists.
+Only current-night deaths are announced. No generic migration framework exists.
 
 ### Tests
 
@@ -536,7 +534,7 @@ Phase 7E must update the persisted contract deliberately. No generic migration f
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Corrected Phase 7D implemented; Phase 7E and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7E implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -741,8 +739,8 @@ recovery only.**
   and one **BLOCKED** screen for blocked actors; one **Continue to next actor** seals and advances.
 - Remove fabricated `Action recorded` outcomes, the `Outcome acknowledged` screen, its production
   workflow state, persistence fields, selectors, errors, and translations.
-- Replace the Dawn confirmation dialog with one direct **Show Dawn announcement** operation and an
-  inline public-reveal reminder.
+- Replace the Dawn confirmation dialog with one direct **Finalize Dawn** operation and an inline
+  eyes-closed reminder because private revenge resolution may precede the public announcement.
 - Add a React-only, hidden-by-default day control backed by a separate sanitized host-role selector.
   Converted Executioners show active Jester plus original Executioner, while targets, wins, and
   pending revenge remain excluded.
@@ -788,7 +786,7 @@ evaluateGameOutcome(gameState): GameOutcome
 - When revenge is pending, preserve it unchanged and enter private-safe waiting without selecting a
   victim, applying a death, clearing an obligation, or evaluating a faction.
 - At Dawn, check once against the final state after simultaneous ordinary deaths, conversions,
-  revenge, further conversions, and clearing the obligation. That next-Dawn flow remains Phase 7E.
+  revenge, further conversions, and clearing the obligation. Phase 7E implements this flow.
 - Implement R-009 Serial Killer victory exactly.
 - Implement R-011 Town victory exactly.
 - Implement R-012 Mafia victory and parity counting exactly.
@@ -797,7 +795,7 @@ evaluateGameOutcome(gameState): GameOutcome
 - Add public-safe game-over presentation for the faction/draw result and existing public reveals.
 - Keep personal wins authoritative but private because the specification does not authorize their
   public disclosure.
-- Stop in safe non-terminal waiting without beginning Night 2.
+- Stop in safe non-terminal waiting and expose one deliberate begin-next-night operation.
 
 #### Tests
 
@@ -818,9 +816,11 @@ evaluateGameOutcome(gameState): GameOutcome
 
 - Every evaluated final state produces one authoritative faction result, the documented
   no-survivors draw, or safe waiting without an order-dependent intermediate result.
-- Pending revenge stops safely for Phase 7E and R-006 remains unchanged.
+- Pending revenge stops safely at the Phase 7D post-day boundary, and R-006 remains unchanged.
 
 ### Phase 7E — Subsequent-night loop and persistence upgrade
+
+**Status: Implemented.**
 
 #### Work
 
@@ -849,6 +849,12 @@ evaluateGameOutcome(gameState): GameOutcome
 
 - A game can complete repeated day/night cycles and recover the exact current state without
   reannouncing historical deaths.
+- Ordinary deaths and their conversions are applied before a due Jester revenge; the selected
+  victim is persisted before application and is never rerolled on refresh/retry.
+- Faction victory is evaluated only after the due revenge is cleared. Non-terminal games enter the
+  current numbered public Dawn/day; terminal games skip day discussion.
+- Multiple simultaneous pending revenge obligations remain rejected because the one-execution-per-
+  day product rules do not define an inter-obligation ordering.
 
 ---
 
@@ -1050,11 +1056,8 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through corrected 7D are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7E are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
-When further Phase 7 work is explicitly requested, begin with Phase 7E. Do not start later
-subphases automatically, do not add app-managed voting, and do not reuse the current first-Dawn
-persistence representation for a multi-day loop. Phase 7E must implement Night 2 ordinary deaths,
-next-Dawn revenge selection/death, resulting conversion, clearing, and post-revenge victory
-reevaluation before adding the subsequent loop.
+Do not start Phase 8 automatically. App-managed voting, undo/history, backend/cloud sync, online
+multiplayer, and multi-tab coordination remain outside the implemented boundary.

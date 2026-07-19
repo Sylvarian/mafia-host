@@ -52,7 +52,7 @@ export type PersistedGameV2 = Readonly<{
     alive: boolean
     publiclyRevealedRoleId: string | null
   }>[]
-  neutralStateVersion: 2
+  neutralStateVersion: 3
   executionerBriefingStatus: 'not-started' | 'not-required' | 'pending' | 'completed'
   executionerTargets: readonly Readonly<{
     gameId: string
@@ -78,7 +78,10 @@ export type PersistedGameV2 = Readonly<{
       | Readonly<{
           kind: 'jester-revenge'
           nightNumber: number
+          jesterPlayerId: string
           jesterRoleInstanceId: string
+          obligationId: string
+          resolutionId: string
         }>
   }>[]
   personalWins: readonly (
@@ -106,13 +109,35 @@ export type PersistedGameV2 = Readonly<{
     targetPlayerId: string
   }>[]
   pendingJesterRevenges: readonly Readonly<{
+    id: string
     gameId: string
     jesterPlayerId: string
     jesterRoleInstanceId: string
     triggeredOnDay: number
     status: 'pending'
   }>[]
-  dayOutcome:
+  jesterRevengeResolutions: readonly (
+    | Readonly<{
+        id: string
+        kind: 'victim-killed'
+        gameId: string
+        obligationId: string
+        jesterPlayerId: string
+        jesterRoleInstanceId: string
+        victimPlayerId: string
+        resolvedAtNightNumber: number
+      }>
+    | Readonly<{
+        id: string
+        kind: 'no-survivor'
+        gameId: string
+        obligationId: string
+        jesterPlayerId: string
+        jesterRoleInstanceId: string
+        resolvedAtNightNumber: number
+      }>
+  )[]
+  dayOutcomes: readonly (
     | Readonly<{
         kind: 'player-executed'
         gameId: string
@@ -124,7 +149,7 @@ export type PersistedGameV2 = Readonly<{
         gameId: string
         dayNumber: number
       }>
-    | null
+  )[]
 }>
 
 export type PersistedSubmittedNightActionV2 = Readonly<{
@@ -352,6 +377,22 @@ export type PersistedAppSessionV2 =
       dawnAnnouncement: PersistedDawnAnnouncementV2
     }>
   | Readonly<{
+      stage: 'revenge-resolution'
+      workflowStatus: 'revenge-resolution'
+      game: PersistedGameV2
+      participants: readonly PersistedPlayerV2[]
+      selectedRevenge: Readonly<{
+        id: string
+        kind: 'victim-selected'
+        gameId: string
+        obligationId: string
+        jesterPlayerId: string
+        jesterRoleInstanceId: string
+        victimPlayerId: string
+        resolvedAtNightNumber: number
+      }>
+    }>
+  | Readonly<{
       stage: 'day-discussion'
       workflowStatus: 'day-discussion'
       game: PersistedGameV2
@@ -404,6 +445,7 @@ export type SessionStageSummary = Readonly<{
     | 'Private briefing'
     | 'Night actions'
     | 'Night resolution'
+    | 'Dawn resolution'
     | 'Dawn announcement'
     | 'Day discussion'
     | 'Day complete'
@@ -481,6 +523,14 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
         participants: session.workflow.participants.map(copyPlayer),
         collectedActions: session.workflow.collectedActions.actions.map(copyNightAction),
         resolution: toPersistedNightResolutionV2(session.workflow.resolution),
+      })
+    case 'revenge-resolution':
+      return deepFreeze({
+        stage: 'revenge-resolution',
+        workflowStatus: 'revenge-resolution',
+        game: copyGame(session.workflow.game),
+        participants: session.workflow.participants.map(copyPlayer),
+        selectedRevenge: { ...session.workflow.selectedRevenge },
       })
     case 'dawn':
       return deepFreeze({
@@ -627,6 +677,14 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         dayNumber: session.workflow.game.dayNumber,
         resultLabel: null,
       })
+    case 'revenge-resolution':
+      return Object.freeze({
+        stage: 'Dawn resolution',
+        playerCount: session.workflow.game.players.length,
+        nightNumber: session.workflow.game.nightNumber,
+        dayNumber: session.workflow.game.dayNumber,
+        resultLabel: null,
+      })
     case 'dawn':
       return Object.freeze({
         stage: 'Dawn announcement',
@@ -717,7 +775,7 @@ function copyGame(game: GameState): PersistedGameV2 {
       alive: player.alive,
       publiclyRevealedRoleId: player.publiclyRevealedRoleId,
     })),
-    neutralStateVersion: 2,
+    neutralStateVersion: 3,
     executionerBriefingStatus: game.executionerBriefingStatus,
     executionerTargets: game.executionerTargets.map((target) => ({ ...target })),
     settings: copySettings(game.settings),
@@ -731,7 +789,8 @@ function copyGame(game: GameState): PersistedGameV2 {
     personalWins: game.personalWins.map((record) => ({ ...record })),
     executionerConversions: game.executionerConversions.map((record) => ({ ...record })),
     pendingJesterRevenges: game.pendingJesterRevenges.map((record) => ({ ...record })),
-    dayOutcome: game.dayOutcome === null ? null : { ...game.dayOutcome },
+    jesterRevengeResolutions: game.jesterRevengeResolutions.map((record) => ({ ...record })),
+    dayOutcomes: game.dayOutcomes.map((record) => ({ ...record })),
   }
 }
 

@@ -10,6 +10,12 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return `The first night can begin only from role distribution. The game is currently in ${error.currentPhase}.`
     case 'INVALID_STARTED_NIGHT_PHASE':
       return `The night sequence cannot be created while the game is in ${error.currentPhase}.`
+    case 'INVALID_NEXT_NIGHT_PHASE':
+      return `The next night cannot begin while the game is in ${error.currentPhase}.`
+    case 'INVALID_NEXT_NIGHT_COUNTERS':
+      return 'The day and night counters do not permit the next night to begin.'
+    case 'MISSING_COMPLETED_DAY_OUTCOME':
+      return `Day ${String(error.dayNumber)} has no final recorded outcome.`
     case 'UNKNOWN_ACTOR':
       return 'The acting player is not part of this game.'
     case 'DEAD_ACTOR':

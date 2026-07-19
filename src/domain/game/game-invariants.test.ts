@@ -4,6 +4,8 @@ import { gameId, playerId, roleId, roleInstanceId } from '../identifiers.ts'
 import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
 import type { RoleInstance } from '../roles/role-instance.ts'
+import { ROLE_IDS } from '../roles/role-registry.ts'
+import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import type { GameSettings } from './game-settings.ts'
 import { createGame, validateGameState } from './game-invariants.ts'
 import type { CreateGameInput, GamePlayerCandidate } from './game-state.ts'
@@ -404,6 +406,40 @@ describe('game invariants', () => {
       error: {
         type: 'INVALID_GAME_STATE',
         reason: { type: 'INVALID_COUNTER', counter: 'day', value: 1.5 },
+      },
+    })
+  })
+
+  it('rejects an Executioner briefing outside the first-night boundary', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner },
+        { roleId: ROLE_IDS.citizen },
+        { roleId: ROLE_IDS.godfather },
+      ],
+      {
+        phase: 'executioner-briefing',
+        nightNumber: 1,
+        executionerBriefingStatus: 'pending',
+      },
+    )
+
+    expect(
+      validateGameState({
+        ...fixture.game,
+        nightNumber: 3,
+        dayNumber: 2,
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_GAME_STATE',
+        reason: {
+          type: 'PHASE_COUNTER_MISMATCH',
+          phase: 'executioner-briefing',
+          nightNumber: 3,
+          dayNumber: 2,
+        },
       },
     })
   })

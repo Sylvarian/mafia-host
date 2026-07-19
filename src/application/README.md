@@ -37,13 +37,14 @@ disabled reason needed by the host UI.
 
 `night-resolution` remains the narrow deterministic operation over a complete workflow.
 `night-completion` replaces the removed end-of-night private-result presentation slice. It enters
-`night-resolution` with deaths still provisional, then owns the deliberate direct prepare-Dawn operation.
-Dawn applies the retained batch and resolution exactly once and drops all private
-action/resolution material. It never advances to day discussion or evaluates a winner.
+`night-resolution` with deaths still provisional, then owns the deliberate direct prepare-Dawn
+operation. Dawn applies the retained batch and resolution exactly once, resolves due revenge, and
+drops all private action/resolution material before public Dawn or terminal Game Over.
 
 `session-persistence` owns the cross-phase `ActiveAppSession`. Exactly one setup, distribution,
-Executioner-briefing, sequential-night, night-resolution, Dawn, day-discussion, legacy day-outcome,
-post-day waiting, pending-revenge waiting, or game-over stage is authoritative.
+Executioner-briefing, sequential-night, night-resolution, revenge-resolution, Dawn,
+day-discussion, legacy day-outcome, post-day waiting, pending-revenge waiting, or game-over stage
+is authoritative.
 Completing the sequential workflow atomically creates final night resolution; preparing Dawn
 atomically creates the public-only Dawn session.
 
@@ -52,7 +53,7 @@ replaces the Dawn session with only one authoritative game plus the participatin
 No Dawn workflow, night workflow, resolution, immediate outcome, private queue, or copied
 assignment map survives as day-session authority.
 
-`day-discussion` constructs separate views. The public view contains Day 1, stable player
+`day-discussion` constructs separate views. The public view contains the numbered day, stable player
 labels, alive/dead status, legitimate public role labels, and revealed-Mayor reminder booleans. It
 contains no hidden role IDs, factions, Executioner targets, or night data. The private candidate
 selector contains only player IDs and stable labels for living unrevealed Mayors, ordered by
@@ -92,15 +93,16 @@ inconsistent actor positions are rejected. Restoration does not recompute random
 action, redisplay an acknowledged result, or advance twice.
 
 The `GameSessionStore` and `SessionClock` contracts contain no browser implementation. Phase 7C
-extends V2 with neutral-state sub-version `2` and an exact post-day stage. It persists death causes,
-personal wins, conversions, pending revenge, and the day outcome together while deriving all
+introduced neutral-state sub-version `2`; Phase 7E writes sub-version `3` and exact multi-cycle
+stages. It persists death causes, personal wins, conversions, pending/resolved revenge, and day
+outcome history together while deriving all
 candidate and summary views. Prior neutral-state saves receive empty defaults only where
 unambiguous; Dawn announcements can prove their deaths, while a prior Day save with an unexplained
 dead player returns an explicit compatibility failure. New saves omit
 the obsolete `mayorRevealed` value; restoration narrowly accepts its former generated `false`
 value for earlier V2 compatibility. It is never domain authority. Corrected Phase 7D extends
-recovery through Day 1 waiting and game over. Phase 7E must deliberately distinguish current from
-historical announcements before later nights are added.
+recovery through waiting and game over; Phase 7E derives each Dawn announcement only from deaths
+whose cause belongs to the current night.
 
 Day host-role visibility remains React-only and is absent from `ActiveAppSession`. Persistence
 never emits it or derived host-role display objects, and restoration rejects attempted
@@ -121,3 +123,17 @@ game-over view. It exposes duplicate-safe names, alive/dead state, and existing 
 only. It excludes stable IDs, hidden assignments, targets, conversions, pending revenge, and
 personal wins. Schema V2 adds exact waiting and terminal session variants while retaining existing
 V1 migration and existing Phase 7C/7C.1 V2 compatibility.
+
+Phase 7E adds the explicit begin-next-night use case and the private `revenge-resolution` app
+session. Next-night creation accepts only non-terminal post-day waiting, advances counters once,
+reuses the sequential collector, and preserves every durable game record while starting with no
+completed steps or current result. `night-completion` applies ordinary deaths first, persists one
+already-selected revenge victim before death application, then evaluates/finalizes faction
+victory. Non-terminal results build a current-night-only Dawn announcement; terminal results skip
+day discussion.
+
+Schema V2 remains the transport envelope and uses neutral-state sub-version `3` for canonical
+multi-day outcomes, linked revenge resolutions/deaths, and selected mid-revenge recovery. The
+restorer accepts unambiguous neutral-state sub-version 2 saves, upgrades their singular day
+outcome and victim-free obligation, rejects partial/forged cross-cycle authority, and never reruns
+mechanics or randomness. Recovery summarizes the private revenge stage only as `Dawn resolution`.

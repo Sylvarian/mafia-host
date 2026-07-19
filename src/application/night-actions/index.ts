@@ -11,6 +11,7 @@ export type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 export { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 
 export {
+  beginNextNightActionCollection,
   beginFirstNight,
   confirmNightActionTarget,
   continueNightActionCollection,

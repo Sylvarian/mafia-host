@@ -39,6 +39,43 @@ export function getNightCompletionErrorMessage(error: NightCompletionError): str
       return 'The night result no longer matches the completed sequential actions.'
     case 'INVALID_DAWN_ANNOUNCEMENT':
       return 'A public-safe Dawn announcement could not be constructed.'
+    case 'NO_PENDING_JESTER_REVENGE':
+    case 'INVALID_JESTER_REVENGE_SELECTION':
+    case 'JESTER_REVENGE_SURVIVOR_STILL_EXISTS':
+    case 'INVALID_REVENGE_RESOLUTION_WORKFLOW':
+      return 'The pending Jester revenge no longer matches this Dawn.'
+    case 'PENDING_JESTER_REVENGE_NOT_DUE':
+      return 'The pending Jester revenge is not due at this Dawn.'
+    case 'INVALID_JESTER_REVENGE_RANDOM_OUTPUT':
+      return 'The random source returned an invalid revenge selection value.'
+    case 'INVALID_JESTER_REVENGE_PHASE':
+      return `Jester revenge cannot resolve while the game is in ${error.currentPhase}.`
+    case 'JESTER_REVENGE_GAME_REJECTED':
+    case 'JESTER_REVENGE_APPLICATION_REJECTED':
+    case 'DAWN_FINALIZATION_GAME_REJECTED':
+      return 'Dawn consequences could not be applied safely.'
+    case 'MULTIPLE_PENDING_JESTER_REVENGES_UNRESOLVED_RULE':
+      return 'Multiple simultaneous Jester revenge obligations are not defined by the game rules.'
+    case 'INVALID_JESTER_REVENGE_VICTIM':
+      return 'The selected revenge victim is no longer eligible.'
+    case 'VICTORY_EVALUATION_GAME_REJECTED':
+    case 'FACTION_GAME_FINALIZATION_REJECTED':
+      return 'The final post-Dawn game state could not be validated.'
+    case 'VICTORY_EVALUATION_WRONG_PHASE':
+    case 'VICTORY_EVALUATION_COUNTER_MISMATCH':
+    case 'VICTORY_EVALUATION_MISSING_DAY_OUTCOME':
+    case 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY':
+    case 'CONTRADICTORY_VICTORY_PREDICATES':
+    case 'INVALID_STORED_FACTION_RESULT':
+    case 'INVALID_TOWN_RESULT':
+    case 'INVALID_MAFIA_RESULT':
+    case 'INVALID_SERIAL_KILLER_RESULT':
+    case 'INVALID_DRAW':
+    case 'UNKNOWN_WINNER_PLAYER':
+    case 'DUPLICATE_WINNER_PLAYER':
+    case 'FACTION_RESULT_GAME_MISMATCH':
+    case 'NON_TERMINAL_FACTION_RESULT':
+      return 'Faction victory could not be evaluated safely after Dawn.'
     case 'RESOLUTION_ALREADY_APPLIED':
       return 'This night has already been applied.'
   }

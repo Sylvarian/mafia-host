@@ -44,6 +44,7 @@ export function createNightFixture(
   options: Readonly<{
     phase?: GamePhase
     nightNumber?: number
+    dayNumber?: number
     settings?: Partial<GameSettings>
     distributionStatus?: RoleDistributionWorkflow['status']
     doctorPreviousTargets?: readonly DoctorPreviousTarget[]
@@ -92,6 +93,8 @@ export function createNightFixture(
   )
   const fixtureGameId = gameId('night-fixture-game')
   const phase = options.phase ?? 'role-distribution'
+  const nightNumber = options.nightNumber ?? 0
+  const dayNumber = options.dayNumber ?? inferDayNumber(phase, nightNumber)
   const defaultExecutionerTarget = players.find(
     (player) => findRoleDefinition(player.role.roleId)?.faction === 'town',
   )
@@ -133,7 +136,11 @@ export function createNightFixture(
                 roleInstanceId: player.role.instanceId,
                 cause: {
                   kind: 'night-death' as const,
-                  nightNumber: Math.max(1, options.nightNumber ?? 1),
+                  nightNumber:
+                    (phase === 'night-action-collection' || phase === 'night-resolution') &&
+                    nightNumber > 1
+                      ? nightNumber - 1
+                      : Math.max(1, nightNumber),
                 },
               },
             ],
@@ -159,8 +166,8 @@ export function createNightFixture(
     players,
     roleDefinitions,
     settings,
-    nightNumber: options.nightNumber ?? 0,
-    dayNumber: 0,
+    nightNumber,
+    dayNumber,
     doctorPreviousTargets: options.doctorPreviousTargets ?? [],
     executionerTargets,
     executionerBriefingStatus:
@@ -176,7 +183,12 @@ export function createNightFixture(
     personalWins: [],
     executionerConversions,
     pendingJesterRevenges: [],
-    dayOutcome: null,
+    jesterRevengeResolutions: [],
+    dayOutcomes: Array.from({ length: completedDayCount(phase, dayNumber) }, (_, index) => ({
+      kind: 'no-execution' as const,
+      gameId: fixtureGameId,
+      dayNumber: index + 1,
+    })),
   }
   const roleCounts = ROLE_REGISTRY.map((role) => ({
     roleId: role.id,
@@ -199,6 +211,48 @@ export function createNightFixture(
   }
 
   return { game, distribution, participants }
+}
+
+function inferDayNumber(phase: GamePhase, nightNumber: number): number {
+  switch (phase) {
+    case 'executioner-briefing':
+    case 'night-action-collection':
+    case 'night-resolution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+      return Math.max(0, nightNumber - 1)
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+    case 'execution-resolution':
+    case 'game-over':
+      return nightNumber
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+      return 0
+  }
+}
+
+function completedDayCount(phase: GamePhase, dayNumber: number): number {
+  switch (phase) {
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+      return Math.max(0, dayNumber - 1)
+    case 'night-action-collection':
+    case 'night-resolution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+    case 'execution-resolution':
+    case 'game-over':
+      return dayNumber
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+    case 'executioner-briefing':
+      return 0
+  }
 }
 
 export function getFixtureRoleName(roleId: RoleId): string {

@@ -2,6 +2,7 @@ import { fail, succeed, type DomainResult } from '../game/domain-result.ts'
 import type { GameState } from '../game/game-state.ts'
 import type { GameId, PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts'
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
+import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 import { selectBlockedRoleInstanceIds } from '../resolution/role-block-status.ts'
 import type { NightActionKind } from './night-action-kind.ts'
 
@@ -152,7 +153,8 @@ export function createSubmittedNightAction(
     })
   }
 
-  const role = findRoleDefinition(actor.role.roleId)
+  const activeRoleId = selectActiveRoleId(game, actor.playerId)
+  const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
 
   if (role === undefined || !role.nightAction.hasNightAction) {
     return fail({ type: 'ROLE_HAS_NO_NIGHT_ACTION', actorRoleId: actor.role.roleId })
@@ -220,7 +222,8 @@ export function isNightActionRequiredForPlayer(game: GameState, actorPlayerId: P
     return false
   }
 
-  const role = findRoleDefinition(actor.role.roleId)
+  const activeRoleId = selectActiveRoleId(game, actor.playerId)
+  const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
 
   if (role?.nightAction.hasNightAction !== true) {
     return false
@@ -229,7 +232,7 @@ export function isNightActionRequiredForPlayer(game: GameState, actorPlayerId: P
   const isSkippedFirstNightKillingRole =
     game.nightNumber === 1 &&
     !game.settings.allowFirstNightKills &&
-    (actor.role.roleId === ROLE_IDS.godfather || actor.role.roleId === ROLE_IDS.serialKiller)
+    (activeRoleId === ROLE_IDS.godfather || activeRoleId === ROLE_IDS.serialKiller)
 
   return !isSkippedFirstNightKillingRole
 }

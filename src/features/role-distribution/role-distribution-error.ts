@@ -81,8 +81,10 @@ function getActiveGameRejectionMessage(error: ActiveGameRejection): string {
       return 'The active game contains invalid personal-win authority.'
     case 'INVALID_PENDING_JESTER_REVENGES':
       return 'The active game contains invalid pending Jester-revenge authority.'
-    case 'INVALID_DAY_OUTCOME':
-      return 'The active game contains an invalid final day outcome.'
+    case 'INVALID_JESTER_REVENGE_RESOLUTIONS':
+      return 'The active game contains invalid resolved Jester-revenge authority.'
+    case 'INVALID_DAY_OUTCOMES':
+      return 'The active game contains invalid completed-day authority.'
     case 'NO_PARTICIPATING_PLAYERS':
       return 'The active game requires at least one participating player.'
     case 'MISSING_ROLE_ASSIGNMENT':
@@ -154,6 +156,8 @@ function getInvalidGameStateMessage(
       return `The active game cannot begin in the unknown phase ${error.phase}.`
     case 'INVALID_COUNTER':
       return `The active game rejected ${error.counter} counter ${String(error.value)}.`
+    case 'PHASE_COUNTER_MISMATCH':
+      return `The active game phase ${error.phase} does not match night ${String(error.nightNumber)} and day ${String(error.dayNumber)}.`
     case 'INVALID_IDENTITY':
       return `The active game rejected an invalid ${error.field} identity.`
     case 'INVALID_PLAYER_ALIVE_STATE':

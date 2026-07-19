@@ -21,6 +21,7 @@ describe('public game-over feature', () => {
             heading,
             status,
             dayNumber: 1,
+            endedAtLabel: 'Day 1',
             players: [
               {
                 playerDisplayLabel: 'Alex (Player 1)',

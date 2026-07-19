@@ -6,11 +6,19 @@ import './DayOutcomeSummary.css'
 
 type DayOutcomeSummaryProps = Readonly<{
   view: PublicDayOutcomeView
-  status: 'evaluation-pending' | 'pending-revenge' | 'no-faction-victory'
+  status: 'evaluation-pending' | 'game-continues'
   errorMessage: string | null
+  nextNightNumber?: number
+  onBeginNextNight?: () => void
 }>
 
-export function DayOutcomeSummary({ view, status, errorMessage }: DayOutcomeSummaryProps) {
+export function DayOutcomeSummary({
+  view,
+  status,
+  errorMessage,
+  nextNightNumber,
+  onBeginNextNight,
+}: DayOutcomeSummaryProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -39,14 +47,19 @@ export function DayOutcomeSummary({ view, status, errorMessage }: DayOutcomeSumm
         </p>
       )}
       <div className="day-outcome__boundary">
-        {status === 'pending-revenge' ? (
-          <p>Final victory evaluation is deferred until the next Dawn.</p>
-        ) : status === 'no-faction-victory' ? (
-          <p>No faction has won yet.</p>
+        {status === 'game-continues' ? (
+          <p>The game continues.</p>
         ) : (
           <p>The final day outcome is preserved while victory evaluation is checked.</p>
         )}
-        <p>The next-night flow will be added in Phase 7E.</p>
+        {nextNightNumber === undefined || onBeginNextNight === undefined ? null : (
+          <>
+            <p>Make sure every player closes their eyes before beginning the next night.</p>
+            <button type="button" className="button button--prepare" onClick={onBeginNextNight}>
+              Begin Night {String(nextNightNumber)}
+            </button>
+          </>
+        )}
       </div>
     </section>
   )

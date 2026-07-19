@@ -8,6 +8,7 @@ import type { RoleDefinition } from '../roles/role-definition.ts'
 import type { RoleInstance } from '../roles/role-instance.ts'
 import type {
   ExecutionerToJesterConversion,
+  JesterRevengeResolution,
   PendingJesterRevenge,
   PersonalWinRecord,
 } from '../neutral/neutral-outcome-model.ts'
@@ -31,7 +32,8 @@ export type GameState = Readonly<{
   personalWins: readonly PersonalWinRecord[]
   executionerConversions: readonly ExecutionerToJesterConversion[]
   pendingJesterRevenges: readonly PendingJesterRevenge[]
-  dayOutcome: DayOutcome | null
+  jesterRevengeResolutions: readonly JesterRevengeResolution[]
+  dayOutcomes: readonly DayOutcome[]
 }>
 
 export type GamePlayerCandidate = Readonly<
@@ -55,7 +57,8 @@ export type GameStateCandidate = Readonly<
     | 'personalWins'
     | 'executionerConversions'
     | 'pendingJesterRevenges'
-    | 'dayOutcome'
+    | 'jesterRevengeResolutions'
+    | 'dayOutcomes'
   > & {
     phase: string
     players: readonly GamePlayerCandidate[]
@@ -69,7 +72,8 @@ export type GameStateCandidate = Readonly<
     personalWins: unknown
     executionerConversions: unknown
     pendingJesterRevenges: unknown
-    dayOutcome: unknown
+    jesterRevengeResolutions: unknown
+    dayOutcomes: unknown
   }
 >
 

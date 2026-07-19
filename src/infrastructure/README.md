@@ -42,3 +42,10 @@ identical retry.
 Direct non-informational night advancement, one-button result/blocked advancement, and direct Dawn
 each produce one ordinary application save after their authoritative transition. Showing or hiding
 host-only day roles never calls the adapter because that state is React-only.
+
+Phase 7E keeps the same V2 key and browser adapter. The application payload's neutral-state
+sub-version `3` can represent later-night collection/resolution, private selected-revenge Dawn
+resolution, current public Dawn, later days, and later game over without changing localStorage
+transport. The adapter never selects or rerolls a revenge victim, derives a conversion, evaluates
+victory, or interprets history. Save failure/retry transports the same selected-victim session, so
+ordinary deaths, revenge death, conversions, and counters cannot be applied twice.

@@ -6,7 +6,7 @@ import { nightFixturePlayerId } from '../../../tests/support/night-action-fixtur
 import { DawnPresentation } from './DawnPresentation.tsx'
 
 describe('public Dawn presentation', () => {
-  it('keeps deaths hidden behind one deliberate direct announcement control', () => {
+  it('keeps deaths hidden and players asleep behind one deliberate finalization control', () => {
     const onPrepareDawn = vi.fn()
     const view: NightCompletionView = { status: 'ready-for-dawn' }
     render(
@@ -22,11 +22,13 @@ describe('public Dawn presentation', () => {
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
     expect(screen.queryByText(/died during the night/i)).toBeNull()
     expect(
-      screen.getByText('Make sure every player’s eyes are open before showing Dawn.'),
+      screen.getByText(
+        'Keep every player’s eyes closed while all Dawn effects are finalized. The next screen may remain host-only.',
+      ),
     ).toBeVisible()
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn announcement' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize Dawn' }))
     expect(onPrepareDawn).toHaveBeenCalledTimes(1)
   })
 
@@ -63,9 +65,12 @@ describe('public Dawn presentation', () => {
     expect(deaths).toHaveTextContent(
       'Alex (Player 2) died during the night. Their role was Citizen.',
     )
+    expect(
+      screen.getByText('Ask every player to open their eyes, then begin the daytime stage.'),
+    ).toBeVisible()
     expect(screen.queryByRole('button', { name: /Acknowledge result/i })).toBeNull()
     expect(screen.queryByText(/Sheriff result|Investigator result|Detective result/i)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     expect(onBeginDayDiscussion).toHaveBeenCalledTimes(1)
   })
 })

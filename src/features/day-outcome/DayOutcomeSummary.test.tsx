@@ -16,7 +16,7 @@ describe('public day-outcome summary', () => {
             revealedRoleDisplayName: 'Citizen',
           },
         }}
-        status="no-faction-victory"
+        status="game-continues"
         errorMessage={null}
       />,
     )
@@ -37,12 +37,13 @@ describe('public day-outcome summary', () => {
           dayLabel: 'Day 1',
           outcome: { kind: 'no-execution' },
         }}
-        status="pending-revenge"
+        status="game-continues"
         errorMessage={null}
       />,
     )
 
     expect(screen.getByText('No player was executed.')).toBeVisible()
+    expect(screen.getByText('The game continues.')).toBeVisible()
     expect(document.body).not.toHaveTextContent(/role was|personal win|target|faction winner/i)
   })
 })

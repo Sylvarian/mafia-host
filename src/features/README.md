@@ -31,11 +31,12 @@ coordinating app guards rapid repeated operations and saves each canonical trans
 
 Phase 7A.1 removes the old private-result replay from `dawn`. That slice now renders only the
 hidden-death `ready-for-dawn` boundary and public Dawn announcement. Phase 7C.1 uses one deliberate
-**Show Dawn announcement** action plus an inline eyes-open reminder, with no confirmation dialog.
-The public view has no day-discussion
-data beyond the announcement. Phase 7B adds the deliberate **Begin day discussion** transition.
+**Finalize Dawn** action plus an inline eyes-closed reminder, with no confirmation dialog. The
+public Dawn screen tells the host when players may open their eyes. The public view has no day-discussion
+data beyond the announcement. The deliberate **Continue to Day N** transition enters the current
+numbered day.
 
-`day-discussion` renders a public-safe Day 1 display with semantic living/dead sections, only
+`day-discussion` renders a public-safe numbered-day display with semantic living/dead sections, only
 authoritative public role reveals, verbal trial guidance, and textual three-vote reminders for
 each living revealed Mayor. Phase 7C adds only **Execute a player** and **End day without
 execution** as final controls; it still contains no nomination, vote, winner, revenge-resolution,
@@ -61,16 +62,16 @@ labels. It never shows roles, factions, Executioner targets, or predicted neutra
 no-execution control has its own irreversible confirmation. Both make the background inert,
 support Escape/cancel and focus restoration, keep selection and guards in React only, and guard
 rapid confirmation. `day-outcome` renders a focused public summary with only the executed name and
-authorized role reveal, or “No player was executed,” followed by an explicit not-yet-implemented
-boundary. Corrected Phase 7D extends that summary with either private-safe next-Dawn deferral or a
-no-faction-yet message. It has no next-night or revenge action.
+authorized role reveal, or “No player was executed.” Corrected Phase 7D and Phase 7E use the same
+public “The game continues” copy whether revenge is privately pending or no faction has won, then
+offer the explicit next numbered night without exposing the pending obligation.
 
 `session-persistence` renders public-safe V2 recovery summaries and local-save status. Night
 summaries expose only the night number, general stage, player count, and save time. Current actor,
 role, target, blocked state, role composition, action progress, and results are absent from text,
 attributes, and accessible labels until the host explicitly continues. Errors, dialog openness,
 focus, save status, and operation guards remain transient. Day recovery similarly exposes only
-generic Day 1 discussion, player count, and save time; revealed or hidden Mayor identities appear
+generic numbered-day discussion, player count, and save time; revealed or hidden Mayor identities appear
 only after Continue. Post-day recovery likewise shows only generic “Day complete” metadata until
 Continue and never exposes personal wins, conversions, pending revenge, or targets.
 
@@ -83,3 +84,12 @@ revenge, or role-reveal control and remains usable without horizontal overflow a
 Waiting recovery remains generic `Day complete` even when private pending revenge exists. Game-over
 recovery may show only `Game over`, its public faction/draw, Day number, player count, and saved
 time before Continue.
+
+Phase 7E gives a non-terminal day summary one deliberate **Begin Night N** control. Later nights
+reuse `night-runner`; only living actionable active roles appear, and prior actions/results are
+absent. `revenge-resolution` is a focused host-only Dawn screen shown only after recovery Continue.
+It names the already-selected random victim, warns the host to keep the screen private, and applies
+the unavoidable death once. The public Dawn then combines only current ordinary/revenge deaths
+without causes, or the app goes directly to public-safe Game Over. **Continue to Day N** and the
+existing day controls repeat for later cycles; host-role visibility resets hidden on each entry
+and recovery.

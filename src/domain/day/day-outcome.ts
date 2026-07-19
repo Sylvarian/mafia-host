@@ -2,6 +2,7 @@ import { fail, succeed, type DomainResult } from '../game/domain-result.ts'
 import type { DeathRecord } from '../game/death-record.ts'
 import { validateGameState } from '../game/game-invariants.ts'
 import {
+  orderDayOutcomes,
   orderDeathRecords,
   orderPendingJesterRevenges,
   orderPersonalWins,
@@ -13,6 +14,7 @@ import {
   selectActiveRoleId,
 } from '../neutral/executioner-conversion.ts'
 import type { PendingJesterRevenge, PersonalWinRecord } from '../neutral/neutral-outcome-model.ts'
+import { createPendingJesterRevengeId } from '../neutral/jester-revenge-identity.ts'
 import { transitionPhase } from '../phases/phase-machine.ts'
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
 import type { CompleteDayOutcomeError } from './day-outcome-errors.ts'
@@ -105,7 +107,7 @@ export function executePlayerDuringDay(
     ),
     personalWins,
     pendingJesterRevenges,
-    dayOutcome: outcome,
+    dayOutcomes: orderDayOutcomes([...gameResult.value.dayOutcomes, outcome]),
   })
   return finalResult.ok
     ? succeed(deepFreeze(finalResult.value))
@@ -131,7 +133,7 @@ export function endDayWithoutExecution(
   const finalResult = validateGameState({
     ...gameResult.value,
     phase: phaseResult.value,
-    dayOutcome: outcome,
+    dayOutcomes: orderDayOutcomes([...gameResult.value.dayOutcomes, outcome]),
   })
   return finalResult.ok
     ? succeed(deepFreeze(finalResult.value))
@@ -145,7 +147,7 @@ function validateDayCompletionGame(
   if (!result.ok) {
     return fail({ type: 'DAY_OUTCOME_GAME_REJECTED', error: result.error })
   }
-  if (result.value.dayOutcome !== null) {
+  if (result.value.dayOutcomes.some((outcome) => outcome.dayNumber === result.value.dayNumber)) {
     return fail({ type: 'DAY_OUTCOME_ALREADY_RECORDED' })
   }
   if (result.value.phase !== 'day-discussion') {
@@ -222,6 +224,7 @@ function createPendingJesterRevenges(
     [
       ...game.pendingJesterRevenges,
       Object.freeze({
+        id: createPendingJesterRevengeId(executedPlayer.role.instanceId, game.dayNumber),
         gameId: game.id,
         jesterPlayerId: executedPlayer.playerId,
         jesterRoleInstanceId: executedPlayer.role.instanceId,

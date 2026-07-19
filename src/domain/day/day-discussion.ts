@@ -137,9 +137,20 @@ function validateDawnGameMatch(
     return invalidDawnMatch('night-number-mismatch')
   }
 
-  const deadPlayers = game.players.filter((player) => !player.alive)
+  const currentDawnPlayerIds = new Set(
+    game.deathRecords.flatMap((record): readonly PlayerId[] => {
+      switch (record.cause.kind) {
+        case 'night-death':
+        case 'jester-revenge':
+          return record.cause.nightNumber === game.nightNumber ? [record.playerId] : []
+        case 'day-execution':
+          return []
+      }
+    }),
+  )
+  const deadPlayers = game.players.filter((player) => currentDawnPlayerIds.has(player.playerId))
   if (candidate.outcome === 'no-deaths') {
-    return hasExactKeys(candidate, ['outcome', 'nightNumber']) && deadPlayers.length === 0
+    return hasExactKeys(candidate, ['outcome', 'nightNumber']) && currentDawnPlayerIds.size === 0
       ? succeed(true)
       : invalidDawnMatch('death-list-mismatch')
   }

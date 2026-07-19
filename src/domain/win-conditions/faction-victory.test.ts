@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { endDayWithoutExecution, executePlayerDuringDay } from '../day/day-outcome.ts'
 import type { GameState } from '../game/game-state.ts'
 import type { PlayerId } from '../identifiers.ts'
+import { createPendingJesterRevengeId } from '../neutral/jester-revenge-identity.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
 import {
   createNightFixture,
@@ -277,7 +278,7 @@ describe('faction victory evaluation', () => {
     })
   })
 
-  it('blocks evaluation when multiple canonical revenge obligations remain pending', () => {
+  it('rejects an impossible accumulated revenge obligation before victory evaluation', () => {
     const fixture = createNightFixture(
       [
         { roleId: ROLE_IDS.jester, alive: false },
@@ -327,6 +328,7 @@ describe('faction victory evaluation', () => {
       ],
       pendingJesterRevenges: [
         {
+          id: createPendingJesterRevengeId(firstJester.role.instanceId, 1),
           gameId: fixture.game.id,
           jesterPlayerId: firstJester.playerId,
           jesterRoleInstanceId: firstJester.role.instanceId,
@@ -334,6 +336,7 @@ describe('faction victory evaluation', () => {
           status: 'pending',
         },
         {
+          id: createPendingJesterRevengeId(secondJester.role.instanceId, 2),
           gameId: fixture.game.id,
           jesterPlayerId: secondJester.playerId,
           jesterRoleInstanceId: secondJester.role.instanceId,
@@ -341,17 +344,34 @@ describe('faction victory evaluation', () => {
           status: 'pending',
         },
       ],
-      dayOutcome: {
-        kind: 'player-executed',
-        gameId: fixture.game.id,
-        dayNumber: 2,
-        playerId: secondJester.playerId,
-      },
+      jesterRevengeResolutions: [],
+      dayOutcomes: [
+        {
+          kind: 'player-executed',
+          gameId: fixture.game.id,
+          dayNumber: 1,
+          playerId: firstJester.playerId,
+        },
+        {
+          kind: 'player-executed',
+          gameId: fixture.game.id,
+          dayNumber: 2,
+          playerId: secondJester.playerId,
+        },
+      ],
     }
 
     expect(evaluateFactionVictory(game)).toEqual({
       ok: false,
-      error: { type: 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY' },
+      error: {
+        type: 'VICTORY_EVALUATION_GAME_REJECTED',
+        error: {
+          type: 'INVALID_PENDING_JESTER_REVENGES',
+          reason: 'overdue',
+          index: 0,
+          roleInstanceId: firstJester.role.instanceId,
+        },
+      },
     })
     expect(game.pendingJesterRevenges).toHaveLength(2)
   })
@@ -499,9 +519,16 @@ describe('faction victory evaluation', () => {
     expect(evaluateFactionVictory(game)).toEqual({
       ok: false,
       error: {
-        type: 'VICTORY_EVALUATION_COUNTER_MISMATCH',
-        nightNumber: 2,
-        dayNumber: 1,
+        type: 'VICTORY_EVALUATION_GAME_REJECTED',
+        error: {
+          type: 'INVALID_GAME_STATE',
+          reason: {
+            type: 'PHASE_COUNTER_MISMATCH',
+            phase: 'execution-resolution',
+            nightNumber: 2,
+            dayNumber: 1,
+          },
+        },
       },
     })
     expect(game.phase).toBe('execution-resolution')

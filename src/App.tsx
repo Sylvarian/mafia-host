@@ -25,7 +25,10 @@ import type {
 import { selectPublicGameOverView } from '@/application/game-over/index.ts'
 import type { NightActionCollectionError } from '@/application/night-actions/index.ts'
 import type { NightCompletionError } from '@/application/night-completion/index.ts'
-import { selectNightCompletionView } from '@/application/night-completion/index.ts'
+import {
+  selectNightCompletionView,
+  selectRevengeResolutionView,
+} from '@/application/night-completion/index.ts'
 import type {
   PlayerId,
   RoleAssignmentDependencies,
@@ -36,6 +39,7 @@ import {
   assignSessionRoles,
   beginSessionDayDiscussion,
   beginSessionFirstNight,
+  beginSessionNextNight,
   completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionMayorReveal,
@@ -48,6 +52,7 @@ import {
   markAllSessionCardsDelivered,
   nextSessionExecutionerBriefing,
   prepareSessionDawn,
+  resolveSessionJesterRevenge,
   previousSessionExecutionerBriefing,
   reassignSessionRoles,
   setSessionCardDelivered,
@@ -77,6 +82,7 @@ import {
 import { GameSetup } from '@/features/game-setup/index.ts'
 import { GameOver } from '@/features/game-over/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
+import { RevengeResolution } from '@/features/revenge-resolution/index.ts'
 import {
   getRoleDistributionErrorMessage,
   RoleDistribution,
@@ -520,12 +526,21 @@ export default function App({
                 return
               }
               runCompletionOperation(() => {
-                const result = prepareSessionDawn(session)
+                const result = prepareSessionDawn(session, roleAssignmentDependencies.randomSource)
                 if (!result.ok) {
                   if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
                     handleInvalidStage(result.error)
                   }
-                  setCompletionError(result.error)
+                  switch (result.error.type) {
+                    case 'INVALID_GAME_OVER_GAME':
+                    case 'INVALID_GAME_OVER_COUNTERS':
+                    case 'INVALID_GAME_OVER_RESULT':
+                    case 'INVALID_GAME_OVER_PARTICIPANTS':
+                      setCompletionError({ type: 'DAWN_FINALIZATION_GAME_REJECTED' })
+                      break
+                    default:
+                      setCompletionError(result.error)
+                  }
                   return false
                 }
                 setCompletionError(null)
@@ -547,6 +562,41 @@ export default function App({
                   return false
                 }
                 clearErrors()
+                setActiveSession(result.value)
+                return true
+              })
+            }}
+          />
+        )
+      case 'revenge-resolution':
+        return (
+          <RevengeResolution
+            view={selectRevengeResolutionView(session.workflow)}
+            errorMessage={
+              completionError === null
+                ? null
+                : 'Jester revenge could not be applied safely. The selected victim is unchanged.'
+            }
+            onContinue={() => {
+              runCompletionOperation(() => {
+                const result = resolveSessionJesterRevenge(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                  }
+                  switch (result.error.type) {
+                    case 'INVALID_GAME_OVER_GAME':
+                    case 'INVALID_GAME_OVER_COUNTERS':
+                    case 'INVALID_GAME_OVER_RESULT':
+                    case 'INVALID_GAME_OVER_PARTICIPANTS':
+                      setCompletionError({ type: 'DAWN_FINALIZATION_GAME_REJECTED' })
+                      break
+                    default:
+                      setCompletionError(result.error)
+                  }
+                  return false
+                }
+                setCompletionError(null)
                 setActiveSession(result.value)
                 return true
               })
@@ -649,10 +699,25 @@ export default function App({
               game: session.game,
               participants: session.participants,
             })}
-            status={
-              session.stage === 'pending-revenge-waiting' ? 'pending-revenge' : 'no-faction-victory'
-            }
+            status="game-continues"
             errorMessage={null}
+            nextNightNumber={session.game.nightNumber + 1}
+            onBeginNextNight={() => {
+              runNightOperation(() => {
+                const result = beginSessionNextNight(session)
+                if (!result.ok) {
+                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                    handleInvalidStage(result.error)
+                    return false
+                  }
+                  setNightError(result.error)
+                  return false
+                }
+                clearErrors()
+                setActiveSession(result.value)
+                return true
+              })
+            }}
           />
         )
       case 'game-over':
@@ -698,6 +763,34 @@ export default function App({
         result.error.type === 'NIGHT_RESOLUTION_REVALIDATION_FAILED' ||
         result.error.type === 'NIGHT_RESOLUTION_CONTENT_MISMATCH' ||
         result.error.type === 'INVALID_DAWN_ANNOUNCEMENT' ||
+        result.error.type === 'NO_PENDING_JESTER_REVENGE' ||
+        result.error.type === 'PENDING_JESTER_REVENGE_NOT_DUE' ||
+        result.error.type === 'INVALID_JESTER_REVENGE_RANDOM_OUTPUT' ||
+        result.error.type === 'INVALID_JESTER_REVENGE_PHASE' ||
+        result.error.type === 'JESTER_REVENGE_GAME_REJECTED' ||
+        result.error.type === 'MULTIPLE_PENDING_JESTER_REVENGES_UNRESOLVED_RULE' ||
+        result.error.type === 'INVALID_JESTER_REVENGE_SELECTION' ||
+        result.error.type === 'INVALID_JESTER_REVENGE_VICTIM' ||
+        result.error.type === 'JESTER_REVENGE_SURVIVOR_STILL_EXISTS' ||
+        result.error.type === 'JESTER_REVENGE_APPLICATION_REJECTED' ||
+        result.error.type === 'VICTORY_EVALUATION_GAME_REJECTED' ||
+        result.error.type === 'VICTORY_EVALUATION_WRONG_PHASE' ||
+        result.error.type === 'VICTORY_EVALUATION_COUNTER_MISMATCH' ||
+        result.error.type === 'VICTORY_EVALUATION_MISSING_DAY_OUTCOME' ||
+        result.error.type === 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY' ||
+        result.error.type === 'CONTRADICTORY_VICTORY_PREDICATES' ||
+        result.error.type === 'INVALID_STORED_FACTION_RESULT' ||
+        result.error.type === 'INVALID_TOWN_RESULT' ||
+        result.error.type === 'INVALID_MAFIA_RESULT' ||
+        result.error.type === 'INVALID_SERIAL_KILLER_RESULT' ||
+        result.error.type === 'INVALID_DRAW' ||
+        result.error.type === 'UNKNOWN_WINNER_PLAYER' ||
+        result.error.type === 'DUPLICATE_WINNER_PLAYER' ||
+        result.error.type === 'FACTION_RESULT_GAME_MISMATCH' ||
+        result.error.type === 'NON_TERMINAL_FACTION_RESULT' ||
+        result.error.type === 'FACTION_GAME_FINALIZATION_REJECTED' ||
+        result.error.type === 'DAWN_FINALIZATION_GAME_REJECTED' ||
+        result.error.type === 'INVALID_REVENGE_RESOLUTION_WORKFLOW' ||
         result.error.type === 'RESOLUTION_ALREADY_APPLIED'
       ) {
         setCompletionError(result.error)
@@ -812,7 +905,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Corrected Phase 7D · Faction victory and game over</p>
+        <p>Phase 7E · Complete multi-day game loop</p>
       </header>
 
       <main className="app-main">
@@ -930,7 +1023,7 @@ function createSessionFingerprint(session: ActiveAppSession): string {
 
 function getPostDaySettlementErrorMessage(error: SettlePostDaySessionError): string {
   if (error.type === 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY') {
-    return 'Final victory evaluation is deferred until the next Dawn.'
+    return 'The completed day was preserved, but the next game stage could not be finalized safely.'
   }
   if (error.type === 'RESULT_ALREADY_FINALIZED') {
     return 'The final game result is already recorded and cannot be replaced.'
@@ -997,6 +1090,9 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'EXECUTIONER_BRIEFING_REQUIRED':
     case 'INVALID_STARTING_PHASE':
     case 'INVALID_STARTED_NIGHT_PHASE':
+    case 'INVALID_NEXT_NIGHT_PHASE':
+    case 'INVALID_NEXT_NIGHT_COUNTERS':
+    case 'MISSING_COMPLETED_DAY_OUTCOME':
     case 'UNKNOWN_ACTOR':
     case 'DEAD_ACTOR':
     case 'UNKNOWN_ROLE_INSTANCE':

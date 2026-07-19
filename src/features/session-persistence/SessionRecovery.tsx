@@ -290,6 +290,7 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
     case 'INVALID_SEQUENTIAL_NIGHT_SESSION':
     case 'INVALID_NIGHT_RESOLUTION_SESSION':
     case 'INVALID_DAWN_SESSION':
+    case 'INVALID_REVENGE_RESOLUTION_SESSION':
     case 'INVALID_DAY_DISCUSSION_SESSION':
     case 'INVALID_DAY_OUTCOME_SESSION':
     case 'INVALID_POST_DAY_WAITING_SESSION':

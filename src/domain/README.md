@@ -57,7 +57,7 @@ visit. Dawn history records an unblocked Doctor's confirmed target even if the D
 dies, but records nothing for a blocked Doctor.
 
 Phase 7B adds two narrow pure operations under `day/`. The Dawn-to-day boundary validates the
-active game, public Dawn announcement, and established Night 1/Day 1 counter relationship before
+active game, public Dawn announcement, and numbered Night N/Day N relationship before
 atomically entering `day-discussion`. It changes no death, assignment, reveal, Executioner target,
 Doctor-history, neutral, or winner state.
 
@@ -101,6 +101,24 @@ no-survivors state. Winner IDs are stable and roster-ordered, and mutually true 
 closed instead of gaining check-order precedence.
 
 Terminal finalization changes only the phase to `game-over`; deaths, conversions, targets,
-personal wins, counters, and public reveal authority remain unchanged. Pending revenge cannot be
-finalized and is never selected, resolved, or cleared here. Revenge and the next Dawn remain Phase
-7E work. No generic winner or effect framework was added.
+personal wins, counters, and public reveal authority remain unchanged. Corrected Phase 7D never
+selects or clears pending revenge at the post-day boundary; Phase 7E resolves it only at the next
+Dawn. No generic winner or effect framework was added.
+
+Phase 7E generalizes the authoritative counters and replaces the singular day outcome with a
+canonical numbered history. `execution-resolution` Day N starts Night N+1 exactly once; later
+night action requirements rebuild from living active roles, so converted Executioners remain
+active Jesters and never wake. Doctor history remains keyed by role instance, while only the
+immediately preceding night's confirmed target constrains a new action. Frames, visits,
+protections, attacks, blocks, submitted actions, and private results remain current-workflow data
+and never enter the next night.
+
+Ordinary night application now enters `dawn-resolution`. It applies ordinary deaths and
+conversions before the focused Jester-revenge module chooses one living post-ordinary survivor
+with the injected `RandomSource`. The selection is canonical and durable; application records a
+linked revenge resolution and explicit `jester-revenge` death, applies reveal policy, converts
+every matching Executioner once, and clears the obligation. With no survivors it records an
+explicit no-survivor resolution without drawing randomness. Victory is evaluated only after the
+due obligation is cleared, then the game enters current `dawn-announcement` or `game-over`.
+Multiple simultaneous obligations are rejected because their ordering is not defined by the
+one-execution-per-day rules. No generic effect queue or role-mutation framework was added.

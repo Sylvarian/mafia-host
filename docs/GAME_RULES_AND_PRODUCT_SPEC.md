@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through corrected Phase 7D<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7E<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -31,26 +31,18 @@ The implemented product currently includes:
 - Setup.
 - Role assignment and physical distribution.
 - Executioner target eligibility, assignment, and private briefing.
-- Sequential first-night action confirmation and immediate private outcomes.
+- Sequential Night 1+ action confirmation and immediate private outcomes.
 - Deterministic ordinary night resolution.
-- The first public Dawn.
-- Day 1 discussion with a public-safe living/dead roster.
+- Repeated public Dawns.
+- Repeated day discussion with a public-safe living/dead roster.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
-- Final Day 1 execution or no-execution recording and a public-safe post-day summary.
+- One final execution or no-execution record per day and a public-safe post-day summary.
 - Explicit death causes, permanent neutral personal wins, pending Jester revenge creation, and
   Executioner-to-Jester conversion after proven non-execution target death.
-- Browser-local refresh recovery through setup, Executioner briefing, the first Dawn, Day 1, and
-  its final outcome.
-- A pending-revenge gate, faction victory when no revenge is pending, safe post-day waiting, and
-  public-safe game over.
-
-The following rules are finalized but their gameplay is not implemented:
-
-- Jester revenge victim selection and revenge death.
-- Later nights and Dawns.
-
-These features are planned for Phase 7E or later. A finalized
-rule must not be read as evidence that its feature is already available.
+- Browser-local refresh recovery through setup, Executioner briefing, later nights, mid-revenge
+  Dawn resolution, later days, and game over.
+- A pending-revenge gate, next-Dawn random revenge death, post-revenge faction victory, safe
+  post-day waiting, and public-safe game over.
 
 The application does **not** initially provide:
 
@@ -131,22 +123,22 @@ explicit incompatible-save errors because which private information was already 
 cannot be reconstructed safely. A rejected V1 save is not silently deleted. A safe migration writes
 V2 before removing V1 and preserves V1 if the V2 write fails.
 
-Current V2 persistence supports recovery through the first Dawn, its Day 1 discussion, the final
-Day 1 outcome, corrected Phase 7D waiting, and game over. Neutral-state sub-version `2` persists explicit death causes, permanent
-personal wins, conversions, pending revenge, and the singular day outcome together. Public rows,
+Current V2 persistence supports repeated night/day cycles, selected mid-revenge Dawn resolution,
+waiting, and game over. Neutral-state sub-version `3` persists explicit death causes, permanent
+personal wins, conversions, pending and resolved revenge authority, and canonical day-outcome
+history together. Public rows,
 revealed-Mayor reminders, living execution candidates, and post-day prose remain derived. A prior
 neutral-state Dawn save can be upgraded from the exact death identities in its announcement. A
 prior Day save with any dead player and no cause evidence is rejected explicitly rather than
-inferring a cause from `alive: false`. Before supporting later days and nights, persistence must
-add a current-announcement boundary that distinguishes:
+inferring a cause from `alive: false`. Current-Dawn construction distinguishes:
 
 - Deaths newly announced at the current Dawn.
 - Players who died on earlier nights or days.
 - Current versus historical public announcements.
 
-The current first-Dawn representation must not be reused unchanged for later Dawns because it could
-reannounce earlier deaths. Phase 7E must update the persisted session contract deliberately. No
-generic migration framework exists.
+Only deaths whose cause belongs to the current night are announced, so earlier deaths are never
+reannounced. Existing neutral-state sub-version 2 saves are upgraded only where their singular
+first-cycle authority is unambiguous. No generic migration framework exists.
 
 ---
 
@@ -770,13 +762,11 @@ cleared, and no faction wins. If exactly one player survives ordinary night deat
 selected and dies from revenge, leaving no faction winner. Existing personal wins remain recorded
 in both cases.
 
-The current implementation stops after the deliberate first-Dawn application, Day 1 discussion,
-one final day outcome, and corrected Phase 7D settlement. Immediate investigative outcomes are
-cross-checked against the same shared mechanics used by final resolution and are not replayed.
-Proven first-Dawn deaths receive explicit night-death records and trigger every qualifying
-Executioner conversion exactly once. When no revenge is pending, the completed day may enter safe
-waiting or game over. Revenge resolution and later-Dawn stages remain outside the implemented
-boundary.
+Phase 7E implements this complete ordering. Immediate investigative outcomes are cross-checked
+against the same shared mechanics used by final resolution and are not replayed. Ordinary and
+revenge deaths receive distinct explicit causes and trigger every qualifying Executioner
+conversion exactly once. A selected revenge victim is persisted before application so refresh and
+retry cannot reroll the victim.
 
 ---
 
@@ -787,8 +777,9 @@ canonical completed action batch, resolves ordinary attacks, protections, and pr
 and enters `night-resolution`. Investigative results have already been communicated during each
 actor's wake step and are not presented again. Deaths remain unapplied and hidden.
 
-The host then deliberately selects **Show Dawn announcement**. Inline guidance says, “Make sure
-every player’s eyes are open before showing Dawn.” There is no second confirmation dialog. At this
+The host then deliberately selects **Finalize Dawn** while every player's eyes remain closed.
+Inline guidance warns that a private revenge screen may appear before the public announcement.
+There is no second confirmation dialog. At this
 boundary:
 
 - Provisional deaths are applied exactly once.
@@ -800,7 +791,8 @@ boundary:
 - Each final death receives an explicit night-death cause.
 - Every Executioner whose target died receives one explicit permanent conversion to active Jester
   behavior, without changing original assignment identity or reviving the owner.
-- The active game enters `dawn-announcement`.
+- The active game enters private `dawn-resolution`, resolves any due revenge, evaluates victory,
+  and enters either `dawn-announcement` or `game-over`.
 
 The public Dawn screen shows only:
 
@@ -834,20 +826,16 @@ The source text contained “quiet now”; this specification assumes “quiet n
 
 If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
 
-Phase 7B adds an explicit **Begin day discussion** operation after this public first-Dawn screen.
-It validates the authoritative Dawn/game/night match, increments only the existing day counter,
-drops Dawn and night workflow authority, and stops in `day-discussion`. Resolving Jester revenge,
-checking victory, and reaching later Dawns remain unavailable.
-
-The persisted V2 Dawn announcement is safe only at this first-Dawn boundary. Later-Dawn support
-must introduce an explicit current-announcement boundary so deaths from earlier nights or days are
-not announced again.
+The explicit **Continue to Day N** operation validates the authoritative current
+Dawn/game/night match, increments only the day counter, drops Dawn/night workflow authority, and
+enters `day-discussion`. The public announcement combines current ordinary and revenge deaths in
+roster order without revealing either cause. Persisted Dawn authority is current-night-only.
 
 ---
 
 ## 14. Day discussion
 
-Implemented for the first daytime discussion and final outcome through Phase 7C.
+Implemented for repeated daytime discussion and one final outcome per day through Phase 7E.
 
 During day discussion, the public-safe screen shows every player with:
 
@@ -940,10 +928,10 @@ blocked and play proceeds toward the next night.
 
 Phase 7C atomically implements steps 1 through 5 and records one immutable `DayOutcome` in
 `execution-resolution`. Corrected Phase 7D implements step 6 only when no pending revenge exists.
-If revenge is pending, it stops without evaluating any faction predicate. If no faction wins, it
-stops without performing step 7 because Night 2 is Phase 7E work. The post-day summary shows only
-the public outcome and an authorized role reveal; personal wins, conversions, and pending revenge
-remain private.
+If revenge is pending, it stops without evaluating any faction predicate. Phase 7E implements step
+7 and stores each numbered day outcome without overwriting earlier authority. The post-day summary
+shows only the public outcome and an authorized role reveal; personal wins, conversions, and
+pending revenge remain private.
 
 ---
 
@@ -1234,8 +1222,8 @@ assignment, and private-briefing portion of R-008. Phase 7B implements first-day
 voluntary Mayor reveal. Phase 7C implements the final day outcome, execution consequences,
 permanent Jester and Executioner personal wins, pending-revenge creation, and proven
 non-execution-death conversions. Corrected Phase 7D implements faction victory only when pending
-revenge is absent, plus safe waiting and game over. Revenge resolution and later-loop gameplay
-remain unimplemented.
+revenge is absent, plus safe waiting and game over. Phase 7E implements next-Dawn revenge
+resolution and repeated later-night/day gameplay.
 
 ### R-001 — Mutual killing disabled
 
@@ -1259,8 +1247,7 @@ remain unimplemented.
 
 ### R-006 — Jester personal win and revenge
 
-**Status: Finalized. Personal win and pending-obligation creation are implemented in Phase 7C;
-the corrected Phase 7D gate is implemented; next-Dawn revenge resolution remains Phase 7E.**
+**Status: Finalized and implemented through next-Dawn resolution in Phase 7E.**
 
 - A Jester earns a permanent personal win only when executed during the day.
 - A Jester killed at night, through revenge, or through another non-execution cause does not earn a
@@ -1305,8 +1292,7 @@ personal wins remain recorded.
 
 ### R-007 — Executioner target non-execution death
 
-**Status: Finalized. Conversion after proven ordinary deaths is implemented in Phase 7C;
-conversion after a future revenge death remains Phase 7E.**
+**Status: Finalized and implemented for ordinary and revenge deaths through Phase 7E.**
 
 - If an Executioner's target dies for any reason other than daytime execution, that Executioner
   converts into a Jester.
@@ -1359,7 +1345,7 @@ personal win and performs no conversion, revenge, or victory evaluation.
 
 ### R-010 — Day discussion, trials, voting, and execution
 
-**Status: Finalized and implemented through the final Day 1 outcome in Phase 7C.**
+**Status: Finalized and implemented for repeated numbered days through Phase 7E.**
 
 - Any number of trials may occur during a day.
 - Trial nominations and votes are managed verbally by the players and manually by the host.

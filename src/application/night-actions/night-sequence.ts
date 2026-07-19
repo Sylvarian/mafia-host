@@ -2,6 +2,7 @@ import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts
 import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
 import { isNightActionRequiredForPlayer } from '@/domain/night-actions/night-action.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
 export type NightSequenceStep =
@@ -24,7 +25,8 @@ export function buildNightActionSequence(
   const actors: ActorSequenceEntry[] = []
 
   for (const [rosterIndex, player] of game.players.entries()) {
-    const role = findRoleDefinition(player.role.roleId)
+    const activeRoleId = selectActiveRoleId(game, player.playerId)
+    const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
 
     if (role === undefined) {
       return fail({ type: 'UNKNOWN_SEQUENCE_ROLE', actorPlayerId: player.playerId })

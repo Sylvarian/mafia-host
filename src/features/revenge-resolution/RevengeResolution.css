@@ -1,0 +1,43 @@
+.revenge-resolution {
+  display: grid;
+  gap: 1rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface-raised);
+}
+
+.revenge-resolution__eyebrow,
+.revenge-resolution__selection span {
+  color: var(--muted);
+}
+
+.revenge-resolution__warning,
+.revenge-resolution__error {
+  padding: 0.85rem;
+  border-radius: 0.75rem;
+}
+
+.revenge-resolution__warning {
+  border: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.revenge-resolution__error {
+  color: var(--danger-strong);
+  border: 1px solid currentColor;
+}
+
+.revenge-resolution__selection {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.revenge-resolution .button {
+  min-height: 44px;
+}

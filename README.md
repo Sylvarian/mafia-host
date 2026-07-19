@@ -6,8 +6,9 @@ physical role and result cards.
 
 ## Current status
 
-Corrected Phase 7D adds faction-victory evaluation and public-safe game over without changing the
-next-Dawn revenge rule. Phase 7C.1 still supplies the streamlined Phase 7C host workflow.
+Phase 7E completes the repeated night/Dawn/day loop, including next-Dawn Jester revenge and
+post-revenge faction victory. Phase 7C.1 still supplies the streamlined host workflow and
+corrected Phase 7D remains the post-day victory gate.
 After verbal nominations, trials, and voting, the host records
 exactly one final result with **Execute a player** or **End day without execution**. Both operations
 atomically replace the editable `day-discussion` session with a persisted `day-outcome` session in
@@ -28,14 +29,17 @@ wins, and pending revenge are never included.
 A private host-only execution dialog lists only living participants with duplicate-safe names and
 does not disclose assignments, targets, wins, conversions, or revenge. A separate irreversible
 confirmation ends the day without execution. The public post-day summary reports only who was
-executed and a role when `revealRoleOnDeath` authorizes it, or that nobody was executed. It offers
-no revenge or next-night control.
+executed and a role when `revealRoleOnDeath` authorizes it, or that nobody was executed. A
+non-terminal summary offers the explicit next numbered night.
 
-After the final Day 1 outcome, one pure gate checks for pending Jester revenge before any faction
+After each final day outcome, one pure gate checks for pending Jester revenge before any faction
 predicate runs. Pending revenge remains victim-free and unchanged in a private-safe waiting stage;
-the screen says only that final evaluation is deferred until the next Dawn. With no pending
+the public screen uses the same “The game continues” copy whether revenge is pending or no faction
+has won. With no pending
 revenge, the app evaluates the finalized R-009, R-011, and R-012 predicates once. A non-terminal
-state stops in public-safe post-day waiting without creating Night 2. Town, Mafia, Serial Killer,
+state stops in public-safe post-day waiting. **Begin Night N** rebuilds the canonical sequence from
+living active roles, increments the night counter once, and retains multi-day deaths, day outcomes,
+Doctor target history, targets, conversions, wins, and pending revenge. Town, Mafia, Serial Killer,
 and the documented no-survivors draw enter an immutable `game-over` session.
 
 Game over publicly shows only the winning faction or draw, alive/dead roster state, and roles that
@@ -67,8 +71,10 @@ After the final actor, the application validates the sequential record, construc
 canonical action batch, calculates ordinary attacks, protections, and provisional deaths, and
 enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate direct **Show
 Dawn announcement** boundary. The inline reminder tells the host to ensure every player’s eyes are
-open; no second confirmation dialog is used. Dawn applies deaths once, records only unblocked Doctors’ confirmed
-targets, honors `revealRoleOnDeath`, and exposes only public-safe announcement data.
+open; no second confirmation dialog is used. Dawn applies ordinary deaths once, records only
+unblocked Doctors’ confirmed targets, then resolves any due Jester revenge against the
+post-ordinary survivor set. It evaluates faction victory only after revenge, honors
+`revealRoleOnDeath`, and exposes one combined current-night public announcement without causes.
 
 After final physical-card confirmation, every Executioner now receives one randomly selected
 participating Town target from the final assignments. The injected random source is called once per
@@ -79,12 +85,13 @@ every briefing before the application creates the Night 1 action workflow. Games
 Executioner skip the briefing.
 
 One authoritative application session spans setup, role distribution, Executioner briefing,
-sequential night, final night resolution, public Dawn, first-day discussion, and the final Day 1
-outcome. Each successful authoritative transition, Mayor reveal, and day completion is saved under
+sequential night, final night resolution, private Dawn resolution, public Dawn, repeated day
+discussion/outcomes, waiting, and game over. Each successful authoritative transition, Mayor
+reveal, revenge application, and day completion is saved under
 `mafia-host:active-session:v2`.
 Restoration rebuilds or validates the exact stage, rejects forged order, actions, outcomes, public
-reveals, stale night data, extra fields, and stage/phase/counter combinations. Day recovery shows
-only generic Day 1 metadata until the host chooses **Continue saved game**.
+reveals, stale night data, extra fields, and stage/phase/counter combinations. Recovery shows only
+generic numbered night/day or broad Dawn metadata until the host chooses **Continue saved game**.
 
 When first-night killing is disabled, living Godfathers and Serial Killers are omitted entirely, so
 they do not wake or create an action, outcome, visit, or attack. Consorts remain immune to Consort
@@ -105,11 +112,11 @@ victim-free pending Jester revenge, and permanent Executioner-to-Jester conversi
 non-execution target deaths. Original assignment and target relationships remain historical
 authority while selectors derive converted Jester behavior. Corrected Phase 7D evaluates faction
 victory only when pending revenge is absent and adds safe waiting and game-over presentation.
-Jester revenge victim selection and death and the subsequent-night loop remain Phase 7E work.
+Phase 7E resolves ordinary deaths before one due random Jester revenge, converts shared-target
+Executioners after the revenge death, and reevaluates victory before public Dawn or game over.
 
-Still not implemented: revenge victim selection, revenge death, revenge-triggered conversion,
-Night 2, a second Dawn, next-Dawn revenge resolution, the subsequent-night loop, multi-day history,
-backend/cloud synchronization, or multi-tab synchronization.
+Still not implemented: automated trials/votes, undo/history correction, backend/cloud
+synchronization, online multiplayer, or multi-tab synchronization.
 
 ## Local save and privacy
 
@@ -134,14 +141,16 @@ rejected with a clear incompatible-save message because safely restoring it woul
 which information players already saw. Such a V1 save is not silently deleted. On safe migration,
 V2 is written before the legacy key is removed; a failed V2 write preserves V1.
 
-V2 recovery remains intentionally limited to the first Dawn, Day 1 discussion, the final Day 1
-outcome, corrected Phase 7D waiting, and game over. A neutral-state subversion of `2` requires explicit death records, personal wins,
-conversions, pending revenge, and the singular day outcome together. Earlier neutral-state V2
+V2 recovery supports later nights, selected mid-revenge Dawn resolution, later Dawns/days,
+multi-day outcomes, waiting, and game over. Neutral-state sub-version `3` requires explicit death
+records, personal wins, conversions, pending/reconciled revenge authority, and canonical day
+outcome history together. Earlier neutral-state V2
 saves receive canonical empty defaults only where unambiguous. A prior Dawn announcement can prove
 its night deaths and conversions during restoration. A prior Day save with any dead player but no
 cause evidence fails with an explicit compatibility error rather than inferring from `alive:
 false`. Dialogs, temporary selections, focus, guards, labels, and summary prose are never
-persisted.
+persisted. A selected revenge victim is durable mid-workflow so refresh and save retry never
+reroll it; the recovery summary exposes only the broad `Dawn resolution` stage.
 
 Phase 7C.1 new V2 saves persist no non-informational private outcome and no acknowledged-screen
 state. Earlier V2 `Action recorded` states are replayed through validation and canonicalized to the
@@ -157,9 +166,8 @@ rejects forged or partial winners and waiting/result mismatches, and never resol
 advances counters, or consumes randomness. Recovery shows generic Day-complete metadata for both
 waiting variants and only the public faction/draw for game over until Continue.
 
-The current first-Dawn representation must not be reused unchanged for later Dawns because it could
-announce earlier deaths again. Phase 7E must update the contract deliberately. There is no generic
-migration framework.
+Phase 7E derives public Dawn only from death records whose cause belongs to the current night, so
+earlier deaths cannot be reannounced. There is no generic migration framework.
 
 The production Vite base remains `/mafia-host/` for GitHub Pages. The application has no nested
 client-side routes or refresh-fallback dependency: every workflow stage renders from that project
@@ -269,7 +277,7 @@ shared domain mechanics. `night-completion` owns the final resolution and delibe
 Session persistence owns schema V2, narrow V1 migration, and canonical reconstruction. React owns
 only temporary unconfirmed target selection, focus, errors, dialogs, and repeated-operation guards.
 
-Phase 7B adds one pure domain transition from the matching first Dawn into Day 1 and one narrow
+Phase 7B introduced one pure domain transition from matching Dawn into its numbered day and one narrow
 voluntary-Mayor reveal operation. `application/day-discussion` owns the sanitized public roster and
 separate private candidate selector. Phase 7C.1 adds a third, sanitized host-role selector that is
 constructed only while its React-only toggle is visible. The day feature never receives `GameState`; React owns
@@ -278,7 +286,8 @@ compatibly with an exact `day-discussion` stage. New saves omit the obsolete `ma
 property; restoration narrowly accepts its former generated `false` value so earlier V2 saves
 remain compatible. It is never domain authority.
 
-Phase 7C adds a singular `DayOutcome`, explicit `DeathRecord` causes, permanent neutral personal
+Phase 7C introduced `DayOutcome`; Phase 7E stores those outcomes as canonical numbered history.
+Explicit `DeathRecord` causes, permanent neutral personal
 wins, victim-free pending revenge, and explicit Executioner-to-Jester conversion records. Night
 application is the authoritative boundary for conversions caused by newly final night deaths;
 day execution never converts its target's Executioners. `application/day-outcome` owns sanitized

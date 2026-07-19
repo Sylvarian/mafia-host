@@ -43,12 +43,14 @@ describe('final day outcome', () => {
       phase: 'execution-resolution',
       nightNumber: 1,
       dayNumber: 1,
-      dayOutcome: {
-        kind: 'player-executed',
-        gameId: game.id,
-        dayNumber: 1,
-        playerId: executed.playerId,
-      },
+      dayOutcomes: [
+        {
+          kind: 'player-executed',
+          gameId: game.id,
+          dayNumber: 1,
+          playerId: executed.playerId,
+        },
+      ],
     })
     expect(result.value.players[1]).toMatchObject({
       alive: false,
@@ -119,6 +121,7 @@ describe('final day outcome', () => {
     ])
     expect(result.value.pendingJesterRevenges).toEqual([
       {
+        id: `jester-revenge:1:${jester.role.instanceId}`,
         gameId: game.id,
         jesterPlayerId: jester.playerId,
         jesterRoleInstanceId: jester.role.instanceId,
@@ -221,11 +224,13 @@ describe('final day outcome', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected no-execution completion.')
     expect(result.value.phase).toBe('execution-resolution')
-    expect(result.value.dayOutcome).toEqual({
-      kind: 'no-execution',
-      gameId: game.id,
-      dayNumber: 1,
-    })
+    expect(result.value.dayOutcomes).toEqual([
+      {
+        kind: 'no-execution',
+        gameId: game.id,
+        dayNumber: 1,
+      },
+    ])
     expect(result.value.players).toEqual(game.players)
     expect(result.value.deathRecords).toEqual(game.deathRecords)
     expect(result.value.personalWins).toEqual([])
@@ -383,16 +388,18 @@ describe('Phase 7C outcome invariants', () => {
     expect(
       validateGameState({
         ...execution.value,
-        dayOutcome: {
-          kind: 'no-execution',
-          gameId: game.id,
-          dayNumber: 1,
-        },
+        dayOutcomes: [
+          {
+            kind: 'no-execution',
+            gameId: game.id,
+            dayNumber: 1,
+          },
+        ],
       }),
     ).toMatchObject({
       ok: false,
       error: {
-        type: 'INVALID_DAY_OUTCOME',
+        type: 'INVALID_DAY_OUTCOMES',
         reason: 'no-execution-with-execution-death',
       },
     })

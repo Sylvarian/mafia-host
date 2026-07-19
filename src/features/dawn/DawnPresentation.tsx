@@ -55,8 +55,8 @@ export function DawnPresentation({
           </ul>
         )}
         <div className="dawn-public__boundary">
-          <strong>Dawn complete</strong>
-          <span>Begin the public daytime stage when the table is ready.</span>
+          <strong>Public Dawn ready</strong>
+          <span>Ask every player to open their eyes, then begin the daytime stage.</span>
         </div>
         {dayTransitionErrorMessage === null ? null : (
           <p className="dawn-error" role="alert">
@@ -64,7 +64,7 @@ export function DawnPresentation({
           </p>
         )}
         <button type="button" className="button button--primary" onClick={onBeginDayDiscussion}>
-          Begin day discussion
+          Continue to Day {String(announcement.nightNumber)}
         </button>
       </section>
     )
@@ -77,9 +77,10 @@ export function DawnPresentation({
         <h2 id="dawn-ready-heading" ref={headingRef} tabIndex={-1}>
           Night resolution complete
         </h2>
-        <p>Ordinary deaths are still hidden.</p>
+        <p>Ordinary deaths have not been announced.</p>
         <p className="dawn-ready__guidance">
-          Make sure every player’s eyes are open before showing Dawn.
+          Keep every player’s eyes closed while all Dawn effects are finalized. The next screen may
+          remain host-only.
         </p>
         {error === null ? null : (
           <p className="dawn-error" role="alert">
@@ -87,7 +88,7 @@ export function DawnPresentation({
           </p>
         )}
         <button type="button" className="button button--prepare" onClick={onPrepareDawn}>
-          Show Dawn announcement
+          Finalize Dawn
         </button>
       </div>
     </section>

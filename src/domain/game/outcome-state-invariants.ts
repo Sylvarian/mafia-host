@@ -11,9 +11,15 @@ import {
 } from '../identifiers.ts'
 import type {
   ExecutionerToJesterConversion,
+  JesterRevengeResolution,
   PendingJesterRevenge,
+  PendingJesterRevengeId,
   PersonalWinRecord,
 } from '../neutral/neutral-outcome-model.ts'
+import {
+  createJesterRevengeResolutionId,
+  createPendingJesterRevengeId,
+} from '../neutral/jester-revenge-identity.ts'
 import type { GamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
@@ -34,7 +40,7 @@ export type OutcomeStateInvariantError =
         | 'duplicate-player'
         | 'order-mismatch'
         | 'missing-dead-player'
-        | 'unsupported-revenge-death'
+        | 'revenge-resolution-mismatch'
       index?: number
       playerId?: PlayerId
     }>
@@ -88,12 +94,32 @@ export type OutcomeStateInvariantError =
         | 'duplicate-record'
         | 'order-mismatch'
         | 'missing-required-revenge'
+        | 'not-due'
+        | 'overdue'
       index?: number
       roleInstanceId?: RoleInstanceId
     }>
   | Readonly<{
-      type: 'INVALID_DAY_OUTCOME'
+      type: 'INVALID_JESTER_REVENGE_RESOLUTIONS'
       reason:
+        | 'not-an-array'
+        | 'invalid-record'
+        | 'game-mismatch'
+        | 'unknown-obligation'
+        | 'owner-mismatch'
+        | 'invalid-night'
+        | 'unknown-victim'
+        | 'victim-death-mismatch'
+        | 'duplicate-obligation'
+        | 'duplicate-resolution'
+        | 'order-mismatch'
+      index?: number
+      obligationId?: PendingJesterRevengeId
+    }>
+  | Readonly<{
+      type: 'INVALID_DAY_OUTCOMES'
+      reason:
+        | 'not-an-array'
         | 'invalid-record'
         | 'game-mismatch'
         | 'invalid-day'
@@ -102,6 +128,9 @@ export type OutcomeStateInvariantError =
         | 'execution-player-mismatch'
         | 'no-execution-with-execution-death'
         | 'phase-mismatch'
+        | 'duplicate-day'
+        | 'order-mismatch'
+        | 'missing-day'
     }>
 
 export type ValidatedOutcomeState = Readonly<{
@@ -109,7 +138,8 @@ export type ValidatedOutcomeState = Readonly<{
   personalWins: readonly PersonalWinRecord[]
   executionerConversions: readonly ExecutionerToJesterConversion[]
   pendingJesterRevenges: readonly PendingJesterRevenge[]
-  dayOutcome: DayOutcome | null
+  jesterRevengeResolutions: readonly JesterRevengeResolution[]
+  dayOutcomes: readonly DayOutcome[]
 }>
 
 export function copyAndValidateOutcomeState(
@@ -118,7 +148,8 @@ export function copyAndValidateOutcomeState(
     personalWins: unknown
     executionerConversions: unknown
     pendingJesterRevenges: unknown
-    dayOutcome: unknown
+    jesterRevengeResolutions: unknown
+    dayOutcomes: unknown
   }>,
   context: Readonly<{
     gameId: GameId
@@ -130,7 +161,17 @@ export function copyAndValidateOutcomeState(
     revealRoleOnDeath: boolean
   }>,
 ): DomainResult<ValidatedOutcomeState, OutcomeStateInvariantError> {
-  const deathResult = copyDeathRecords(candidate.deathRecords, context)
+  const dayOutcomeResult = copyDayOutcomes(candidate.dayOutcomes, context)
+  if (!dayOutcomeResult.ok) {
+    return dayOutcomeResult
+  }
+
+  const resolutionResult = copyRevengeResolutionShapes(candidate.jesterRevengeResolutions, context)
+  if (!resolutionResult.ok) {
+    return resolutionResult
+  }
+
+  const deathResult = copyDeathRecords(candidate.deathRecords, context, resolutionResult.value)
   if (!deathResult.ok) {
     return deathResult
   }
@@ -144,9 +185,13 @@ export function copyAndValidateOutcomeState(
     return conversionResult
   }
 
-  const dayOutcomeResult = copyDayOutcome(candidate.dayOutcome, context, deathResult.value)
-  if (!dayOutcomeResult.ok) {
-    return dayOutcomeResult
+  const dayEvidenceResult = validateDayOutcomeEvidence(
+    dayOutcomeResult.value,
+    context,
+    deathResult.value,
+  )
+  if (!dayEvidenceResult.ok) {
+    return dayEvidenceResult
   }
 
   const personalWinResult = copyPersonalWins(
@@ -165,9 +210,21 @@ export function copyAndValidateOutcomeState(
     deathResult.value,
     conversionResult.value,
     personalWinResult.value,
+    resolutionResult.value,
   )
   if (!revengeResult.ok) {
     return revengeResult
+  }
+
+  const validatedResolutionsResult = validateRevengeResolutionEvidence(
+    resolutionResult.value,
+    context,
+    deathResult.value,
+    personalWinResult.value,
+    revengeResult.value,
+  )
+  if (!validatedResolutionsResult.ok) {
+    return validatedResolutionsResult
   }
 
   return succeed(
@@ -176,7 +233,8 @@ export function copyAndValidateOutcomeState(
       personalWins: personalWinResult.value,
       executionerConversions: conversionResult.value,
       pendingJesterRevenges: revengeResult.value,
-      dayOutcome: dayOutcomeResult.value,
+      jesterRevengeResolutions: validatedResolutionsResult.value,
+      dayOutcomes: dayEvidenceResult.value,
     }),
   )
 }
@@ -262,9 +320,145 @@ export function orderPendingJesterRevenges(
   )
 }
 
+export function orderJesterRevengeResolutions(
+  records: readonly JesterRevengeResolution[],
+  players: readonly GamePlayer[],
+): readonly JesterRevengeResolution[] {
+  const rosterOrder = playerOrder(players)
+  return Object.freeze(
+    [...records].sort((left, right) => {
+      const nightDifference = left.resolvedAtNightNumber - right.resolvedAtNightNumber
+      if (nightDifference !== 0) {
+        return nightDifference
+      }
+      const ordinalDifference =
+        playerOrdinal(players, left.jesterPlayerId) - playerOrdinal(players, right.jesterPlayerId)
+      return ordinalDifference !== 0
+        ? ordinalDifference
+        : orderOf(rosterOrder, left.jesterPlayerId) - orderOf(rosterOrder, right.jesterPlayerId)
+    }),
+  )
+}
+
+export function orderDayOutcomes(records: readonly DayOutcome[]): readonly DayOutcome[] {
+  return Object.freeze([...records].sort((left, right) => left.dayNumber - right.dayNumber))
+}
+
+function copyRevengeResolutionShapes(
+  candidate: unknown,
+  context: Parameters<typeof copyAndValidateOutcomeState>[1],
+): DomainResult<readonly JesterRevengeResolution[], OutcomeStateInvariantError> {
+  if (!Array.isArray(candidate)) {
+    return invalidRevengeResolutions('not-an-array')
+  }
+  const resolutions: JesterRevengeResolution[] = []
+  const seenIds = new Set<string>()
+  const seenObligations = new Set<string>()
+  for (const [index, value] of candidate.entries()) {
+    if (
+      !isUnknownRecord(value) ||
+      !isNonblankString(value.id) ||
+      !isNonblankString(value.gameId) ||
+      !isNonblankString(value.obligationId) ||
+      !isNonblankString(value.jesterPlayerId) ||
+      !isNonblankString(value.jesterRoleInstanceId) ||
+      !isPositiveInteger(value.resolvedAtNightNumber)
+    ) {
+      return invalidRevengeResolutions('invalid-record', index)
+    }
+    let resolution: JesterRevengeResolution
+    if (
+      value.kind === 'victim-killed' &&
+      hasExactKeys(value, [
+        'id',
+        'kind',
+        'gameId',
+        'obligationId',
+        'jesterPlayerId',
+        'jesterRoleInstanceId',
+        'victimPlayerId',
+        'resolvedAtNightNumber',
+      ]) &&
+      isNonblankString(value.victimPlayerId)
+    ) {
+      resolution = Object.freeze({
+        id: value.id,
+        kind: 'victim-killed',
+        gameId: gameId(value.gameId),
+        obligationId: value.obligationId,
+        jesterPlayerId: playerId(value.jesterPlayerId),
+        jesterRoleInstanceId: roleInstanceId(value.jesterRoleInstanceId),
+        victimPlayerId: playerId(value.victimPlayerId),
+        resolvedAtNightNumber: value.resolvedAtNightNumber,
+      })
+    } else if (
+      value.kind === 'no-survivor' &&
+      hasExactKeys(value, [
+        'id',
+        'kind',
+        'gameId',
+        'obligationId',
+        'jesterPlayerId',
+        'jesterRoleInstanceId',
+        'resolvedAtNightNumber',
+      ])
+    ) {
+      resolution = Object.freeze({
+        id: value.id,
+        kind: 'no-survivor',
+        gameId: gameId(value.gameId),
+        obligationId: value.obligationId,
+        jesterPlayerId: playerId(value.jesterPlayerId),
+        jesterRoleInstanceId: roleInstanceId(value.jesterRoleInstanceId),
+        resolvedAtNightNumber: value.resolvedAtNightNumber,
+      })
+    } else {
+      return invalidRevengeResolutions('invalid-record', index)
+    }
+    if (resolution.gameId !== context.gameId) {
+      return invalidRevengeResolutions('game-mismatch', index, resolution.obligationId)
+    }
+    if (
+      resolution.resolvedAtNightNumber >
+      latestAppliedNightNumber(context.phase, context.nightNumber)
+    ) {
+      return invalidRevengeResolutions('invalid-night', index, resolution.obligationId)
+    }
+    if (
+      !context.players.some(
+        (player) =>
+          player.playerId === resolution.jesterPlayerId &&
+          player.role.instanceId === resolution.jesterRoleInstanceId,
+      )
+    ) {
+      return invalidRevengeResolutions('owner-mismatch', index, resolution.obligationId)
+    }
+    if (
+      resolution.kind === 'victim-killed' &&
+      !context.players.some((player) => player.playerId === resolution.victimPlayerId)
+    ) {
+      return invalidRevengeResolutions('unknown-victim', index, resolution.obligationId)
+    }
+    if (seenIds.has(resolution.id)) {
+      return invalidRevengeResolutions('duplicate-resolution', index, resolution.obligationId)
+    }
+    if (seenObligations.has(resolution.obligationId)) {
+      return invalidRevengeResolutions('duplicate-obligation', index, resolution.obligationId)
+    }
+    seenIds.add(resolution.id)
+    seenObligations.add(resolution.obligationId)
+    resolutions.push(resolution)
+  }
+  const ordered = orderJesterRevengeResolutions(resolutions, context.players)
+  return sameSequence(ordered, resolutions, revengeResolutionKey)
+    ? succeed(Object.freeze(resolutions))
+    : invalidRevengeResolutions('order-mismatch')
+}
+
 function copyDeathRecords(
   candidate: unknown,
   context: Parameters<typeof copyAndValidateOutcomeState>[1],
+  revengeResolutions: readonly JesterRevengeResolution[],
 ): DomainResult<readonly DeathRecord[], OutcomeStateInvariantError> {
   if (!Array.isArray(candidate)) {
     return invalidDeaths('not-an-array')
@@ -311,6 +505,22 @@ function copyDeathRecords(
     if (seenPlayers.has(record.playerId)) {
       return invalidDeaths('duplicate-player', index, record.playerId)
     }
+    const cause = record.cause
+    if (cause.kind === 'jester-revenge') {
+      const matchingResolution = revengeResolutions.find(
+        (resolution) =>
+          resolution.kind === 'victim-killed' &&
+          resolution.id === cause.resolutionId &&
+          resolution.obligationId === cause.obligationId &&
+          resolution.jesterPlayerId === cause.jesterPlayerId &&
+          resolution.jesterRoleInstanceId === cause.jesterRoleInstanceId &&
+          resolution.victimPlayerId === record.playerId &&
+          resolution.resolvedAtNightNumber === cause.nightNumber,
+      )
+      if (matchingResolution === undefined) {
+        return invalidDeaths('revenge-resolution-mismatch', index, record.playerId)
+      }
+    }
     seenPlayers.add(record.playerId)
     records.push(record)
   }
@@ -327,6 +537,7 @@ function copyDeathRecords(
       context.dayNumber >= 1 &&
       (player.alive ||
         death?.cause.kind === 'day-execution' ||
+        death?.cause.kind === 'jester-revenge' ||
         (death?.cause.kind === 'night-death' && death.cause.nightNumber > 1))
     return !authorizedByDeath && !authorizedMayorReveal
   })
@@ -364,7 +575,7 @@ function copyDeathCause(
     candidate.kind === 'night-death' &&
     hasExactKeys(candidate, ['kind', 'nightNumber']) &&
     isPositiveInteger(candidate.nightNumber) &&
-    candidate.nightNumber <= context.nightNumber
+    candidate.nightNumber <= latestAppliedNightNumber(context.phase, context.nightNumber)
   ) {
     return succeed(Object.freeze({ kind: 'night-death', nightNumber: candidate.nightNumber }))
   }
@@ -376,8 +587,33 @@ function copyDeathCause(
   ) {
     return succeed(Object.freeze({ kind: 'day-execution', dayNumber: candidate.dayNumber }))
   }
-  if (candidate.kind === 'jester-revenge') {
-    return fail('unsupported-revenge-death')
+  if (
+    candidate.kind === 'jester-revenge' &&
+    hasExactKeys(candidate, [
+      'kind',
+      'nightNumber',
+      'jesterPlayerId',
+      'jesterRoleInstanceId',
+      'obligationId',
+      'resolutionId',
+    ]) &&
+    isPositiveInteger(candidate.nightNumber) &&
+    candidate.nightNumber <= latestAppliedNightNumber(context.phase, context.nightNumber) &&
+    isNonblankString(candidate.jesterPlayerId) &&
+    isNonblankString(candidate.jesterRoleInstanceId) &&
+    isNonblankString(candidate.obligationId) &&
+    isNonblankString(candidate.resolutionId)
+  ) {
+    return succeed(
+      Object.freeze({
+        kind: 'jester-revenge',
+        nightNumber: candidate.nightNumber,
+        jesterPlayerId: playerId(candidate.jesterPlayerId),
+        jesterRoleInstanceId: roleInstanceId(candidate.jesterRoleInstanceId),
+        obligationId: candidate.obligationId,
+        resolutionId: candidate.resolutionId,
+      }),
+    )
   }
   return fail('invalid-cause')
 }
@@ -469,72 +705,116 @@ function copyConversions(
   return succeed(Object.freeze(records))
 }
 
-function copyDayOutcome(
+function copyDayOutcomes(
   candidate: unknown,
   context: Parameters<typeof copyAndValidateOutcomeState>[1],
-  deaths: readonly DeathRecord[],
-): DomainResult<DayOutcome | null, OutcomeStateInvariantError> {
-  if (candidate === null) {
-    if (context.phase === 'execution-resolution') {
-      return invalidDayOutcome('phase-mismatch')
+): DomainResult<readonly DayOutcome[], OutcomeStateInvariantError> {
+  if (!Array.isArray(candidate)) {
+    return invalidDayOutcomes('not-an-array')
+  }
+
+  const outcomes: DayOutcome[] = []
+  const seenDays = new Set<number>()
+  for (const value of candidate) {
+    if (!isUnknownRecord(value) || !isNonblankString(value.gameId)) {
+      return invalidDayOutcomes('invalid-record')
     }
-    return succeed(null)
+    let outcome: DayOutcome
+    if (
+      value.kind === 'player-executed' &&
+      hasExactKeys(value, ['kind', 'gameId', 'dayNumber', 'playerId']) &&
+      isPositiveInteger(value.dayNumber) &&
+      isNonblankString(value.playerId)
+    ) {
+      outcome = Object.freeze({
+        kind: 'player-executed',
+        gameId: gameId(value.gameId),
+        dayNumber: value.dayNumber,
+        playerId: playerId(value.playerId),
+      })
+    } else if (
+      value.kind === 'no-execution' &&
+      hasExactKeys(value, ['kind', 'gameId', 'dayNumber']) &&
+      isPositiveInteger(value.dayNumber)
+    ) {
+      outcome = Object.freeze({
+        kind: 'no-execution',
+        gameId: gameId(value.gameId),
+        dayNumber: value.dayNumber,
+      })
+    } else {
+      return invalidDayOutcomes('invalid-record')
+    }
+    if (outcome.gameId !== context.gameId) {
+      return invalidDayOutcomes('game-mismatch')
+    }
+    if (outcome.dayNumber > context.dayNumber) {
+      return invalidDayOutcomes('invalid-day')
+    }
+    if (seenDays.has(outcome.dayNumber)) {
+      return invalidDayOutcomes('duplicate-day')
+    }
+    seenDays.add(outcome.dayNumber)
+    outcomes.push(outcome)
   }
-  if (!isUnknownRecord(candidate) || !isNonblankString(candidate.gameId)) {
-    return invalidDayOutcome('invalid-record')
+
+  const ordered = orderDayOutcomes(outcomes)
+  if (!sameSequence(ordered, outcomes, dayOutcomeKey)) {
+    return invalidDayOutcomes('order-mismatch')
   }
-  let outcome: DayOutcome
-  if (
-    candidate.kind === 'player-executed' &&
-    hasExactKeys(candidate, ['kind', 'gameId', 'dayNumber', 'playerId']) &&
-    isPositiveInteger(candidate.dayNumber) &&
-    isNonblankString(candidate.playerId)
-  ) {
-    outcome = Object.freeze({
-      kind: 'player-executed',
-      gameId: gameId(candidate.gameId),
-      dayNumber: candidate.dayNumber,
-      playerId: playerId(candidate.playerId),
-    })
-  } else if (
-    candidate.kind === 'no-execution' &&
-    hasExactKeys(candidate, ['kind', 'gameId', 'dayNumber']) &&
-    isPositiveInteger(candidate.dayNumber)
-  ) {
-    outcome = Object.freeze({
-      kind: 'no-execution',
-      gameId: gameId(candidate.gameId),
-      dayNumber: candidate.dayNumber,
-    })
-  } else {
-    return invalidDayOutcome('invalid-record')
+  const expectedCompletedDays = completedDayOutcomeCount(context.phase, context.dayNumber)
+  if (outcomes.length !== expectedCompletedDays) {
+    return invalidDayOutcomes('phase-mismatch')
   }
-  if (outcome.gameId !== context.gameId) {
-    return invalidDayOutcome('game-mismatch')
+  for (let dayNumber = 1; dayNumber <= expectedCompletedDays; dayNumber += 1) {
+    if (!seenDays.has(dayNumber)) {
+      return invalidDayOutcomes('missing-day')
+    }
   }
-  if (outcome.dayNumber !== context.dayNumber) {
-    return invalidDayOutcome('invalid-day')
+  return succeed(Object.freeze(outcomes))
+}
+
+function validateDayOutcomeEvidence(
+  outcomes: readonly DayOutcome[],
+  context: Parameters<typeof copyAndValidateOutcomeState>[1],
+  deaths: readonly DeathRecord[],
+): DomainResult<readonly DayOutcome[], OutcomeStateInvariantError> {
+  for (const outcome of outcomes) {
+    const executionDeaths = deaths.filter(
+      (death) =>
+        death.cause.kind === 'day-execution' && death.cause.dayNumber === outcome.dayNumber,
+    )
+    if (outcome.kind === 'no-execution') {
+      if (executionDeaths.length > 0) {
+        return invalidDayOutcomes('no-execution-with-execution-death')
+      }
+      continue
+    }
+    if (!context.players.some((player) => player.playerId === outcome.playerId)) {
+      return invalidDayOutcomes('unknown-player')
+    }
+    if (executionDeaths.length === 0) {
+      return invalidDayOutcomes('missing-execution-death')
+    }
+    if (executionDeaths.length !== 1 || executionDeaths[0]?.playerId !== outcome.playerId) {
+      return invalidDayOutcomes('execution-player-mismatch')
+    }
   }
-  if (context.phase !== 'execution-resolution' && context.phase !== 'game-over') {
-    return invalidDayOutcome('phase-mismatch')
-  }
-  const executionDeaths = deaths.filter(
-    (death) => death.cause.kind === 'day-execution' && death.cause.dayNumber === outcome.dayNumber,
-  )
-  if (outcome.kind === 'no-execution') {
-    return executionDeaths.length === 0
-      ? succeed(outcome)
-      : invalidDayOutcome('no-execution-with-execution-death')
-  }
-  if (!context.players.some((player) => player.playerId === outcome.playerId)) {
-    return invalidDayOutcome('unknown-player')
-  }
-  if (executionDeaths.length === 0) {
-    return invalidDayOutcome('missing-execution-death')
-  }
-  return executionDeaths.length === 1 && executionDeaths[0]?.playerId === outcome.playerId
-    ? succeed(outcome)
-    : invalidDayOutcome('execution-player-mismatch')
+  const unexplainedExecution = deaths.find((death) => {
+    const cause = death.cause
+    return (
+      cause.kind === 'day-execution' &&
+      !outcomes.some(
+        (outcome) =>
+          outcome.kind === 'player-executed' &&
+          outcome.dayNumber === cause.dayNumber &&
+          outcome.playerId === death.playerId,
+      )
+    )
+  })
+  return unexplainedExecution === undefined
+    ? succeed(outcomes)
+    : invalidDayOutcomes('execution-player-mismatch')
 }
 
 function copyPersonalWins(
@@ -708,6 +988,7 @@ function copyPendingRevenges(
   deaths: readonly DeathRecord[],
   conversions: readonly ExecutionerToJesterConversion[],
   personalWins: readonly PersonalWinRecord[],
+  resolutions: readonly JesterRevengeResolution[],
 ): DomainResult<readonly PendingJesterRevenge[], OutcomeStateInvariantError> {
   if (!Array.isArray(candidate)) {
     return invalidRevenges('not-an-array')
@@ -718,12 +999,14 @@ function copyPendingRevenges(
     if (
       !isUnknownRecord(value) ||
       !hasExactKeys(value, [
+        'id',
         'gameId',
         'jesterPlayerId',
         'jesterRoleInstanceId',
         'triggeredOnDay',
         'status',
       ]) ||
+      !isNonblankString(value.id) ||
       !isNonblankString(value.gameId) ||
       !isNonblankString(value.jesterPlayerId) ||
       !isNonblankString(value.jesterRoleInstanceId) ||
@@ -733,6 +1016,7 @@ function copyPendingRevenges(
       return invalidRevenges('invalid-record', index)
     }
     const record: PendingJesterRevenge = Object.freeze({
+      id: value.id,
       gameId: gameId(value.gameId),
       jesterPlayerId: playerId(value.jesterPlayerId),
       jesterRoleInstanceId: roleInstanceId(value.jesterRoleInstanceId),
@@ -744,6 +1028,24 @@ function copyPendingRevenges(
     }
     if (record.triggeredOnDay > context.dayNumber) {
       return invalidRevenges('invalid-day', index, record.jesterRoleInstanceId)
+    }
+    if (
+      record.id !== createPendingJesterRevengeId(record.jesterRoleInstanceId, record.triggeredOnDay)
+    ) {
+      return invalidRevenges('invalid-record', index, record.jesterRoleInstanceId)
+    }
+    if (context.nightNumber === context.dayNumber && record.triggeredOnDay !== context.dayNumber) {
+      return invalidRevenges('overdue', index, record.jesterRoleInstanceId)
+    }
+    if (
+      context.nightNumber === context.dayNumber + 1 &&
+      record.triggeredOnDay + 1 !== context.nightNumber
+    ) {
+      return invalidRevenges(
+        record.triggeredOnDay + 1 < context.nightNumber ? 'overdue' : 'not-due',
+        index,
+        record.jesterRoleInstanceId,
+      )
     }
     const owner = context.players.find((player) => player.playerId === record.jesterPlayerId)
     if (owner === undefined) {
@@ -784,10 +1086,22 @@ function copyPendingRevenges(
         (record) =>
           record.jesterRoleInstanceId === win.roleInstanceId &&
           record.triggeredOnDay === win.dayNumber,
+      ) &&
+      !resolutions.some(
+        (resolution) =>
+          resolution.jesterRoleInstanceId === win.roleInstanceId &&
+          resolution.obligationId ===
+            createPendingJesterRevengeId(win.roleInstanceId, win.dayNumber),
       )
     ) {
       return invalidRevenges('missing-required-revenge', undefined, win.roleInstanceId)
     }
+  }
+  if (
+    records.length > 0 &&
+    (context.phase === 'dawn-announcement' || context.phase === 'game-over')
+  ) {
+    return invalidRevenges('overdue')
   }
   const ordered = orderPendingJesterRevenges(records, context.players)
   if (!sameSequence(ordered, records, revengeKey)) {
@@ -796,8 +1110,68 @@ function copyPendingRevenges(
   return succeed(Object.freeze(records))
 }
 
+function validateRevengeResolutionEvidence(
+  resolutions: readonly JesterRevengeResolution[],
+  context: Parameters<typeof copyAndValidateOutcomeState>[1],
+  deaths: readonly DeathRecord[],
+  personalWins: readonly PersonalWinRecord[],
+  pending: readonly PendingJesterRevenge[],
+): DomainResult<readonly JesterRevengeResolution[], OutcomeStateInvariantError> {
+  for (const [index, resolution] of resolutions.entries()) {
+    const win = personalWins.find(
+      (record) =>
+        record.kind === 'jester-executed' &&
+        record.playerId === resolution.jesterPlayerId &&
+        record.roleInstanceId === resolution.jesterRoleInstanceId &&
+        record.dayNumber + 1 === resolution.resolvedAtNightNumber,
+    )
+    if (win === undefined) {
+      return invalidRevengeResolutions('unknown-obligation', index, resolution.obligationId)
+    }
+    const expectedObligationId = createPendingJesterRevengeId(
+      resolution.jesterRoleInstanceId,
+      win.dayNumber,
+    )
+    if (
+      resolution.obligationId !== expectedObligationId ||
+      resolution.id !== createJesterRevengeResolutionId(expectedObligationId)
+    ) {
+      return invalidRevengeResolutions('unknown-obligation', index, resolution.obligationId)
+    }
+    if (pending.some((obligation) => obligation.id === resolution.obligationId)) {
+      return invalidRevengeResolutions('duplicate-obligation', index, resolution.obligationId)
+    }
+    if (resolution.kind === 'victim-killed') {
+      const death = deaths.find(
+        (record) =>
+          record.playerId === resolution.victimPlayerId &&
+          record.cause.kind === 'jester-revenge' &&
+          record.cause.resolutionId === resolution.id &&
+          record.cause.obligationId === resolution.obligationId &&
+          record.cause.nightNumber === resolution.resolvedAtNightNumber,
+      )
+      if (death === undefined) {
+        return invalidRevengeResolutions('victim-death-mismatch', index, resolution.obligationId)
+      }
+    } else {
+      const earlierOrSameDeathCount = deaths.filter((death) =>
+        death.cause.kind === 'night-death'
+          ? death.cause.nightNumber <= resolution.resolvedAtNightNumber
+          : death.cause.kind === 'jester-revenge'
+            ? death.cause.nightNumber <= resolution.resolvedAtNightNumber
+            : death.cause.dayNumber < resolution.resolvedAtNightNumber,
+      ).length
+      if (earlierOrSameDeathCount !== context.players.length) {
+        return invalidRevengeResolutions('victim-death-mismatch', index, resolution.obligationId)
+      }
+    }
+  }
+  return succeed(resolutions)
+}
+
 function requiresCompleteDeathAuthority(phase: GamePhase): boolean {
   return (
+    phase === 'dawn-resolution' ||
     phase === 'dawn-announcement' ||
     phase === 'day-discussion' ||
     phase === 'trial' ||
@@ -805,6 +1179,47 @@ function requiresCompleteDeathAuthority(phase: GamePhase): boolean {
     phase === 'execution-resolution' ||
     phase === 'game-over'
   )
+}
+
+function latestAppliedNightNumber(phase: GamePhase, currentNightNumber: number): number {
+  switch (phase) {
+    case 'executioner-briefing':
+    case 'night-action-collection':
+    case 'night-resolution':
+      return Math.max(0, currentNightNumber - 1)
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+    case 'execution-resolution':
+    case 'game-over':
+      return currentNightNumber
+  }
+}
+
+function completedDayOutcomeCount(phase: GamePhase, dayNumber: number): number {
+  switch (phase) {
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+    case 'executioner-briefing':
+      return 0
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+      return Math.max(0, dayNumber - 1)
+    case 'night-action-collection':
+    case 'night-resolution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+    case 'execution-resolution':
+    case 'game-over':
+      return dayNumber
+  }
 }
 
 function deathTiming(cause: DeathCause): number {
@@ -837,7 +1252,17 @@ function personalWinKey(record: PersonalWinRecord): string {
 }
 
 function revengeKey(record: PendingJesterRevenge): string {
-  return `${record.jesterRoleInstanceId}:${String(record.triggeredOnDay)}`
+  return record.id
+}
+
+function revengeResolutionKey(record: JesterRevengeResolution): string {
+  return record.id
+}
+
+function dayOutcomeKey(record: DayOutcome): string {
+  return record.kind === 'player-executed'
+    ? `${String(record.dayNumber)}:${record.playerId}`
+    : `${String(record.dayNumber)}:none`
 }
 
 function playerOrder(players: readonly GamePlayer[]): ReadonlyMap<PlayerId, number> {
@@ -927,10 +1352,26 @@ function invalidRevenges(
   })
 }
 
-function invalidDayOutcome(
-  reason: Extract<OutcomeStateInvariantError, { type: 'INVALID_DAY_OUTCOME' }>['reason'],
+function invalidRevengeResolutions(
+  reason: Extract<
+    OutcomeStateInvariantError,
+    { type: 'INVALID_JESTER_REVENGE_RESOLUTIONS' }
+  >['reason'],
+  index?: number,
+  obligationId?: PendingJesterRevengeId,
 ): DomainResult<never, OutcomeStateInvariantError> {
-  return fail({ type: 'INVALID_DAY_OUTCOME', reason })
+  return fail({
+    type: 'INVALID_JESTER_REVENGE_RESOLUTIONS',
+    reason,
+    ...(index === undefined ? {} : { index }),
+    ...(obligationId === undefined ? {} : { obligationId }),
+  })
+}
+
+function invalidDayOutcomes(
+  reason: Extract<OutcomeStateInvariantError, { type: 'INVALID_DAY_OUTCOMES' }>['reason'],
+): DomainResult<never, OutcomeStateInvariantError> {
+  return fail({ type: 'INVALID_DAY_OUTCOMES', reason })
 }
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {

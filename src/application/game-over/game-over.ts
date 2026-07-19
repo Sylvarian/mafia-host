@@ -42,6 +42,7 @@ export type PublicGameOverView = Readonly<{
   heading: 'Town wins' | 'Mafia wins' | 'Serial Killer wins' | 'Draw'
   status: 'town-victory' | 'mafia-victory' | 'serial-killer-victory' | 'draw'
   dayNumber: number
+  endedAtLabel: string
   players: readonly PublicGameOverPlayerView[]
 }>
 
@@ -104,6 +105,10 @@ export function selectPublicGameOverView(state: GameOverState): PublicGameOverVi
     heading: selectResultHeading(result),
     status: result.kind,
     dayNumber: state.game.dayNumber,
+    endedAtLabel:
+      state.game.nightNumber === state.game.dayNumber
+        ? `after Day ${String(state.game.dayNumber)}`
+        : `at Dawn ${String(state.game.nightNumber)}`,
     players: Object.freeze(
       state.game.players.map((player) => {
         const revealedRole =
@@ -137,7 +142,11 @@ function validateGameOverBase(
   if (!gameResult.ok) {
     return fail({ type: 'INVALID_GAME_OVER_GAME', error: gameResult.error })
   }
-  if (gameResult.value.nightNumber !== 1 || gameResult.value.dayNumber !== 1) {
+  if (
+    gameResult.value.nightNumber < 1 ||
+    (gameResult.value.nightNumber !== gameResult.value.dayNumber &&
+      gameResult.value.nightNumber !== gameResult.value.dayNumber + 1)
+  ) {
     return fail({
       type: 'INVALID_GAME_OVER_COUNTERS',
       nightNumber: gameResult.value.nightNumber,

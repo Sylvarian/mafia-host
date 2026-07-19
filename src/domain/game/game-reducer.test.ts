@@ -133,6 +133,12 @@ const counterTransitionCases = [
   },
   {
     fromPhase: 'night-resolution',
+    toPhase: 'dawn-resolution',
+    nightDelta: 0,
+    dayDelta: 0,
+  },
+  {
+    fromPhase: 'dawn-resolution',
     toPhase: 'dawn-announcement',
     nightDelta: 0,
     dayDelta: 0,
@@ -144,18 +150,12 @@ const counterTransitionCases = [
     dayDelta: 1,
   },
   {
-    fromPhase: 'dawn-announcement',
+    fromPhase: 'dawn-resolution',
     toPhase: 'game-over',
     nightDelta: 0,
     dayDelta: 0,
   },
   { fromPhase: 'day-discussion', toPhase: 'trial', nightDelta: 0, dayDelta: 0 },
-  {
-    fromPhase: 'day-discussion',
-    toPhase: 'night-action-collection',
-    nightDelta: 1,
-    dayDelta: 0,
-  },
   { fromPhase: 'trial', toPhase: 'trial-voting', nightDelta: 0, dayDelta: 0 },
   {
     fromPhase: 'trial-voting',
@@ -169,6 +169,36 @@ const counterTransitionCases = [
   nightDelta: number
   dayDelta: number
 }>[]
+
+function createCounterTestState(phase: GamePhase): GameState {
+  const base = createTestGame()
+  const beforeGame = phase === 'roster' || phase === 'setup' || phase === 'role-distribution'
+  const duringNight =
+    phase === 'night-action-collection' ||
+    phase === 'night-resolution' ||
+    phase === 'dawn-resolution' ||
+    phase === 'dawn-announcement'
+  const nightNumber = beforeGame ? 0 : 4
+  const dayNumber = beforeGame ? 0 : duringNight ? 3 : 4
+  const completedDays =
+    phase === 'day-discussion' || phase === 'trial' || phase === 'trial-voting'
+      ? Math.max(0, dayNumber - 1)
+      : beforeGame
+        ? 0
+        : dayNumber
+  return {
+    ...base,
+    phase,
+    nightNumber,
+    dayNumber,
+    executionerBriefingStatus: beforeGame ? 'not-started' : 'not-required',
+    dayOutcomes: Array.from({ length: completedDays }, (_, index) => ({
+      kind: 'no-execution' as const,
+      gameId: base.id,
+      dayNumber: index + 1,
+    })),
+  }
+}
 
 describe('game reducer', () => {
   it('turns an accepted command into an event and an immutable next state', () => {
@@ -220,22 +250,8 @@ describe('game reducer', () => {
   })
 
   it('increments day and night counters exactly once at every phase boundary', () => {
-    const startingNight = 4
-    const startingDay = 3
-
     for (const transition of counterTransitionCases) {
-      const state: GameState = {
-        ...createTestGame(),
-        phase: transition.fromPhase,
-        nightNumber: startingNight,
-        dayNumber: startingDay,
-        executionerBriefingStatus:
-          transition.fromPhase === 'roster' ||
-          transition.fromPhase === 'setup' ||
-          transition.fromPhase === 'role-distribution'
-            ? 'not-started'
-            : 'not-required',
-      }
+      const state = createCounterTestState(transition.fromPhase)
       const result = applyGameEvent(state, {
         type: 'PHASE_ADVANCED',
         fromPhase: transition.fromPhase,
@@ -248,8 +264,8 @@ describe('game reducer', () => {
         throw new Error(`Expected ${context} to be accepted.`)
       }
 
-      expect(result.value.nightNumber, context).toBe(startingNight + transition.nightDelta)
-      expect(result.value.dayNumber, context).toBe(startingDay + transition.dayDelta)
+      expect(result.value.nightNumber, context).toBe(state.nightNumber + transition.nightDelta)
+      expect(result.value.dayNumber, context).toBe(state.dayNumber + transition.dayDelta)
     }
   })
 
@@ -258,9 +274,12 @@ describe('game reducer', () => {
     const targets: readonly GamePhase[] = [
       'night-action-collection',
       'night-resolution',
+      'dawn-resolution',
       'dawn-announcement',
       'day-discussion',
-      'night-action-collection',
+      'trial',
+      'trial-voting',
+      'day-discussion',
     ]
     const events: GameEvent[] = []
     let commandedState = initialState
@@ -292,7 +311,7 @@ describe('game reducer', () => {
     }
 
     expect(replayedState).toEqual(commandedState)
-    expect(replayedState).toMatchObject({ nightNumber: 2, dayNumber: 1 })
+    expect(replayedState).toMatchObject({ nightNumber: 1, dayNumber: 1 })
   })
 
   it('counts the first night once when Executioner briefing is included', () => {

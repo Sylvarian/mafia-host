@@ -168,7 +168,10 @@ export function validateDayDiscussionState(
       currentPhase: gameResult.value.phase,
     })
   }
-  if (gameResult.value.dayNumber !== 1 || gameResult.value.nightNumber !== 1) {
+  if (
+    gameResult.value.dayNumber < 1 ||
+    gameResult.value.nightNumber !== gameResult.value.dayNumber
+  ) {
     return fail({
       type: 'INVALID_DAY_DISCUSSION_COUNTERS',
       nightNumber: gameResult.value.nightNumber,

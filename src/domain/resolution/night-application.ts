@@ -13,14 +13,12 @@ import {
 import { transitionPhase } from '../phases/phase-machine.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
 import { addConversionsForProvenNonExecutionDeaths } from '../neutral/executioner-conversion.ts'
-import type { DawnAnnouncement, DawnDeath } from './dawn-announcement.ts'
 import type { NightApplicationError } from './night-application-errors.ts'
 import { resolveNight } from './night-resolution.ts'
 import type { NightResolution, ProvisionalDeath } from './night-resolution-models.ts'
 
 export type AppliedNight = Readonly<{
   game: GameState
-  dawnAnnouncement: DawnAnnouncement
 }>
 
 export function beginNightResolution(
@@ -118,10 +116,10 @@ export function applyResolvedNight(
     newDeathRecords,
   )
   const doctorPreviousTargets = buildDoctorPreviousTargets(validatedGame, validatedActions)
-  const phaseResult = transitionPhase(validatedGame.phase, 'dawn-announcement')
+  const phaseResult = transitionPhase(validatedGame.phase, 'dawn-resolution')
 
   if (!phaseResult.ok) {
-    throw new Error('The phase machine rejected the defined Dawn transition.')
+    throw new Error('The phase machine rejected the defined Dawn-resolution transition.')
   }
 
   const updatedGameResult = validateGameState({
@@ -140,19 +138,9 @@ export function applyResolvedNight(
     })
   }
 
-  const dawnAnnouncement = buildDawnAnnouncement(updatedGameResult.value, deadPlayerIds)
-
-  if (
-    dawnAnnouncement.outcome === 'deaths' &&
-    dawnAnnouncement.deaths.length !== deadPlayerIds.size
-  ) {
-    return fail({ type: 'INVALID_DAWN_ANNOUNCEMENT' })
-  }
-
   return succeed(
     Object.freeze({
       game: Object.freeze(updatedGameResult.value),
-      dawnAnnouncement,
     }),
   )
 }
@@ -360,11 +348,15 @@ function hasSameCanonicalContent(canonical: unknown, candidate: unknown): boolea
 
 function selectPreviousNightTargets(game: GameState): readonly PreviousNightTarget[] {
   return Object.freeze(
-    game.doctorPreviousTargets.map((entry) =>
-      Object.freeze({
-        actorRoleInstanceId: entry.doctorRoleInstanceId,
-        targetPlayerId: entry.targetPlayerId,
-      }),
+    game.doctorPreviousTargets.flatMap((entry) =>
+      entry.nightNumber === game.nightNumber - 1
+        ? [
+            Object.freeze({
+              actorRoleInstanceId: entry.doctorRoleInstanceId,
+              targetPlayerId: entry.targetPlayerId,
+            }),
+          ]
+        : [],
     ),
   )
 }
@@ -401,36 +393,4 @@ function buildDoctorPreviousTargets(
   }
 
   return Object.freeze(orderedHistory)
-}
-
-function buildDawnAnnouncement(
-  game: GameState,
-  deadPlayerIds: ReadonlySet<PlayerId>,
-): DawnAnnouncement {
-  if (deadPlayerIds.size === 0) {
-    return Object.freeze({
-      outcome: 'no-deaths',
-      nightNumber: game.nightNumber,
-    })
-  }
-
-  const deaths: DawnDeath[] = []
-  for (const player of game.players) {
-    if (!deadPlayerIds.has(player.playerId)) {
-      continue
-    }
-
-    deaths.push(
-      Object.freeze({
-        playerId: player.playerId,
-        revealedRoleId: player.publiclyRevealedRoleId,
-      }),
-    )
-  }
-
-  return Object.freeze({
-    outcome: 'deaths',
-    nightNumber: game.nightNumber,
-    deaths: Object.freeze(deaths),
-  })
 }

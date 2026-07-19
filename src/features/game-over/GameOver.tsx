@@ -18,7 +18,7 @@ export function GameOver({ view }: Readonly<{ view: PublicGameOverView }>) {
         Game over
       </h2>
       <p className="game-over__result">{view.heading}</p>
-      <p className="game-over__status">The game ended after Day {view.dayNumber}.</p>
+      <p className="game-over__status">The game ended {view.endedAtLabel}.</p>
 
       <section className="game-over__players" aria-labelledby="game-over-players-heading">
         <h3 id="game-over-players-heading">Final public player status</h3>

@@ -133,7 +133,8 @@ export type ActiveNightActionCollectionWorkflow = Exclude<
   Readonly<{ status: 'not-started' }>
 >
 
-export type NightActionCollectionOperation = 'begin-first-night' | 'confirm-target' | 'continue'
+export type NightActionCollectionOperation =
+  'begin-first-night' | 'begin-next-night' | 'confirm-target' | 'continue'
 
 export type NightActionCollectionError =
   | NightSequenceError
@@ -143,6 +144,16 @@ export type NightActionCollectionError =
   | Readonly<{ type: 'INVALID_STARTING_PHASE'; currentPhase: GameState['phase'] }>
   | Readonly<{ type: 'EXECUTIONER_BRIEFING_REQUIRED'; actorPlayerId: PlayerId }>
   | Readonly<{ type: 'INVALID_STARTED_NIGHT_PHASE'; currentPhase: GameState['phase'] }>
+  | Readonly<{
+      type: 'INVALID_NEXT_NIGHT_PHASE'
+      currentPhase: GameState['phase']
+    }>
+  | Readonly<{
+      type: 'INVALID_NEXT_NIGHT_COUNTERS'
+      nightNumber: number
+      dayNumber: number
+    }>
+  | Readonly<{ type: 'MISSING_COMPLETED_DAY_OUTCOME'; dayNumber: number }>
   | Readonly<{ type: 'ACTIVE_GAME_REJECTED'; error: GameCommandError }>
   | Readonly<{
       type: 'INVALID_WORKFLOW_STATE'
@@ -292,15 +303,46 @@ export function createNightActionCollectionForStartedNight(
   )
 }
 
+export function beginNextNightActionCollection(
+  game: GameState,
+  participants: readonly Player[],
+): DomainResult<CollectingNightActionsWorkflow, NightActionCollectionError> {
+  if (game.phase !== 'execution-resolution') {
+    return fail({ type: 'INVALID_NEXT_NIGHT_PHASE', currentPhase: game.phase })
+  }
+  if (game.dayNumber < 1 || game.nightNumber !== game.dayNumber) {
+    return fail({
+      type: 'INVALID_NEXT_NIGHT_COUNTERS',
+      nightNumber: game.nightNumber,
+      dayNumber: game.dayNumber,
+    })
+  }
+  if (!game.dayOutcomes.some((outcome) => outcome.dayNumber === game.dayNumber)) {
+    return fail({ type: 'MISSING_COMPLETED_DAY_OUTCOME', dayNumber: game.dayNumber })
+  }
+  const transitionResult = handleGameCommand(game, {
+    type: 'ADVANCE_PHASE',
+    targetPhase: 'night-action-collection',
+  })
+  if (!transitionResult.ok) {
+    return fail({ type: 'ACTIVE_GAME_REJECTED', error: transitionResult.error })
+  }
+  return createNightActionCollectionForStartedNight(transitionResult.value.state, participants)
+}
+
 export function selectDoctorPreviousTargetsForNight(
   game: GameState,
 ): readonly PreviousNightTarget[] {
   return Object.freeze(
-    game.doctorPreviousTargets.map((entry) =>
-      Object.freeze({
-        actorRoleInstanceId: entry.doctorRoleInstanceId,
-        targetPlayerId: entry.targetPlayerId,
-      }),
+    game.doctorPreviousTargets.flatMap((entry) =>
+      entry.nightNumber === game.nightNumber - 1
+        ? [
+            Object.freeze({
+              actorRoleInstanceId: entry.doctorRoleInstanceId,
+              targetPlayerId: entry.targetPlayerId,
+            }),
+          ]
+        : [],
     ),
   )
 }

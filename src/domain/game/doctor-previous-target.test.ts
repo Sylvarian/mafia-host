@@ -9,7 +9,7 @@ describe('Doctor previous-target invariants', () => {
   it('copies, strips unknown fields, orders, and freezes valid history', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }, { roleId: ROLE_IDS.doctor }],
-      { phase: 'night-action-collection', nightNumber: 3 },
+      { phase: 'dawn-resolution', nightNumber: 3 },
     )
     const result = validateGameState({
       ...fixture.game,
@@ -46,10 +46,38 @@ describe('Doctor previous-target invariants', () => {
     expect(Object.isFrozen(result.value.doctorPreviousTargets[0])).toBe(true)
   })
 
+  it('rejects current-night history before Dawn resolution', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
+      { phase: 'night-action-collection', nightNumber: 3 },
+    )
+    const doctor = fixture.game.players[0]
+    const target = fixture.game.players[1]
+    if (doctor === undefined || target === undefined) {
+      throw new Error('Expected complete Doctor fixture.')
+    }
+
+    expect(
+      validateGameState({
+        ...fixture.game,
+        doctorPreviousTargets: [
+          {
+            doctorRoleInstanceId: doctor.role.instanceId,
+            targetPlayerId: target.playerId,
+            nightNumber: 3,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_DOCTOR_HISTORY_NIGHT' },
+    })
+  })
+
   it('rejects non-array and malformed runtime history values', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }],
-      { nightNumber: 1 },
+      { phase: 'night-action-collection', nightNumber: 1 },
     )
 
     expect(
@@ -84,7 +112,7 @@ describe('Doctor previous-target invariants', () => {
   it('rejects unknown, non-Doctor, unknown-target, duplicate, future, and reordered entries', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }, { roleId: ROLE_IDS.doctor }],
-      { nightNumber: 2 },
+      { phase: 'night-action-collection', nightNumber: 2 },
     )
     const firstDoctor = fixture.game.players[0]
     const citizen = fixture.game.players[1]

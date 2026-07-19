@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { playerId } from '../identifiers.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
+import { buildCurrentDawnAnnouncement } from './dawn-announcement.ts'
 import {
   createResolutionFixture,
   resolveFixture,
@@ -33,7 +34,7 @@ describe('night resolution application', () => {
     expect(applied.ok).toBe(true)
     if (!applied.ok) throw new Error('Expected night application.')
 
-    expect(applied.value.game.phase).toBe('dawn-announcement')
+    expect(applied.value.game.phase).toBe('dawn-resolution')
     expect(applied.value.game.players[1]).toMatchObject({
       alive: false,
       publiclyRevealedRoleId: ROLE_IDS.citizen,
@@ -57,7 +58,7 @@ describe('night resolution application', () => {
       ok: false,
       error: {
         type: 'INVALID_NIGHT_APPLICATION_PHASE',
-        currentPhase: 'dawn-announcement',
+        currentPhase: 'dawn-resolution',
       },
     })
   })
@@ -75,7 +76,7 @@ describe('night resolution application', () => {
     if (!hidden.ok) throw new Error('Expected hidden-role application.')
 
     expect(hidden.value.game.players[1]?.publiclyRevealedRoleId).toBeNull()
-    expect(hidden.value.dawnAnnouncement).toEqual({
+    expect(buildCurrentDawnAnnouncement(hidden.value.game)).toEqual({
       outcome: 'deaths',
       nightNumber: fixture.game.nightNumber,
       deaths: [{ playerId: playerId('player-2'), revealedRoleId: null }],
@@ -148,7 +149,7 @@ describe('night resolution application', () => {
       ok: false,
       error: {
         type: 'INVALID_NIGHT_APPLICATION_PHASE',
-        currentPhase: 'dawn-announcement',
+        currentPhase: 'dawn-resolution',
       },
     })
   })
@@ -179,7 +180,7 @@ describe('night resolution application', () => {
     const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
     if (!applied.ok) throw new Error('Expected mixed-reveal application.')
 
-    expect(applied.value.dawnAnnouncement).toEqual({
+    expect(buildCurrentDawnAnnouncement(applied.value.game)).toEqual({
       outcome: 'deaths',
       nightNumber: fixture.game.nightNumber,
       deaths: [
@@ -487,7 +488,7 @@ describe('night resolution application', () => {
       quietFixture.collectedActions,
     )
     if (!quiet.ok) throw new Error('Expected quiet Dawn.')
-    expect(quiet.value.dawnAnnouncement).toEqual({
+    expect(buildCurrentDawnAnnouncement(quiet.value.game)).toEqual({
       outcome: 'no-deaths',
       nightNumber: quietFixture.game.nightNumber,
     })
@@ -514,7 +515,7 @@ describe('night resolution application', () => {
       deathsFixture.collectedActions,
     )
     if (!deaths.ok) throw new Error('Expected death Dawn.')
-    expect(deaths.value.dawnAnnouncement).toEqual({
+    expect(buildCurrentDawnAnnouncement(deaths.value.game)).toEqual({
       outcome: 'deaths',
       nightNumber: deathsFixture.game.nightNumber,
       deaths: [
@@ -522,11 +523,12 @@ describe('night resolution application', () => {
         { playerId: playerId('player-4'), revealedRoleId: null },
       ],
     })
-    expect(Object.isFrozen(deaths.value.dawnAnnouncement)).toBe(true)
-    if (deaths.value.dawnAnnouncement.outcome === 'deaths') {
-      expect(Object.isFrozen(deaths.value.dawnAnnouncement.deaths)).toBe(true)
-      expect(deaths.value.dawnAnnouncement.deaths[0]).not.toHaveProperty('source')
-      expect(deaths.value.dawnAnnouncement.deaths[0]).not.toHaveProperty('roleId')
+    const announcement = buildCurrentDawnAnnouncement(deaths.value.game)
+    expect(Object.isFrozen(announcement)).toBe(true)
+    if (announcement.outcome === 'deaths') {
+      expect(Object.isFrozen(announcement.deaths)).toBe(true)
+      expect(announcement.deaths[0]).not.toHaveProperty('source')
+      expect(announcement.deaths[0]).not.toHaveProperty('roleId')
     }
   })
 
@@ -559,7 +561,7 @@ describe('night resolution application', () => {
       if (!begun.ok) throw new Error('Expected no-death night-resolution entry.')
       const applied = applyResolvedNight(begun.value, resolution, fixture.collectedActions)
       if (!applied.ok) throw new Error('Expected no-death application.')
-      expect(applied.value.dawnAnnouncement).toEqual({
+      expect(buildCurrentDawnAnnouncement(applied.value.game)).toEqual({
         outcome: 'no-deaths',
         nightNumber: fixture.game.nightNumber,
       })

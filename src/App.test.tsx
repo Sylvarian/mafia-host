@@ -7,8 +7,12 @@ import {
   completeDayWithoutExecution,
   executePlayerAndCompleteDay,
 } from '@/application/day-outcome/index.ts'
-import { beginFinalNightResolution } from '@/application/night-completion/index.ts'
 import {
+  beginFinalNightResolution,
+  prepareDawnAnnouncement,
+} from '@/application/night-completion/index.ts'
+import {
+  beginNextNightActionCollection,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -167,6 +171,52 @@ function postDaySession(
   })()
   if (!result.ok) throw new Error(`Expected post-day fixture: ${result.error.type}`)
   return { stage: 'day-outcome', game: result.value.game, participants: result.value.participants }
+}
+
+function revengeResolutionSession(): ActiveAppSession {
+  const fixture = createNightFixture(
+    [
+      { roleId: ROLE_IDS.jester, name: 'Executed Jester' },
+      { roleId: ROLE_IDS.godfather, name: 'Hidden Mafia' },
+      { roleId: ROLE_IDS.citizen, name: 'Ordinary victim' },
+      { roleId: ROLE_IDS.citizen, name: 'Revenge victim' },
+    ],
+    {
+      phase: 'day-discussion',
+      nightNumber: 1,
+      settings: { allowFirstNightKills: false, revealRoleOnDeath: true },
+    },
+  )
+  const executedJester = fixture.game.players[0]
+  const ordinaryVictim = fixture.game.players[2]
+  if (executedJester === undefined || ordinaryVictim === undefined) {
+    throw new Error('Expected revenge-session players.')
+  }
+  const dayOutcome = executePlayerAndCompleteDay(
+    {
+      game: { ...fixture.game, dayNumber: 1 },
+      participants: fixture.participants,
+    },
+    executedJester.playerId,
+  )
+  if (!dayOutcome.ok) throw new Error(`Expected Jester execution: ${dayOutcome.error.type}`)
+  const begun = beginNextNightActionCollection(dayOutcome.value.game, dayOutcome.value.participants)
+  if (!begun.ok) throw new Error(`Expected Night 2: ${begun.error.type}`)
+  const advanced = continueNightActionCollection(begun.value)
+  if (!advanced.ok || advanced.value.status !== 'collecting') {
+    throw new Error('Expected the Night 2 Godfather.')
+  }
+  const completed = confirmNightActionTarget(advanced.value, ordinaryVictim.playerId)
+  if (!completed.ok || completed.value.status !== 'complete') {
+    throw new Error('Expected completed Night 2 actions.')
+  }
+  const ready = beginFinalNightResolution(completed.value)
+  if (!ready.ok) throw new Error(`Expected Night 2 resolution: ${ready.error.type}`)
+  const revenge = prepareDawnAnnouncement(ready.value, { next: () => 0.99 })
+  if (!revenge.ok || revenge.value.status !== 'revenge-resolution') {
+    throw new Error('Expected selected Jester revenge.')
+  }
+  return { stage: 'revenge-resolution', workflow: revenge.value }
 }
 
 afterEach(() => {
@@ -421,14 +471,16 @@ describe('Phase 7A.1 App integration', () => {
     const session = readyForDawnSession(
       [
         { roleId: ROLE_IDS.godfather, name: 'Godfather' },
-        { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen 1' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen 2' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen 3' },
       ],
       1,
     )
     const { store } = renderLoaded(session)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     store.failSave = true
-    const dawnButton = screen.getByRole('button', { name: 'Show Dawn announcement' })
+    const dawnButton = screen.getByRole('button', { name: 'Finalize Dawn' })
     act(() => {
       dawnButton.click()
       dawnButton.click()
@@ -436,7 +488,7 @@ describe('Phase 7A.1 App integration', () => {
 
     expect(store.saveCount).toBe(1)
     expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toHaveFocus()
-    expect(screen.queryByRole('button', { name: 'Show Dawn announcement' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Finalize Dawn' })).toBeNull()
     const attemptedDawn = store.attemptedEnvelopes[0]?.session
     expect(attemptedDawn).toMatchObject({ stage: 'dawn' })
     if (attemptedDawn?.stage !== 'dawn') throw new Error('Expected attempted Dawn save.')
@@ -451,7 +503,7 @@ describe('Phase 7A.1 App integration', () => {
     expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toBeVisible()
   })
 
-  it('shows the result once, continues atomically, and reaches public Dawn without replay', () => {
+  it('shows the result once and reaches a terminal public result without replay', () => {
     const workflow = activeWorkflow([
       { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
       { roleId: ROLE_IDS.citizen, name: 'Citizen' },
@@ -469,8 +521,9 @@ describe('Phase 7A.1 App integration', () => {
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toBeVisible()
     expect(screen.queryByText(/Sheriff result/)).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn announcement' }))
-    expect(screen.getByRole('heading', { name: 'A quiet Dawn' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize Dawn' }))
+    expect(screen.getByRole('heading', { name: 'Game over' })).toBeVisible()
+    expect(screen.getByText('Town wins')).toBeVisible()
     expect(screen.queryByRole('button', { name: /Acknowledge result/ })).toBeNull()
     expect(screen.queryByText(/Sheriff result|Detective result|Investigator result/)).toBeNull()
   })
@@ -482,7 +535,7 @@ describe('Phase 7B App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     expect(screen.getByRole('heading', { name: 'A quiet Dawn' })).toHaveFocus()
 
-    const beginButton = screen.getByRole('button', { name: 'Begin day discussion' })
+    const beginButton = screen.getByRole('button', { name: 'Continue to Day 1' })
     act(() => {
       beginButton.click()
       beginButton.click()
@@ -500,7 +553,7 @@ describe('Phase 7B App integration', () => {
   it('keeps host roles transient, hidden by default, and absent after recovery', () => {
     const firstRender = renderLoaded(dawnSession())
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     expect(firstRender.store.saveCount).toBe(1)
     expect(firstRender.container).not.toHaveTextContent('Host role: Mayor 1')
 
@@ -530,7 +583,7 @@ describe('Phase 7B App integration', () => {
   it('keeps Mayor candidates private, reveals independently, and guards rapid confirmation', () => {
     const { store, container } = renderLoaded(dawnSession())
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     expect(store.saveCount).toBe(1)
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(container.innerHTML).not.toMatch(/private-player|role-instance/)
@@ -574,7 +627,7 @@ describe('Phase 7B App integration', () => {
     const store = new MemorySessionStore()
     const firstRender = renderLoaded(dawnSession(), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
     const dialog = screen.getByRole('alertdialog')
     fireEvent.click(within(dialog).getByRole('radio', { name: /Morgan/ }))
@@ -611,7 +664,7 @@ describe('Phase 7B App integration', () => {
     const store = new MemorySessionStore()
     renderLoaded(dawnSession(), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     store.failSave = true
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
     const dialog = screen.getByRole('alertdialog')
@@ -634,10 +687,10 @@ describe('Phase 7B App integration', () => {
 })
 
 describe('Phase 7C App integration', () => {
-  it('guards rapid execution, saves once, and replaces editable day controls with a public summary', () => {
+  it('guards rapid execution and next-night creation while saving each boundary once', () => {
     const { store } = renderLoaded(dawnSession())
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     expect(store.saveCount).toBe(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
@@ -656,21 +709,32 @@ describe('Phase 7C App integration', () => {
     expect(screen.getByText('Casey was executed.')).toBeVisible()
     expect(screen.queryByText(/Their role was/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Execute a player' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /next night|game over|revenge/i })).toBeNull()
+    const beginNight = screen.getByRole('button', { name: 'Begin Night 2' })
     expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
       stage: 'post-day-waiting',
       workflowStatus: 'post-day-waiting',
       game: {
         phase: 'execution-resolution',
-        dayOutcome: { kind: 'player-executed', dayNumber: 1 },
+        dayOutcomes: [{ kind: 'player-executed', dayNumber: 1 }],
       },
+    })
+    act(() => {
+      beginNight.click()
+      beginNight.click()
+    })
+    expect(store.saveCount).toBe(3)
+    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Begin Night 2' })).toBeNull()
+    expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
+      stage: 'sequential-night',
+      game: { phase: 'night-action-collection', nightNumber: 2, dayNumber: 1 },
     })
   })
 
-  it('confirms no execution once without killing a player or exposing a later workflow', () => {
+  it('confirms no execution once without killing a player and offers Night 2', () => {
     const { store } = renderLoaded(dawnSession())
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
     const dialog = screen.getByRole('alertdialog', {
@@ -686,10 +750,11 @@ describe('Phase 7C App integration', () => {
 
     expect(store.saveCount).toBe(2)
     expect(screen.getByText('No player was executed.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Begin Night 2' })).toBeVisible()
     expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
       stage: 'post-day-waiting',
       game: {
-        dayOutcome: { kind: 'no-execution', dayNumber: 1 },
+        dayOutcomes: [{ kind: 'no-execution', dayNumber: 1 }],
         deathRecords: [],
         personalWins: [],
         pendingJesterRevenges: [],
@@ -701,7 +766,7 @@ describe('Phase 7C App integration', () => {
     const store = new MemorySessionStore()
     const active = renderLoaded(dawnSession(), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
     const dialog = screen.getByRole('alertdialog')
     fireEvent.click(within(dialog).getByRole('radio', { name: /CaseyLiving player/ }))
@@ -734,7 +799,7 @@ describe('Phase 7C App integration', () => {
     const store = new MemorySessionStore()
     renderLoaded(dawnSession(), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     store.failSave = true
     fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
     fireEvent.click(screen.getByRole('button', { name: 'End day without execution' }))
@@ -771,9 +836,7 @@ describe('corrected Phase 7D App integration and privacy', () => {
     expect(store.saveCount).toBe(1)
     expect(randomNext).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: 'Day complete' })).toHaveFocus()
-    expect(
-      screen.getByText('Final victory evaluation is deferred until the next Dawn.'),
-    ).toBeVisible()
+    expect(screen.getByText('The game continues.')).toBeVisible()
     expect(container).not.toHaveTextContent(/Jester|pending|victim|personal win/i)
     expect(screen.queryByRole('button', { name: /next night|revenge|victim/i })).toBeNull()
     expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
@@ -858,9 +921,7 @@ describe('corrected Phase 7D App integration and privacy', () => {
     expect(store.saveCount).toBe(1)
     expect(randomNext).not.toHaveBeenCalled()
     expect(screen.getByText(/Unable to save locally/)).toBeVisible()
-    expect(
-      screen.getByText('Final victory evaluation is deferred until the next Dawn.'),
-    ).toBeVisible()
+    expect(screen.getByText('The game continues.')).toBeVisible()
     expect(container).not.toHaveTextContent(/Jester|pending|victim|personal win/i)
     const attemptedSession = store.attemptedEnvelopes[0]?.session
     expect(attemptedSession).toMatchObject({
@@ -882,6 +943,44 @@ describe('corrected Phase 7D App integration and privacy', () => {
     expect(store.saveCount).toBe(2)
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
     expect(randomNext).not.toHaveBeenCalled()
+  })
+
+  it('keeps mid-revenge recovery private and applies a selected victim once under rapid clicks', () => {
+    const store = new MemorySessionStore()
+    const randomNext = vi.fn(() => 0.1)
+    const { container } = renderLoaded(revengeResolutionSession(), store, randomNext)
+
+    expect(screen.getByText('Night 2 — Dawn resolution')).toBeVisible()
+    expect(container).not.toHaveTextContent(
+      /Executed Jester|Hidden Mafia|Ordinary victim|Revenge victim|Jester revenge/i,
+    )
+    expect(randomNext).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByRole('heading', { name: 'Resolve Jester revenge' })).toHaveFocus()
+    expect(screen.getByText('Revenge victim')).toBeVisible()
+    const applyRevenge = screen.getByRole('button', {
+      name: 'Apply revenge death and continue',
+    })
+    act(() => {
+      applyRevenge.click()
+      applyRevenge.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(randomNext).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Game over' })).toHaveFocus()
+    expect(screen.getByText('Mafia wins')).toBeVisible()
+    expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
+      stage: 'game-over',
+      game: {
+        phase: 'game-over',
+        nightNumber: 2,
+        dayNumber: 1,
+        pendingJesterRevenges: [],
+        jesterRevengeResolutions: [{ kind: 'victim-killed' }],
+      },
+    })
   })
 
   it('guards rapid restored evaluation and retries the identical game-over save after failure', () => {

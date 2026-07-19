@@ -51,12 +51,16 @@ import { type InvalidGameOverStateError } from '../game-over/index.ts'
 import { createTrustedGameOverStateFromEvaluation } from '../game-over/game-over.ts'
 import {
   beginFinalNightResolution,
+  continueJesterRevengeResolution,
   prepareDawnAnnouncement,
   type DawnWorkflow,
   type NightCompletionError,
   type ReadyForDawnWorkflow,
+  type RevengeResolutionWorkflow,
+  type TerminalDawnWorkflow,
 } from '../night-completion/index.ts'
 import {
+  beginNextNightActionCollection,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -108,6 +112,11 @@ export type DawnAppSession = Readonly<{
   workflow: DawnWorkflow
 }>
 
+export type RevengeResolutionAppSession = Readonly<{
+  stage: 'revenge-resolution'
+  workflow: RevengeResolutionWorkflow
+}>
+
 export type DayDiscussionAppSession = Readonly<{
   stage: 'day-discussion'
   game: GameState
@@ -146,6 +155,7 @@ export type ActiveAppSession =
   | SequentialNightAppSession
   | NightResolutionAppSession
   | DawnAppSession
+  | RevengeResolutionAppSession
   | DayDiscussionAppSession
   | DayOutcomeAppSession
   | PostDayWaitingAppSession
@@ -169,11 +179,13 @@ export type ActiveAppSessionOperation =
   | 'confirm-night-target'
   | 'continue-night'
   | 'prepare-dawn'
+  | 'resolve-jester-revenge'
   | 'begin-day-discussion'
   | 'confirm-mayor-reveal'
   | 'execute-day-player'
   | 'end-day-without-execution'
   | 'settle-post-day'
+  | 'begin-next-night'
 
 export type InvalidActiveAppSessionStageError = Readonly<{
   type: 'INVALID_ACTIVE_APP_SESSION_STAGE'
@@ -451,12 +463,29 @@ function completeNightProgress(
 
 export function prepareSessionDawn(
   session: ActiveAppSession,
-): DomainResult<DawnAppSession, NightCompletionError | InvalidActiveAppSessionStageError> {
+  randomSource: RandomSource,
+): DomainResult<
+  DawnAppSession | RevengeResolutionAppSession | GameOverAppSession,
+  NightCompletionError | InvalidGameOverStateError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'night-resolution') {
     return invalidStage('prepare-dawn', session.stage)
   }
-  const result = prepareDawnAnnouncement(session.workflow)
-  return result.ok ? succeed(Object.freeze({ stage: 'dawn', workflow: result.value })) : result
+  const result = prepareDawnAnnouncement(session.workflow, randomSource)
+  return result.ok ? toDawnSession(result.value) : result
+}
+
+export function resolveSessionJesterRevenge(
+  session: ActiveAppSession,
+): DomainResult<
+  DawnAppSession | GameOverAppSession,
+  NightCompletionError | InvalidGameOverStateError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'revenge-resolution') {
+    return invalidStage('resolve-jester-revenge', session.stage)
+  }
+  const result = continueJesterRevengeResolution(session.workflow)
+  return result.ok ? toDawnSession(result.value) : result
 }
 
 export function beginSessionDayDiscussion(
@@ -601,12 +630,70 @@ export function settleSessionAfterDayOutcome(
     : gameOverResult
 }
 
+export function beginSessionNextNight(
+  session: ActiveAppSession,
+): DomainResult<
+  SequentialNightAppSession,
+  NightActionCollectionError | InvalidActiveAppSessionStageError
+> {
+  if (session.stage !== 'post-day-waiting' && session.stage !== 'pending-revenge-waiting') {
+    return invalidStage('begin-next-night', session.stage)
+  }
+  const result = beginNextNightActionCollection(session.game, session.participants)
+  return result.ok
+    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
+    : result
+}
+
 function toDayOutcomeSession(state: DayOutcomeState): DayOutcomeAppSession {
   return Object.freeze({
     stage: 'day-outcome',
     game: state.game,
     participants: state.participants,
   })
+}
+
+function toDawnSession(
+  workflow: DawnWorkflow | TerminalDawnWorkflow,
+): DomainResult<DawnAppSession | GameOverAppSession, InvalidGameOverStateError>
+function toDawnSession(
+  workflow: DawnWorkflow | RevengeResolutionWorkflow | TerminalDawnWorkflow,
+): DomainResult<
+  DawnAppSession | RevengeResolutionAppSession | GameOverAppSession,
+  InvalidGameOverStateError
+>
+function toDawnSession(
+  workflow: DawnWorkflow | RevengeResolutionWorkflow | TerminalDawnWorkflow,
+): DomainResult<
+  DawnAppSession | RevengeResolutionAppSession | GameOverAppSession,
+  InvalidGameOverStateError
+> {
+  switch (workflow.status) {
+    case 'dawn':
+      return succeed(Object.freeze({ stage: 'dawn', workflow }))
+    case 'revenge-resolution':
+      return succeed(Object.freeze({ stage: 'revenge-resolution', workflow }))
+    case 'game-over': {
+      const stateResult = createTrustedGameOverStateFromEvaluation(
+        {
+          status: 'game-over',
+          game: workflow.game,
+          result: workflow.result,
+        },
+        workflow.participants,
+      )
+      return stateResult.ok
+        ? succeed(
+            Object.freeze({
+              stage: 'game-over',
+              game: stateResult.value.game,
+              participants: stateResult.value.participants,
+              result: stateResult.value.result,
+            }),
+          )
+        : stateResult
+    }
+  }
 }
 
 function startFirstNightStage(

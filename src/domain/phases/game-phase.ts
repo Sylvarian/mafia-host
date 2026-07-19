@@ -5,6 +5,7 @@ export const GAME_PHASES = [
   'executioner-briefing',
   'night-action-collection',
   'night-resolution',
+  'dawn-resolution',
   'dawn-announcement',
   'day-discussion',
   'trial',

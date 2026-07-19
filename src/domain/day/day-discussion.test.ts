@@ -120,9 +120,16 @@ describe('Dawn-to-day domain transition', () => {
     expect(beginDayDiscussion({ ...game, dayNumber: 1 }, announcementFor(game))).toEqual({
       ok: false,
       error: {
-        type: 'INVALID_DAY_COUNTER_STATE',
-        nightNumber: 1,
-        dayNumber: 1,
+        type: 'INVALID_DAY_TRANSITION_GAME',
+        error: {
+          type: 'INVALID_GAME_STATE',
+          reason: {
+            type: 'PHASE_COUNTER_MISMATCH',
+            phase: 'dawn-announcement',
+            nightNumber: 1,
+            dayNumber: 1,
+          },
+        },
       },
     })
   })

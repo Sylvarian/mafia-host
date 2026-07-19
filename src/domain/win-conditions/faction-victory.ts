@@ -93,15 +93,21 @@ export function validateFactionVictoryEvaluationGate(
   if (!gameResult.ok) {
     return fail({ type: 'VICTORY_EVALUATION_GAME_REJECTED', error: gameResult.error })
   }
-  if (gameResult.value.phase !== 'execution-resolution') {
+  if (
+    gameResult.value.phase !== 'execution-resolution' &&
+    gameResult.value.phase !== 'dawn-resolution'
+  ) {
     return fail({
       type: 'VICTORY_EVALUATION_WRONG_PHASE',
       currentPhase: gameResult.value.phase,
     })
   }
+  const atCompletedDay = gameResult.value.phase === 'execution-resolution'
   if (
     gameResult.value.nightNumber < 1 ||
-    gameResult.value.nightNumber !== gameResult.value.dayNumber
+    (atCompletedDay
+      ? gameResult.value.nightNumber !== gameResult.value.dayNumber
+      : gameResult.value.nightNumber !== gameResult.value.dayNumber + 1)
   ) {
     return fail({
       type: 'VICTORY_EVALUATION_COUNTER_MISMATCH',
@@ -109,7 +115,12 @@ export function validateFactionVictoryEvaluationGate(
       dayNumber: gameResult.value.dayNumber,
     })
   }
-  if (gameResult.value.dayOutcome === null) {
+  if (
+    atCompletedDay &&
+    !gameResult.value.dayOutcomes.some(
+      (outcome) => outcome.dayNumber === gameResult.value.dayNumber,
+    )
+  ) {
     return fail({ type: 'VICTORY_EVALUATION_MISSING_DAY_OUTCOME' })
   }
   if (gameResult.value.pendingJesterRevenges.length > 0) {
@@ -213,9 +224,6 @@ export function validateStoredTerminalFactionResult(
   }
   if (gameResult.value.phase !== 'game-over') {
     return fail({ type: 'GAME_OVER_RESULT_MISMATCH' })
-  }
-  if (gameResult.value.dayOutcome === null) {
-    return fail({ type: 'VICTORY_EVALUATION_MISSING_DAY_OUTCOME' })
   }
   if (gameResult.value.pendingJesterRevenges.length > 0) {
     return fail({ type: 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY' })

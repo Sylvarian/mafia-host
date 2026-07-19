@@ -6,7 +6,7 @@ import {
   type RoleInstanceId,
 } from '../identifiers.ts'
 import { copyAndValidateExecutionerTargets } from '../executioner/executioner-target-invariants.ts'
-import { isGamePhase } from '../phases/game-phase.ts'
+import { isGamePhase, type GamePhase } from '../phases/game-phase.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import type { Player } from '../players/player.ts'
 import type { RoleDefinition } from '../roles/role-definition.ts'
@@ -45,7 +45,8 @@ export function createGame(input: CreateGameInput): DomainResult<GameState, Crea
     personalWins: [],
     executionerConversions: [],
     pendingJesterRevenges: [],
-    dayOutcome: null,
+    jesterRevengeResolutions: [],
+    dayOutcomes: [],
   })
 
   if (!gameResult.ok) {
@@ -85,6 +86,18 @@ export function validateGameState(
     })
   }
 
+  if (!hasValidPhaseCounters(candidate.phase, candidate.nightNumber, candidate.dayNumber)) {
+    return fail({
+      type: 'INVALID_GAME_STATE',
+      reason: {
+        type: 'PHASE_COUNTER_MISMATCH',
+        phase: candidate.phase,
+        nightNumber: candidate.nightNumber,
+        dayNumber: candidate.dayNumber,
+      },
+    })
+  }
+
   const settingsResult = validateGameSettings(candidate.settings)
 
   if (!settingsResult.ok) {
@@ -110,6 +123,7 @@ export function validateGameState(
   const doctorHistoryResult = copyDoctorPreviousTargets(
     candidate.doctorPreviousTargets,
     playerResult.value,
+    candidate.phase,
     candidate.nightNumber,
   )
 
@@ -148,7 +162,8 @@ export function validateGameState(
       personalWins: candidate.personalWins,
       executionerConversions: candidate.executionerConversions,
       pendingJesterRevenges: candidate.pendingJesterRevenges,
-      dayOutcome: candidate.dayOutcome,
+      jesterRevengeResolutions: candidate.jesterRevengeResolutions,
+      dayOutcomes: candidate.dayOutcomes,
     },
     {
       gameId: candidate.id,
@@ -179,13 +194,40 @@ export function validateGameState(
     personalWins: outcomeStateResult.value.personalWins,
     executionerConversions: outcomeStateResult.value.executionerConversions,
     pendingJesterRevenges: outcomeStateResult.value.pendingJesterRevenges,
-    dayOutcome: outcomeStateResult.value.dayOutcome,
+    jesterRevengeResolutions: outcomeStateResult.value.jesterRevengeResolutions,
+    dayOutcomes: outcomeStateResult.value.dayOutcomes,
   })
+}
+
+function hasValidPhaseCounters(phase: string, nightNumber: number, dayNumber: number): boolean {
+  switch (phase) {
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+      return nightNumber === 0 && dayNumber === 0
+    case 'executioner-briefing':
+      return nightNumber === 1 && dayNumber === 0
+    case 'night-action-collection':
+    case 'night-resolution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+      return nightNumber >= 1 && nightNumber === dayNumber + 1
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+    case 'execution-resolution':
+      return nightNumber >= 1 && nightNumber === dayNumber
+    case 'game-over':
+      return nightNumber >= 1 && (nightNumber === dayNumber || nightNumber === dayNumber + 1)
+    default:
+      return false
+  }
 }
 
 function copyDoctorPreviousTargets(
   candidate: unknown,
   gamePlayers: readonly GamePlayer[],
+  phase: GamePhase,
   currentNightNumber: number,
 ): DomainResult<readonly DoctorPreviousTarget[], GameInvariantError> {
   if (!isUnknownArray(candidate)) {
@@ -268,7 +310,11 @@ function copyDoctorPreviousTargets(
       })
     }
 
-    if (!Number.isSafeInteger(nightNumber) || nightNumber < 0 || nightNumber > currentNightNumber) {
+    if (
+      !Number.isSafeInteger(nightNumber) ||
+      nightNumber < 0 ||
+      nightNumber > latestAppliedNightNumber(phase, currentNightNumber)
+    ) {
       return fail({
         type: 'INVALID_DOCTOR_HISTORY_NIGHT',
         doctorRoleInstanceId: validatedDoctorRoleInstanceId,
@@ -306,6 +352,26 @@ function copyDoctorPreviousTargets(
   }
 
   return succeed(Object.freeze(copiedHistory))
+}
+
+function latestAppliedNightNumber(phase: GamePhase, currentNightNumber: number): number {
+  switch (phase) {
+    case 'executioner-briefing':
+    case 'night-action-collection':
+    case 'night-resolution':
+      return Math.max(0, currentNightNumber - 1)
+    case 'roster':
+    case 'setup':
+    case 'role-distribution':
+    case 'dawn-resolution':
+    case 'dawn-announcement':
+    case 'day-discussion':
+    case 'trial':
+    case 'trial-voting':
+    case 'execution-resolution':
+    case 'game-over':
+      return currentNightNumber
+  }
 }
 
 function validateRosterAssignments(

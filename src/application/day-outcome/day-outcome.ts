@@ -134,14 +134,21 @@ export function validateDayOutcomeState(
       currentPhase: gameResult.value.phase,
     })
   }
-  if (gameResult.value.nightNumber !== 1 || gameResult.value.dayNumber !== 1) {
+  if (
+    gameResult.value.dayNumber < 1 ||
+    gameResult.value.nightNumber !== gameResult.value.dayNumber
+  ) {
     return fail({
       type: 'DAY_OUTCOME_COUNTER_MISMATCH',
       nightNumber: gameResult.value.nightNumber,
       dayNumber: gameResult.value.dayNumber,
     })
   }
-  if (gameResult.value.dayOutcome === null) {
+  if (
+    !gameResult.value.dayOutcomes.some(
+      (outcome) => outcome.dayNumber === gameResult.value.dayNumber,
+    )
+  ) {
     return fail({ type: 'MISSING_DAY_OUTCOME' })
   }
   const participantsResult = copyParticipants(state.participants, gameResult.value)
@@ -161,7 +168,11 @@ export function selectPublicDayOutcomeView(state: DayOutcomeState): PublicDayOut
   if (!result.ok) {
     throw new Error(`Invalid day outcome state: ${result.error.type}.`)
   }
-  const outcome = requireOutcome(result.value.game.dayOutcome)
+  const outcome = requireOutcome(
+    result.value.game.dayOutcomes.find(
+      (candidate) => candidate.dayNumber === result.value.game.dayNumber,
+    ) ?? null,
+  )
   if (outcome.kind === 'no-execution') {
     return Object.freeze({
       dayNumber: outcome.dayNumber,
