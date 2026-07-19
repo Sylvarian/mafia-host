@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type {
   ConfirmMayorRevealWorkflowError,
+  HostRoleDayView,
+  HostRoleDayViewError,
   MayorRevealCandidateView,
   PublicDayDiscussionView,
   PublicDayPlayerView,
@@ -30,6 +32,9 @@ type DayDiscussionProps = Readonly<{
   onClearRevealError: () => void
   onClearOutcomeError?: () => void
   onPrivatePresentationChange: (open: boolean) => void
+  getHostRoleView?: () =>
+    | Readonly<{ ok: true; value: HostRoleDayView }>
+    | Readonly<{ ok: false; error: HostRoleDayViewError }>
 }>
 
 export function DayDiscussion({
@@ -44,6 +49,7 @@ export function DayDiscussion({
   onClearRevealError,
   onClearOutcomeError = () => undefined,
   onPrivatePresentationChange,
+  getHostRoleView,
 }: DayDiscussionProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const revealButtonRef = useRef<HTMLButtonElement>(null)
@@ -55,6 +61,7 @@ export function DayDiscussion({
   const [dialog, setDialog] = useState<PrivateDialog>(null)
   const [selectedMayorPlayerId, setSelectedMayorPlayerId] = useState<PlayerId | null>(null)
   const [selectedExecutionPlayerId, setSelectedExecutionPlayerId] = useState<PlayerId | null>(null)
+  const [showHostRoles, setShowHostRoles] = useState(false)
 
   useEffect(() => {
     headingRef.current?.focus()
@@ -112,6 +119,7 @@ export function DayDiscussion({
   }
 
   const privateDialogOpen = dialog !== null
+  const hostRoleResult = showHostRoles && getHostRoleView !== undefined ? getHostRoleView() : null
 
   return (
     <section className="day-discussion" aria-labelledby="day-discussion-heading">
@@ -124,6 +132,39 @@ export function DayDiscussion({
         <h2 id="day-discussion-heading" ref={headingRef} tabIndex={-1}>
           Day discussion
         </h2>
+
+        <aside className="host-role-control" aria-label="Host-only role visibility">
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={privateDialogOpen}
+            aria-expanded={showHostRoles}
+            aria-controls="host-role-view"
+            onClick={() => {
+              setShowHostRoles((visible) => !visible)
+            }}
+          >
+            {showHostRoles ? 'Hide host-only roles' : 'Show host-only roles'}
+          </button>
+          {showHostRoles ? (
+            <div id="host-role-view" className="host-role-view">
+              <p className="host-role-view__warning" role="alert">
+                <strong>HOST-ONLY VIEW</strong> — hide roles before showing this screen to players.
+              </p>
+              {hostRoleResult === null ? (
+                <p className="host-role-view__error" role="alert">
+                  Host roles are unavailable.
+                </p>
+              ) : hostRoleResult.ok ? (
+                <HostRoleRows view={hostRoleResult.value} />
+              ) : (
+                <p className="host-role-view__error" role="alert">
+                  {getHostRoleViewErrorMessage(hostRoleResult.error)}
+                </p>
+              )}
+            </div>
+          ) : null}
+        </aside>
 
         <div className="day-discussion__guidance" aria-label="Day discussion guidance">
           <p>Players handle nominations and trial voting verbally.</p>
@@ -347,6 +388,47 @@ export function DayDiscussion({
       )}
     </section>
   )
+}
+
+function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
+  return (
+    <ul className="host-role-view__players" aria-label="Host-authoritative player roles">
+      {view.players.map((player) => (
+        <li key={player.playerDisplayLabel}>
+          <div>
+            <strong>{player.playerDisplayLabel}</strong>
+            <span>{player.status === 'alive' ? 'Alive' : 'Dead'}</span>
+          </div>
+          <div>
+            <strong>Host role: {player.activeRoleDisplayName}</strong>
+            {player.originallyAssignedRoleDisplayName === null ? null : (
+              <span>Originally assigned: {player.originallyAssignedRoleDisplayName}</span>
+            )}
+            {player.publicRole === null ? null : (
+              <span>
+                Public role: {player.publicRole.displayName}
+                {player.publicRole.status === 'publicly-revealed-mayor'
+                  ? ' — publicly revealed'
+                  : ''}
+              </span>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function getHostRoleViewErrorMessage(error: HostRoleDayViewError): string {
+  switch (error.type) {
+    case 'INVALID_ACTIVE_DAY_ROLE':
+      return 'A player’s active role could not be derived safely. Host roles remain hidden.'
+    case 'INVALID_DAY_DISCUSSION_GAME':
+    case 'DAY_DISCUSSION_PHASE_MISMATCH':
+    case 'INVALID_DAY_DISCUSSION_PARTICIPANTS':
+    case 'INVALID_DAY_DISCUSSION_COUNTERS':
+      return 'The current day state could not be validated. Host roles remain hidden.'
+  }
 }
 
 type CandidateView = Readonly<{

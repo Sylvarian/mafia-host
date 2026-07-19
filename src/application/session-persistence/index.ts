@@ -1,6 +1,5 @@
 export {
   acknowledgeSessionExecutionerBriefing,
-  acknowledgeSessionNightOutcome,
   assignSessionRoles,
   beginSessionFirstNight,
   beginSessionDayDiscussion,

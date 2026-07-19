@@ -10,6 +10,7 @@ import { validateGameState } from '@/domain/game/game-invariants.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
@@ -70,6 +71,28 @@ export type MayorRevealCandidateView = Readonly<{
   playerId: PlayerId
   playerDisplayLabel: string
 }>
+
+export type HostRoleDayPlayerView = Readonly<{
+  playerDisplayLabel: string
+  status: 'alive' | 'dead'
+  activeRoleDisplayName: string
+  originallyAssignedRoleDisplayName: string | null
+  publicRole: Readonly<{
+    displayName: string
+    status: 'publicly-revealed-mayor' | 'revealed-on-death'
+  }> | null
+}>
+
+export type HostRoleDayView = Readonly<{
+  players: readonly HostRoleDayPlayerView[]
+}>
+
+export type HostRoleDayViewError =
+  | InvalidDayDiscussionStateError
+  | Readonly<{
+      type: 'INVALID_ACTIVE_DAY_ROLE'
+      playerId: PlayerId
+    }>
 
 export function createDayDiscussionState(
   dawn: DawnWorkflow,
@@ -230,6 +253,71 @@ export function selectMayorRevealCandidates(
         }),
       ),
   )
+}
+
+export function selectHostRoleDayView(
+  state: DayDiscussionState,
+): DomainResult<HostRoleDayView, HostRoleDayViewError> {
+  const stateResult = validateDayDiscussionState(state)
+  if (!stateResult.ok) {
+    return stateResult
+  }
+
+  const rows: HostRoleDayPlayerView[] = []
+  for (const player of stateResult.value.game.players) {
+    const originalRole = findRoleDefinition(player.role.roleId)
+    const activeRoleId = selectActiveRoleId(stateResult.value.game, player.playerId)
+    const activeRole = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
+    const convertedExecutioner =
+      player.role.roleId === ROLE_IDS.executioner && activeRoleId === ROLE_IDS.jester
+    if (
+      originalRole === undefined ||
+      activeRole === undefined ||
+      (activeRoleId !== player.role.roleId && !convertedExecutioner)
+    ) {
+      return fail({ type: 'INVALID_ACTIVE_DAY_ROLE', playerId: player.playerId })
+    }
+
+    const publicRole =
+      player.publiclyRevealedRoleId === null
+        ? undefined
+        : findRoleDefinition(player.publiclyRevealedRoleId)
+    if (player.publiclyRevealedRoleId !== null && publicRole === undefined) {
+      return fail({ type: 'INVALID_ACTIVE_DAY_ROLE', playerId: player.playerId })
+    }
+    const publiclyRevealedMayor =
+      player.publiclyRevealedRoleId === ROLE_IDS.mayor && player.role.roleId === ROLE_IDS.mayor
+
+    rows.push(
+      Object.freeze({
+        playerDisplayLabel: selectPlayerDisplayLabel(
+          stateResult.value.participants,
+          player.playerId,
+        ),
+        status: player.alive ? ('alive' as const) : ('dead' as const),
+        activeRoleDisplayName: convertedExecutioner
+          ? activeRole.name
+          : getRoleInstanceDisplayName(player.role, activeRole),
+        originallyAssignedRoleDisplayName: convertedExecutioner
+          ? getRoleInstanceDisplayName(player.role, originalRole)
+          : null,
+        publicRole:
+          publicRole === undefined
+            ? null
+            : Object.freeze({
+                displayName:
+                  player.publiclyRevealedRoleId === player.role.roleId
+                    ? getRoleInstanceDisplayName(player.role, publicRole)
+                    : publicRole.name,
+                status: publiclyRevealedMayor
+                  ? ('publicly-revealed-mayor' as const)
+                  : ('revealed-on-death' as const),
+              }),
+      }),
+    )
+  }
+
+  return succeed(Object.freeze({ players: Object.freeze(rows) }))
 }
 
 function requireValidDayDiscussionState(state: DayDiscussionState): DayDiscussionState {

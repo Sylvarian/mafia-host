@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import type { PlayerId, RoleId } from '@/domain/identifiers.ts'
+import type { PlayerId } from '@/domain/identifiers.ts'
 import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
 import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import {
-  acknowledgeImmediateNightOutcome,
   beginFirstNight,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionWorkflow,
   type ActiveNightActionCollectionWorkflow,
-  type AwaitingNightOutcomeWorkflow,
   type CollectingNightActionsWorkflow,
 } from './night-action-workflow.ts'
 
@@ -35,20 +33,20 @@ function continueSuccessfully(
   return result.value
 }
 
+function continuePrivateOutcomeIfPresent(
+  workflow: ActiveNightActionCollectionWorkflow,
+): ActiveNightActionCollectionWorkflow {
+  return workflow.status === 'awaiting-outcome-acknowledgement'
+    ? continueSuccessfully(workflow)
+    : workflow
+}
+
 function confirmSuccessfully(
   workflow: CollectingNightActionsWorkflow,
   targetPlayerId: PlayerId,
-): AwaitingNightOutcomeWorkflow {
+): ActiveNightActionCollectionWorkflow {
   const result = confirmNightActionTarget(workflow, targetPlayerId)
   if (!result.ok) throw new Error(`Could not confirm: ${result.error.type}`)
-  return result.value
-}
-
-function acknowledgeSuccessfully(
-  workflow: AwaitingNightOutcomeWorkflow,
-): ActiveNightActionCollectionWorkflow {
-  const result = acknowledgeImmediateNightOutcome(workflow)
-  if (!result.ok) throw new Error(`Could not acknowledge: ${result.error.type}`)
   return result.value
 }
 
@@ -67,39 +65,31 @@ function getPlayerId(workflow: ActiveNightActionCollectionWorkflow, playerIndex:
 }
 
 describe('sequential night workflow', () => {
-  it('commits an action only on confirmation and seals it through acknowledgement', () => {
+  it.each([
+    ['Consort', ROLE_IDS.consort],
+    ['Framer', ROLE_IDS.framer],
+    ['Godfather', ROLE_IDS.godfather],
+    ['Serial Killer', ROLE_IDS.serialKiller],
+    ['Doctor', ROLE_IDS.doctor],
+  ] as const)('commits and seals a %s action while advancing directly', (_name, roleId) => {
     const initial = advancePastOverview(
-      start([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }], {
+      start([{ roleId }, { roleId: ROLE_IDS.citizen }], {
         settings: { doctorCanSelfProtect: true, allowFirstNightKills: true },
       }),
     )
 
     expect(initial.completedSteps).toEqual([])
     const confirmed = confirmSuccessfully(initial, getPlayerId(initial, 1))
-    expect(confirmed.currentOutcome).toMatchObject({
-      kind: 'action-recorded',
-      targetPlayerId: 'player-2',
-    })
+    expect(confirmed.status).toBe('complete')
     expect(confirmed.completedSteps).toHaveLength(1)
-    expect(confirmNightActionTarget(confirmed, getPlayerId(initial, 0))).toEqual({
-      ok: false,
-      error: { type: 'OUTCOME_NOT_ACKNOWLEDGED' },
+    expect(confirmed.completedSteps[0]).toMatchObject({
+      status: 'action-confirmed',
+      outcome: null,
+      action: { targetPlayerId: 'player-2' },
     })
-    expect(continueNightActionCollection(confirmed)).toEqual({
-      ok: false,
-      error: { type: 'OUTCOME_NOT_ACKNOWLEDGED' },
-    })
-
-    const acknowledged = acknowledgeSuccessfully(confirmed)
-    expect(acknowledged.status).toBe('outcome-acknowledged')
-    expect(acknowledged.currentOutcome).toBeNull()
-    expect(acknowledged.completedSteps[0]).toMatchObject({ acknowledged: true })
-
-    const complete = continueSuccessfully(acknowledged)
-    expect(complete.status).toBe('complete')
-    if (complete.status !== 'complete') throw new Error('Expected completion.')
-    expect(complete.collectedActions.actions).toHaveLength(1)
-    expect(confirmNightActionTarget(complete, getPlayerId(initial, 0))).toMatchObject({
+    if (confirmed.status !== 'complete') throw new Error('Expected completion.')
+    expect(confirmed.collectedActions.actions).toHaveLength(1)
+    expect(confirmNightActionTarget(confirmed, getPlayerId(initial, 0))).toMatchObject({
       ok: false,
       error: { type: 'INVALID_WORKFLOW_STATE' },
     })
@@ -129,8 +119,6 @@ describe('sequential night workflow', () => {
         ),
       )
       workflow = confirmSuccessfully(workflow, getPlayerId(workflow, 1))
-      workflow = acknowledgeSuccessfully(workflow)
-      workflow = continueSuccessfully(workflow)
 
       expect(workflow.status).toBe('awaiting-outcome-acknowledgement')
       if (workflow.status !== 'awaiting-outcome-acknowledgement') {
@@ -142,13 +130,12 @@ describe('sequential night workflow', () => {
       })
       expect(workflow.completedSteps.at(-1)).toMatchObject({
         status: 'blocked',
-        acknowledged: false,
+        outcome: { kind: 'blocked' },
       })
       expect(
         workflow.completedSteps.filter((record) => record.status === 'action-confirmed'),
       ).toHaveLength(1)
 
-      workflow = acknowledgeSuccessfully(workflow)
       workflow = continueSuccessfully(workflow)
       expect(workflow.status).toBe('complete')
       if (workflow.status !== 'complete') throw new Error('Expected completed blocked night.')
@@ -178,13 +165,9 @@ describe('sequential night workflow', () => {
       ]),
     )
     workflow = confirmSuccessfully(workflow, getPlayerId(workflow, 1))
-    workflow = acknowledgeSuccessfully(workflow)
-    workflow = continueSuccessfully(workflow)
     expect(workflow.status).toBe('collecting')
     if (workflow.status !== 'collecting') throw new Error('Expected second Consort to act.')
     workflow = confirmSuccessfully(workflow, getPlayerId(workflow, 0))
-    workflow = acknowledgeSuccessfully(workflow)
-    workflow = continueSuccessfully(workflow)
     expect(workflow.status).toBe('complete')
     if (workflow.status !== 'complete') throw new Error('Expected completed mutual blocks.')
 
@@ -212,15 +195,18 @@ describe('sequential night workflow', () => {
     )
     const targetId = getPlayerId(workflow, 4)
 
-    const expectedOutcomes: readonly Readonly<{
-      roleId: RoleId
-      kind: 'action-recorded' | 'sheriff-result' | 'investigation-result'
-    }>[] = [
-      { roleId: ROLE_IDS.framer, kind: 'action-recorded' },
+    workflow = confirmSuccessfully(workflow, targetId)
+    expect(workflow.status).toBe('collecting')
+    expect(workflow.completedSteps.at(-1)).toMatchObject({
+      actorRoleId: ROLE_IDS.framer,
+      outcome: null,
+    })
+
+    const expectedOutcomes = [
       { roleId: ROLE_IDS.sheriff, kind: 'sheriff-result' },
       { roleId: ROLE_IDS.investigator, kind: 'investigation-result' },
       { roleId: ROLE_IDS.consigliere, kind: 'investigation-result' },
-    ]
+    ] as const
 
     for (const expected of expectedOutcomes) {
       if (workflow.status !== 'collecting') throw new Error('Expected actor collection.')
@@ -231,8 +217,7 @@ describe('sequential night workflow', () => {
         ...(expected.kind === 'sheriff-result' ? { status: 'suspicious' } : {}),
         ...(expected.kind === 'investigation-result' ? { group: { id: 'group-a' } } : {}),
       })
-      workflow = acknowledgeSuccessfully(outcomeWorkflow)
-      workflow = continueSuccessfully(workflow)
+      workflow = continueSuccessfully(outcomeWorkflow)
     }
 
     expect(workflow.status).toBe('complete')
@@ -288,8 +273,7 @@ describe('sequential night workflow', () => {
         }
         const targetIndex = currentStep.actorPlayerId === getPlayerId(workflow, 1) ? 2 : 1
         workflow = confirmSuccessfully(workflow, getPlayerId(workflow, targetIndex))
-        workflow = acknowledgeSuccessfully(workflow)
-        workflow = continueSuccessfully(workflow)
+        workflow = continuePrivateOutcomeIfPresent(workflow)
       }
       if (workflow.status !== 'collecting') {
         throw new Error('Expected investigative actor collection.')
@@ -325,8 +309,6 @@ describe('sequential night workflow', () => {
         ),
       )
       workflow = confirmSuccessfully(workflow, getPlayerId(workflow, 2))
-      workflow = acknowledgeSuccessfully(workflow)
-      workflow = continueSuccessfully(workflow)
       if (workflow.status !== 'collecting') throw new Error('Expected Sheriff collection.')
 
       const sheriffOutcome = confirmSuccessfully(workflow, getPlayerId(workflow, 0))
@@ -359,8 +341,7 @@ describe('sequential night workflow', () => {
       ),
     )
     workflow = confirmSuccessfully(workflow, getPlayerId(workflow, 2))
-    workflow = acknowledgeSuccessfully(workflow)
-    workflow = continueSuccessfully(workflow)
+    workflow = continuePrivateOutcomeIfPresent(workflow)
     if (workflow.status !== 'collecting') throw new Error('Expected Detective actor.')
 
     const detectiveOutcome = confirmSuccessfully(workflow, getPlayerId(workflow, 0))
@@ -383,8 +364,7 @@ describe('sequential night workflow', () => {
       kind: 'detective-result',
       result: { status: 'visited-nobody' },
     })
-    workflow = acknowledgeSuccessfully(first)
-    workflow = continueSuccessfully(workflow)
+    workflow = continueSuccessfully(first)
     if (workflow.status !== 'collecting') throw new Error('Expected second Detective.')
     const second = confirmSuccessfully(workflow, getPlayerId(workflow, 0))
     expect(second.currentOutcome).toMatchObject({
@@ -392,8 +372,7 @@ describe('sequential night workflow', () => {
       result: { status: 'visited-nobody' },
     })
 
-    workflow = acknowledgeSuccessfully(second)
-    workflow = continueSuccessfully(workflow)
+    workflow = continueSuccessfully(second)
     if (workflow.status !== 'complete') throw new Error('Expected completed Detective night.')
     const resolution = resolveNight({
       game: workflow.game,
@@ -424,8 +403,7 @@ describe('sequential night workflow', () => {
     expect(workflow.steps).toHaveLength(2)
     expect(workflow.game.players[2]?.role.roleId).toBe(ROLE_IDS.sheriff)
     const sheriff = confirmSuccessfully(workflow, getPlayerId(workflow, 3))
-    workflow = acknowledgeSuccessfully(sheriff)
-    workflow = continueSuccessfully(workflow)
+    workflow = continueSuccessfully(sheriff)
     if (workflow.status !== 'complete') throw new Error('Expected first-night completion.')
 
     expect(workflow.collectedActions.actions.map((action) => action.actorRoleId)).toEqual([

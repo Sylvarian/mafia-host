@@ -45,13 +45,14 @@ import {
   type ValidatedGameSetup,
 } from '../game-setup/index.ts'
 import {
-  acknowledgeImmediateNightOutcome,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
   selectDoctorPreviousTargetsForNight,
   type ActiveNightActionCollectionWorkflow,
+  type ImmediateNightOutcome,
 } from '../night-actions/index.ts'
+import { beginFinalNightResolution } from '../night-completion/index.ts'
 import {
   confirmRoleDistribution,
   setCardDelivered,
@@ -72,7 +73,8 @@ import {
   PERSISTED_SESSION_SCHEMA_VERSION,
   toPersistedAppSessionV2,
   toPersistedNightResolutionV2,
-  type PersistedAppSessionV2,
+  type PersistedImmediateNightOutcomeV2,
+  type PersistedSequentialNightStepV2,
   type RestoredSessionEnvelopeV2,
 } from './persisted-session-v2.ts'
 
@@ -117,6 +119,8 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-step'
         | 'invalid-current-outcome'
         | 'invalid-visit-ledger'
+        | 'invalid-fabricated-non-informational-outcome'
+        | 'restore-position-mismatch'
         | 'stale-private-result-workflow'
     }>
   | Readonly<{
@@ -159,7 +163,7 @@ export type RestorePersistedSessionV2Error =
     }>
   | Readonly<{
       type: 'PERSISTENCE_COMPATIBILITY_FAILURE'
-      reason: 'legacy-day-death-cause-unavailable'
+      reason: 'legacy-day-death-cause-unavailable' | 'ambiguous-legacy-night-advancement'
     }>
   | Readonly<{
       type: 'STAGE_PHASE_MISMATCH'
@@ -517,7 +521,10 @@ function restoreExecutionerBriefingSession(
 
 function restoreSequentialNightSession(
   candidate: Readonly<Record<string, unknown>>,
-): DomainResult<SequentialNightAppSession, RestorePersistedSessionV2Error> {
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
   if (
     !hasExactKeys(candidate, [
       'stage',
@@ -565,92 +572,470 @@ function restoreSequentialNightSession(
   ) {
     return invalidSequential('invalid-order')
   }
-  let workflow: ActiveNightActionCollectionWorkflow = initialResult.value
 
-  for (const stepCandidate of candidate.completedSteps) {
+  return isLegacySequentialNightCandidate(candidate, candidate.completedSteps)
+    ? restoreLegacySequentialNightProgress(
+        candidate,
+        candidate.completedSteps,
+        initialResult.value,
+        gameResult.value,
+      )
+    : restoreCurrentSequentialNightProgress(
+        candidate,
+        candidate.completedSteps,
+        initialResult.value,
+        gameResult.value,
+      )
+}
+
+function restoreCurrentSequentialNightProgress(
+  candidate: Readonly<Record<string, unknown>>,
+  completedSteps: readonly unknown[],
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+  game: GameState,
+): DomainResult<SequentialNightAppSession, RestorePersistedSessionV2Error> {
+  if (
+    candidate.workflowStatus !== 'collecting' &&
+    candidate.workflowStatus !== 'awaiting-outcome-acknowledgement'
+  ) {
+    return invalidSequential('invalid-shape')
+  }
+
+  let workflow = initialWorkflow
+  for (const [recordIndex, stepCandidate] of completedSteps.entries()) {
     if (!isUnknownRecord(stepCandidate) || typeof stepCandidate.stepIndex !== 'number') {
       return invalidSequential('invalid-step')
     }
-    while (workflow.currentStepIndex < stepCandidate.stepIndex) {
-      const advance = continueNightActionCollection(workflow)
-      if (!advance.ok || advance.value.status === 'complete') {
-        return invalidSequential('invalid-order')
-      }
-      workflow = advance.value
+    const alignedResult = alignWorkflowToRecordedStep(workflow, stepCandidate.stepIndex)
+    if (!alignedResult.ok) {
+      return alignedResult
     }
-    if (workflow.currentStepIndex !== stepCandidate.stepIndex) {
-      return invalidSequential('invalid-order')
-    }
+    workflow = alignedResult.value
 
-    if (stepCandidate.status === 'action-confirmed') {
-      if (!isUnknownRecord(stepCandidate.action)) {
-        return invalidSequential('invalid-step')
-      }
-      const actionResult = restoreSubmittedAction(
-        stepCandidate.action,
-        gameResult.value,
-        selectDoctorPreviousTargetsForNight(gameResult.value),
-      )
-      if (!actionResult.ok || workflow.status !== 'collecting') {
-        return invalidSequential('invalid-step')
-      }
-      const confirmation = confirmNightActionTarget(workflow, actionResult.value.targetPlayerId)
-      if (!confirmation.ok) {
-        return invalidSequential('invalid-step')
-      }
-      workflow = confirmation.value
-    } else if (
-      stepCandidate.status !== 'blocked' ||
-      workflow.status !== 'awaiting-outcome-acknowledgement' ||
-      workflow.completedSteps.at(-1)?.status !== 'blocked'
-    ) {
-      return invalidSequential('invalid-step')
+    const appliedResult = applyPersistedCurrentStep(workflow, stepCandidate, game)
+    if (!appliedResult.ok) {
+      return appliedResult
     }
+    workflow = appliedResult.value
 
-    const canonicalRecord = workflow.completedSteps.at(-1)
+    const canonicalRecord = workflow.completedSteps.find(
+      (record) => record.stepIndex === stepCandidate.stepIndex,
+    )
     if (
       canonicalRecord === undefined ||
       !hasSameCanonicalContent(
-        persistSequentialWorkflow(workflow).completedSteps.at(-1),
+        persistSequentialRecord(workflow, canonicalRecord.stepIndex),
         stepCandidate,
       )
     ) {
-      if (stepCandidate.acknowledged !== true) {
-        return invalidSequential('invalid-step')
-      }
-      const unacknowledgedCandidate = { ...stepCandidate, acknowledged: false }
-      const canonicalCandidate = persistSequentialWorkflow(workflow).completedSteps.at(-1)
-      if (!hasSameCanonicalContent(canonicalCandidate, unacknowledgedCandidate)) {
-        return invalidSequential('invalid-step')
-      }
+      return invalidSequential(
+        isFabricatedNonInformationalOutcome(stepCandidate)
+          ? 'invalid-fabricated-non-informational-outcome'
+          : 'invalid-step',
+      )
     }
 
-    if (stepCandidate.acknowledged === true) {
-      const acknowledgement = acknowledgeImmediateNightOutcome(workflow)
-      if (!acknowledgement.ok || acknowledgement.value.status === 'complete') {
-        return invalidSequential('invalid-step')
+    if (
+      recordIndex < completedSteps.length - 1 &&
+      workflow.status === 'awaiting-outcome-acknowledgement' &&
+      workflow.currentStepIndex === stepCandidate.stepIndex
+    ) {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok || advance.value.status === 'complete') {
+        return invalidSequential('restore-position-mismatch')
       }
-      workflow = acknowledgement.value
-    } else if (stepCandidate.acknowledged !== false) {
-      return invalidSequential('invalid-step')
+      workflow = advance.value
     }
   }
 
-  while (workflow.currentStepIndex < candidate.currentStepIndex) {
-    const advance = continueNightActionCollection(workflow)
-    if (!advance.ok || advance.value.status === 'complete') {
-      return invalidSequential('invalid-order')
-    }
-    workflow = advance.value
+  const alignedResult = alignCurrentWorkflowToPersistedPosition(
+    workflow,
+    candidate.currentStepIndex,
+    candidate.workflowStatus,
+  )
+  if (!alignedResult.ok) {
+    return alignedResult
   }
-  if (workflow.currentStepIndex !== candidate.currentStepIndex) {
-    return invalidSequential('invalid-order')
-  }
+  workflow = alignedResult.value
 
   const session = deepFreeze({ stage: 'sequential-night' as const, workflow })
   return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? succeed(session)
     : invalidSequential('invalid-current-outcome')
+}
+
+function restoreLegacySequentialNightProgress(
+  candidate: Readonly<Record<string, unknown>>,
+  completedSteps: readonly unknown[],
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+  game: GameState,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
+  let workflow: ActiveNightActionCollectionWorkflow = initialWorkflow
+  let legacyLastStep: Readonly<Record<string, unknown>> | undefined
+
+  for (const [recordIndex, stepCandidate] of completedSteps.entries()) {
+    if (
+      !isUnknownRecord(stepCandidate) ||
+      typeof stepCandidate.stepIndex !== 'number' ||
+      typeof stepCandidate.acknowledged !== 'boolean'
+    ) {
+      return invalidSequential('invalid-step')
+    }
+    // Replaying the preceding action may have generated the next blocked record. Legacy history
+    // must contain that record before restoration is allowed to advance beyond its private screen.
+    const pendingCanonicalRecord = workflow.completedSteps[recordIndex]
+    if (
+      pendingCanonicalRecord !== undefined &&
+      pendingCanonicalRecord.stepIndex !== stepCandidate.stepIndex
+    ) {
+      return invalidSequential('restore-position-mismatch')
+    }
+    const alignedResult = alignWorkflowToRecordedStep(workflow, stepCandidate.stepIndex)
+    if (!alignedResult.ok) {
+      return alignedResult
+    }
+    workflow = alignedResult.value
+
+    const appliedResult = applyPersistedCurrentStep(workflow, stepCandidate, game)
+    if (!appliedResult.ok) {
+      return appliedResult
+    }
+    workflow = appliedResult.value
+    const canonicalRecord = workflow.completedSteps.find(
+      (record) => record.stepIndex === stepCandidate.stepIndex,
+    )
+    const persistedRecord =
+      canonicalRecord === undefined
+        ? undefined
+        : persistSequentialRecord(workflow, canonicalRecord.stepIndex)
+    if (
+      persistedRecord === undefined ||
+      !hasSameCanonicalContent(
+        toLegacyPersistedSequentialRecord(persistedRecord, stepCandidate.acknowledged),
+        stepCandidate,
+      )
+    ) {
+      return invalidSequential('invalid-step')
+    }
+
+    const informationalOrBlocked = canonicalRecord?.outcome !== null
+    const mustAdvance =
+      stepCandidate.acknowledged ||
+      recordIndex < completedSteps.length - 1 ||
+      (persistedRecord.status === 'action-confirmed' && persistedRecord.outcome === null)
+    if (informationalOrBlocked && mustAdvance) {
+      if (!stepCandidate.acknowledged) {
+        return invalidSequential('invalid-step')
+      }
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+    legacyLastStep = stepCandidate
+  }
+
+  // A collapsed legacy acknowledgement may legitimately surface a new current blocked screen, but
+  // a collecting position proves that every earlier blocked screen already had a persisted record.
+  if (
+    candidate.workflowStatus === 'collecting' &&
+    workflow.completedSteps.length !== completedSteps.length
+  ) {
+    return invalidSequential('restore-position-mismatch')
+  }
+
+  const evidenceResult = validateLegacySequentialPositionEvidence(
+    candidate,
+    legacyLastStep,
+    workflow,
+  )
+  if (!evidenceResult.ok) {
+    return evidenceResult
+  }
+  workflow = evidenceResult.value
+
+  if (workflow.status === 'complete') {
+    const resolutionResult = beginFinalNightResolution(workflow)
+    return resolutionResult.ok
+      ? succeed(
+          deepFreeze({
+            stage: 'night-resolution' as const,
+            workflow: resolutionResult.value,
+          }),
+        )
+      : invalidSequential('restore-position-mismatch')
+  }
+
+  return succeed(
+    deepFreeze({
+      stage: 'sequential-night' as const,
+      workflow,
+    }),
+  )
+}
+
+function isLegacySequentialNightCandidate(
+  candidate: Readonly<Record<string, unknown>>,
+  completedSteps: readonly unknown[],
+): boolean {
+  return (
+    candidate.workflowStatus === 'outcome-acknowledged' ||
+    completedSteps.some((step) => isUnknownRecord(step) && Object.hasOwn(step, 'acknowledged')) ||
+    (isUnknownRecord(candidate.currentOutcome) &&
+      candidate.currentOutcome.kind === 'action-recorded')
+  )
+}
+
+function alignWorkflowToRecordedStep(
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+  stepIndex: number,
+): DomainResult<ActiveNightActionCollectionWorkflow, RestorePersistedSessionV2Error> {
+  let workflow = initialWorkflow
+  while (workflow.currentStepIndex < stepIndex) {
+    const advance = continueNightActionCollection(workflow)
+    if (!advance.ok || advance.value.status === 'complete') {
+      return invalidSequential('restore-position-mismatch')
+    }
+    workflow = advance.value
+  }
+  return workflow.currentStepIndex === stepIndex
+    ? succeed(workflow)
+    : invalidSequential('restore-position-mismatch')
+}
+
+function applyPersistedCurrentStep(
+  workflow: ActiveNightActionCollectionWorkflow,
+  stepCandidate: Readonly<Record<string, unknown>>,
+  game: GameState,
+): DomainResult<ActiveNightActionCollectionWorkflow, RestorePersistedSessionV2Error> {
+  if (stepCandidate.status === 'action-confirmed') {
+    if (!isUnknownRecord(stepCandidate.action) || workflow.status !== 'collecting') {
+      return invalidSequential('invalid-step')
+    }
+    const actionResult = restoreSubmittedAction(
+      stepCandidate.action,
+      game,
+      selectDoctorPreviousTargetsForNight(game),
+    )
+    if (!actionResult.ok) {
+      return invalidSequential('invalid-step')
+    }
+    const confirmation = confirmNightActionTarget(workflow, actionResult.value.targetPlayerId)
+    return confirmation.ok ? succeed(confirmation.value) : invalidSequential('invalid-step')
+  }
+
+  return stepCandidate.status === 'blocked' &&
+    workflow.status === 'awaiting-outcome-acknowledgement' &&
+    workflow.completedSteps.at(-1)?.status === 'blocked'
+    ? succeed(workflow)
+    : invalidSequential('invalid-step')
+}
+
+function alignCurrentWorkflowToPersistedPosition(
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+  currentStepIndex: unknown,
+  workflowStatus: unknown,
+): DomainResult<SequentialNightAppSession['workflow'], RestorePersistedSessionV2Error> {
+  if (typeof currentStepIndex !== 'number') {
+    return invalidSequential('restore-position-mismatch')
+  }
+  let workflow = initialWorkflow
+  if (workflowStatus === 'collecting') {
+    if (workflow.status === 'awaiting-outcome-acknowledgement') {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok || advance.value.status === 'complete') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+    while (workflow.currentStepIndex < currentStepIndex) {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok || advance.value.status === 'complete') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+  }
+
+  if (
+    workflowStatus === 'collecting' &&
+    workflow.status === 'collecting' &&
+    workflow.currentStepIndex === currentStepIndex
+  ) {
+    return succeed(workflow)
+  }
+  if (
+    workflowStatus === 'awaiting-outcome-acknowledgement' &&
+    workflow.status === 'awaiting-outcome-acknowledgement' &&
+    workflow.currentStepIndex === currentStepIndex
+  ) {
+    return succeed(workflow)
+  }
+  return invalidSequential('restore-position-mismatch')
+}
+
+function persistSequentialRecord(
+  workflow: ActiveNightActionCollectionWorkflow,
+  stepIndex: number,
+): PersistedSequentialNightStepV2 | undefined {
+  const record = workflow.completedSteps.find((candidate) => candidate.stepIndex === stepIndex)
+  if (record === undefined) {
+    return undefined
+  }
+  return record.status === 'blocked'
+    ? {
+        stepIndex: record.stepIndex,
+        status: record.status,
+        actorPlayerId: record.actorPlayerId,
+        actorRoleId: record.actorRoleId,
+        actorRoleInstanceId: record.actorRoleInstanceId,
+        outcome: persistImmediateNightOutcome(record.outcome),
+      }
+    : {
+        stepIndex: record.stepIndex,
+        status: record.status,
+        actorPlayerId: record.actorPlayerId,
+        actorRoleId: record.actorRoleId,
+        actorRoleInstanceId: record.actorRoleInstanceId,
+        action: { ...record.action },
+        outcome: record.outcome === null ? null : persistImmediateNightOutcome(record.outcome),
+      }
+}
+
+function persistImmediateNightOutcome(
+  outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+): Extract<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>>
+function persistImmediateNightOutcome(
+  outcome: Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+): Exclude<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>>
+function persistImmediateNightOutcome(
+  outcome: ImmediateNightOutcome,
+): PersistedImmediateNightOutcomeV2 {
+  switch (outcome.kind) {
+    case 'blocked':
+    case 'sheriff-result':
+      return { ...outcome }
+    case 'investigation-result':
+      return {
+        kind: outcome.kind,
+        actorPlayerId: outcome.actorPlayerId,
+        actorRoleId: outcome.actorRoleId,
+        actorRoleInstanceId: outcome.actorRoleInstanceId,
+        targetPlayerId: outcome.targetPlayerId,
+        investigationRole: outcome.investigationRole,
+        groupId: outcome.group.id,
+      }
+    case 'detective-result':
+      return outcome.result.status === 'visited-nobody'
+        ? {
+            kind: outcome.kind,
+            actorPlayerId: outcome.actorPlayerId,
+            actorRoleId: outcome.actorRoleId,
+            actorRoleInstanceId: outcome.actorRoleInstanceId,
+            targetPlayerId: outcome.targetPlayerId,
+            status: outcome.result.status,
+          }
+        : {
+            kind: outcome.kind,
+            actorPlayerId: outcome.actorPlayerId,
+            actorRoleId: outcome.actorRoleId,
+            actorRoleInstanceId: outcome.actorRoleInstanceId,
+            targetPlayerId: outcome.targetPlayerId,
+            status: outcome.result.status,
+            visitedPlayerId: outcome.result.visitedPlayerId,
+          }
+  }
+}
+
+function toLegacyPersistedSequentialRecord(
+  record: PersistedSequentialNightStepV2,
+  acknowledged: boolean,
+): Readonly<Record<string, unknown>> {
+  if (record.status === 'blocked') {
+    return { ...record, acknowledged }
+  }
+  const outcome =
+    record.outcome === null
+      ? {
+          kind: 'action-recorded',
+          actorPlayerId: record.actorPlayerId,
+          actorRoleId: record.actorRoleId,
+          actorRoleInstanceId: record.actorRoleInstanceId,
+          targetPlayerId: record.action.targetPlayerId,
+        }
+      : record.outcome
+  return { ...record, outcome, acknowledged }
+}
+
+function validateLegacySequentialPositionEvidence(
+  candidate: Readonly<Record<string, unknown>>,
+  lastStep: Readonly<Record<string, unknown>> | undefined,
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+): DomainResult<ActiveNightActionCollectionWorkflow, RestorePersistedSessionV2Error> {
+  if (candidate.workflowStatus === 'outcome-acknowledged') {
+    if (
+      lastStep === undefined ||
+      lastStep.acknowledged !== true ||
+      candidate.currentOutcome !== null ||
+      candidate.currentStepIndex !== lastStep.stepIndex
+    ) {
+      return fail({
+        type: 'PERSISTENCE_COMPATIBILITY_FAILURE',
+        reason: 'ambiguous-legacy-night-advancement',
+      })
+    }
+    return succeed(initialWorkflow)
+  }
+
+  if (candidate.workflowStatus === 'awaiting-outcome-acknowledgement') {
+    if (
+      lastStep === undefined ||
+      lastStep.acknowledged !== false ||
+      candidate.currentStepIndex !== lastStep.stepIndex ||
+      !hasSameCanonicalContent(lastStep.outcome, candidate.currentOutcome)
+    ) {
+      return invalidSequential('invalid-current-outcome')
+    }
+    const actionRecorded =
+      isUnknownRecord(lastStep.outcome) && lastStep.outcome.kind === 'action-recorded'
+    return actionRecorded ||
+      (initialWorkflow.status === 'awaiting-outcome-acknowledgement' &&
+        initialWorkflow.currentStepIndex === candidate.currentStepIndex)
+      ? succeed(initialWorkflow)
+      : invalidSequential('restore-position-mismatch')
+  }
+
+  if (
+    candidate.workflowStatus !== 'collecting' ||
+    candidate.currentOutcome !== null ||
+    (lastStep !== undefined && lastStep.acknowledged !== true)
+  ) {
+    return invalidSequential('invalid-current-outcome')
+  }
+  return alignCurrentWorkflowToPersistedPosition(
+    initialWorkflow,
+    candidate.currentStepIndex,
+    'collecting',
+  )
+}
+
+function isFabricatedNonInformationalOutcome(
+  stepCandidate: Readonly<Record<string, unknown>>,
+): boolean {
+  if (stepCandidate.status !== 'action-confirmed' || !isUnknownRecord(stepCandidate.outcome)) {
+    return false
+  }
+  return (
+    stepCandidate.actorRoleId === ROLE_IDS.consort ||
+    stepCandidate.actorRoleId === ROLE_IDS.framer ||
+    stepCandidate.actorRoleId === ROLE_IDS.godfather ||
+    stepCandidate.actorRoleId === ROLE_IDS.serialKiller ||
+    stepCandidate.actorRoleId === ROLE_IDS.doctor
+  )
 }
 
 function restoreNightResolutionSession(
@@ -820,6 +1205,10 @@ function restoreDayDiscussionSession(
       'executionDialogOpen',
       'noExecutionDialogOpen',
       'operationPending',
+      'showHostRoles',
+      'hostOnlyRoles',
+      'hostRoleView',
+      'hostRoleVisibility',
     ])
   ) {
     return invalidDayDiscussion('contains-stale-night-data')
@@ -1524,16 +1913,6 @@ function isCompatibleLegacyMayorMarker(
     Object.hasOwn(canonical, 'alive') &&
     Object.hasOwn(canonical, 'publiclyRevealedRoleId')
   )
-}
-
-function persistSequentialWorkflow(
-  workflow: SequentialNightAppSession['workflow'],
-): Extract<PersistedAppSessionV2, Readonly<{ stage: 'sequential-night' }>> {
-  const persisted = toPersistedAppSessionV2({ stage: 'sequential-night', workflow })
-  if (persisted.stage !== 'sequential-night') {
-    throw new Error('Sequential-night persistence produced the wrong stage.')
-  }
-  return persisted
 }
 
 function countAuthoritativeGameFields(candidate: Readonly<Record<string, unknown>>): number {

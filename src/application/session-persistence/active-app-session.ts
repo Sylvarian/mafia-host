@@ -48,7 +48,6 @@ import {
   type ReadyForDawnWorkflow,
 } from '../night-completion/index.ts'
 import {
-  acknowledgeImmediateNightOutcome,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -137,7 +136,6 @@ export type ActiveAppSessionOperation =
   | 'next-executioner-briefing'
   | 'complete-executioner-briefings'
   | 'confirm-night-target'
-  | 'acknowledge-night-outcome'
   | 'continue-night'
   | 'prepare-dawn'
   | 'begin-day-discussion'
@@ -367,35 +365,14 @@ export function confirmSessionNightTarget(
   session: ActiveAppSession,
   targetPlayerId: PlayerId,
 ): DomainResult<
-  SequentialNightAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
+  SequentialNightAppSession | NightResolutionAppSession,
+  NightActionCollectionError | NightCompletionError | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'sequential-night') {
     return invalidStage('confirm-night-target', session.stage)
   }
   const result = confirmNightActionTarget(session.workflow, targetPlayerId)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
-    : result
-}
-
-export function acknowledgeSessionNightOutcome(
-  session: ActiveAppSession,
-): DomainResult<
-  SequentialNightAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'sequential-night') {
-    return invalidStage('acknowledge-night-outcome', session.stage)
-  }
-  const result = acknowledgeImmediateNightOutcome(session.workflow)
-  if (!result.ok) {
-    return result
-  }
-  if (result.value.status === 'complete') {
-    throw new Error('Acknowledging an outcome cannot complete the night before Continue.')
-  }
-  return succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value }))
+  return completeNightProgress(result)
 }
 
 export function continueSessionNight(
@@ -408,6 +385,15 @@ export function continueSessionNight(
     return invalidStage('continue-night', session.stage)
   }
   const result = continueNightActionCollection(session.workflow)
+  return completeNightProgress(result)
+}
+
+function completeNightProgress(
+  result: ReturnType<typeof confirmNightActionTarget | typeof continueNightActionCollection>,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  NightActionCollectionError | NightCompletionError
+> {
   if (!result.ok) {
     return result
   }

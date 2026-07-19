@@ -19,16 +19,9 @@ type NightRunnerProps = Readonly<{
   error: NightActionCollectionError | null
   onConfirmTarget: (targetPlayerId: PlayerId) => void
   onContinue: () => void
-  onAcknowledgeOutcome: () => void
 }>
 
-export function NightRunner({
-  workflow,
-  error,
-  onConfirmTarget,
-  onContinue,
-  onAcknowledgeOutcome,
-}: NightRunnerProps) {
+export function NightRunner({ workflow, error, onConfirmTarget, onContinue }: NightRunnerProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const focusKey = `${workflow.status}-${String(workflow.currentStepIndex)}`
 
@@ -40,18 +33,6 @@ export function NightRunner({
     return (
       <ImmediateOutcome
         view={selectImmediateNightOutcomeView(workflow)}
-        error={error}
-        headingRef={headingRef}
-        onAcknowledge={onAcknowledgeOutcome}
-      />
-    )
-  }
-
-  if (workflow.status === 'outcome-acknowledged') {
-    return (
-      <OutcomeAcknowledged
-        nightNumber={workflow.game.nightNumber}
-        finalActor={workflow.currentStepIndex === workflow.steps.length - 1}
         error={error}
         headingRef={headingRef}
         onContinue={onContinue}
@@ -144,8 +125,9 @@ function CollectionStep({
           </div>
           <p className="actor-action__prompt">{step.hostPrompt}</p>
           <p className="actor-action__finality">
-            Confirming this target finalizes the action. Earlier actions cannot be changed after
-            their result is acknowledged.
+            {step.confirmationMode === 'advance-directly'
+              ? 'Confirming this target seals the action and immediately continues to the next actor.'
+              : 'Confirming this target seals the action and shows this actor’s private result.'}
           </p>
           <div
             className="target-grid"
@@ -209,7 +191,11 @@ function CollectionStep({
             }
           }}
         >
-          {step.type === 'actor-action' ? 'Confirm Target / Continue' : 'Continue'}
+          {step.type === 'actor-action'
+            ? step.confirmationMode === 'advance-directly'
+              ? 'Confirm target and continue'
+              : 'Confirm target'
+            : 'Continue'}
         </button>
       </div>
     </section>
@@ -220,12 +206,12 @@ function ImmediateOutcome({
   view,
   error,
   headingRef,
-  onAcknowledge,
+  onContinue,
 }: Readonly<{
   view: ImmediateNightOutcomeView
   error: NightActionCollectionError | null
   headingRef: HeadingRef
-  onAcknowledge: () => void
+  onContinue: () => void
 }>) {
   return (
     <section
@@ -241,8 +227,8 @@ function ImmediateOutcome({
       </h2>
       <ImmediateOutcomeContent view={view} />
       {error === null ? null : <NightError error={error} />}
-      <button type="button" className="button button--prepare" onClick={onAcknowledge}>
-        Acknowledge result
+      <button type="button" className="button button--prepare" onClick={onContinue}>
+        Continue to next actor
       </button>
     </section>
   )
@@ -252,13 +238,6 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
   switch (view.kind) {
     case 'blocked':
       return <p className="immediate-outcome__message">Your action cannot be performed tonight.</p>
-    case 'action-recorded':
-      return (
-        <>
-          <p className="immediate-outcome__message">Your target has been confirmed.</p>
-          <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
-        </>
-      )
     case 'sheriff-result':
       return (
         <>
@@ -290,34 +269,6 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
   }
 }
 
-function OutcomeAcknowledged({
-  nightNumber,
-  finalActor,
-  error,
-  headingRef,
-  onContinue,
-}: Readonly<{
-  nightNumber: number
-  finalActor: boolean
-  error: NightActionCollectionError | null
-  headingRef: HeadingRef
-  onContinue: () => void
-}>) {
-  return (
-    <section className="night-runner outcome-acknowledged" aria-labelledby="outcome-acknowledged">
-      <p className="night-runner__eyebrow">Night {nightNumber}</p>
-      <h2 id="outcome-acknowledged" ref={headingRef} tabIndex={-1}>
-        Outcome acknowledged
-      </h2>
-      <p>The private outcome is sealed and is no longer displayed.</p>
-      {error === null ? null : <NightError error={error} />}
-      <button type="button" className="button button--prepare" onClick={onContinue}>
-        {finalActor ? 'Complete Night Actions' : 'Continue to next actor'}
-      </button>
-    </section>
-  )
-}
-
 function PrivacyWarning() {
   return (
     <p className="night-runner__privacy">
@@ -338,8 +289,6 @@ function getOutcomeHeading(view: ImmediateNightOutcomeView): string {
   switch (view.kind) {
     case 'blocked':
       return 'BLOCKED'
-    case 'action-recorded':
-      return 'Action recorded'
     case 'sheriff-result':
       return 'Sheriff result'
     case 'investigation-result':

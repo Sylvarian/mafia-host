@@ -11,7 +11,10 @@ selection, sequential outcomes, restoration, and migration consume no randomness
 
 `BrowserGameSessionStore` and the browser clock implement the Phase 6.5 transport contracts.
 `mafia-host:active-session:v2` remains the only current authority; Phase 7C adds explicit
-neutral-state and post-day fields without changing the transport or key. The V1 key remains solely for narrow
+neutral-state and post-day fields without changing the transport or key. Phase 7C.1 keeps that key
+and schema version: application restoration canonicalizes provable old `Action recorded` or
+acknowledged night positions and rejects ambiguous positions. New payloads contain neither those
+obsolete screen states nor day host-role visibility/display objects. The V1 key remains solely for narrow
 application-owned migration. The adapter reads V2 first. If absent, it passes untrusted V1 JSON to
 the injected migrator, validates the returned V2 through the injected restorer, writes V2, and only
 then removes V1. A failed migration or V2 write leaves V1 untouched. A failed legacy-key removal
@@ -28,3 +31,7 @@ Execution/no-execution completion produces one ordinary application save. Dialog
 selection, derived summaries, focus, and operation guards never reach the adapter. A save failure
 retains the exact completed in-memory session, and retry transports that same canonical payload
 without reapplying domain consequences.
+
+Direct non-informational night advancement, one-button result/blocked advancement, and direct Dawn
+each produce one ordinary application save after their authoritative transition. Showing or hiding
+host-only day roles never calls the adapter because that state is React-only.

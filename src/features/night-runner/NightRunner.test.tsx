@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  acknowledgeImmediateNightOutcome,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -66,9 +65,6 @@ function NightHarness({
       onConfirmTarget={(targetPlayerId) => {
         apply(() => confirmNightActionTarget(workflow, targetPlayerId))
       }}
-      onAcknowledgeOutcome={() => {
-        apply(() => acknowledgeImmediateNightOutcome(workflow))
-      }}
       onContinue={() => {
         apply(() => continueNightActionCollection(workflow))
       }}
@@ -110,7 +106,6 @@ describe('sequential Night Runner UI', () => {
         error={null}
         onConfirmTarget={() => undefined}
         onContinue={() => undefined}
-        onAcknowledgeOutcome={() => undefined}
       />,
     )
 
@@ -167,7 +162,6 @@ describe('sequential Night Runner UI', () => {
         error={null}
         onConfirmTarget={() => undefined}
         onContinue={() => undefined}
-        onAcknowledgeOutcome={() => undefined}
       />,
     )
 
@@ -195,41 +189,61 @@ describe('sequential Night Runner UI', () => {
         error={null}
         onConfirmTarget={onConfirmTarget}
         onContinue={() => undefined}
-        onAcknowledgeOutcome={() => undefined}
       />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen, Town/ }))
     expect(onConfirmTarget).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(onConfirmTarget).toHaveBeenCalledTimes(1)
     expect(onConfirmTarget).toHaveBeenCalledWith('player-2')
   })
 
-  it('shows only the current immediate result, focuses it, and removes it after acknowledgement', () => {
+  it('advances a non-informational action directly without rendering a result screen', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.framer, name: 'Framer' },
+        { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+      ]),
+      ROLE_IDS.framer,
+    )
+    render(<NightHarness initialWorkflow={workflow} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen, Town/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target and continue' }))
+
+    expect(screen.getByRole('heading', { name: /Wake Sheriff/ })).toHaveFocus()
+    expect(screen.queryByText('Action recorded')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
+    expect(screen.queryByText('Outcome acknowledged')).toBeNull()
+  })
+
+  it('shows one current immediate result and advances with its only action', () => {
     const workflow = actorWorkflow(
       startedWorkflow([
         { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
-        { roleId: ROLE_IDS.serialKiller, name: 'Target' },
+        { roleId: ROLE_IDS.jester, name: 'Target' },
       ]),
       ROLE_IDS.sheriff,
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Target, Serial Killer, Neutral/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
     const resultHeading = screen.getByRole('heading', { name: 'Sheriff result' })
     expect(resultHeading).toHaveFocus()
-    expect(screen.getByText('Suspicious')).toBeVisible()
+    expect(screen.getByText('Not suspicious')).toBeVisible()
     expect(screen.getByText(/Private screen/)).toBeVisible()
     expect(screen.queryByText('Action recorded')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge result' }))
-    expect(screen.getByRole('heading', { name: 'Outcome acknowledged' })).toHaveFocus()
-    expect(screen.queryByText('Suspicious')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to next actor' }))
+    expect(screen.getByRole('heading', { name: 'Final night resolution prepared' })).toHaveFocus()
+    expect(screen.queryByText('Not suspicious')).toBeNull()
     expect(screen.queryByText('Target: Target')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Complete Night Actions' })).toBeVisible()
+    expect(screen.queryByText('Outcome acknowledged')).toBeNull()
   })
 
   it('shows the immediate four-role Group D card without revealing the actual role', () => {
@@ -243,7 +257,7 @@ describe('sequential Night Runner UI', () => {
     render(<NightHarness initialWorkflow={workflow} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
     expect(screen.getByRole('heading', { name: 'Investigator result' })).toHaveFocus()
     expect(screen.getByText('Group D')).toBeVisible()
@@ -265,13 +279,10 @@ describe('sequential Night Runner UI', () => {
     if (doctor === undefined) throw new Error('Expected blocked Doctor.')
     const consort = confirmNightActionTarget(overview.value, doctor.playerId)
     if (!consort.ok) throw new Error('Could not confirm Consort.')
-    const acknowledged = acknowledgeImmediateNightOutcome(consort.value)
-    if (!acknowledged.ok) throw new Error('Could not acknowledge Consort.')
-    const blocked = continueNightActionCollection(acknowledged.value)
-    if (!blocked.ok || blocked.value.status !== 'awaiting-outcome-acknowledgement') {
+    if (consort.value.status !== 'awaiting-outcome-acknowledgement') {
       throw new Error('Could not reach blocked Doctor.')
     }
-    workflow = blocked.value
+    workflow = consort.value
 
     render(
       <NightRunner
@@ -279,7 +290,6 @@ describe('sequential Night Runner UI', () => {
         error={null}
         onConfirmTarget={() => undefined}
         onContinue={() => undefined}
-        onAcknowledgeOutcome={() => undefined}
       />,
     )
 
@@ -287,6 +297,7 @@ describe('sequential Night Runner UI', () => {
     expect(screen.getByText('Your action cannot be performed tonight.')).toBeVisible()
     expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
     expect(screen.queryByText(/No result/i)).toBeNull()
-    expect(screen.getByRole('button', { name: 'Acknowledge result' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue to next actor' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
   })
 })

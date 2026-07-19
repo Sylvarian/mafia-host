@@ -265,7 +265,9 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
     case 'STALE_OLD_PRIVATE_RESULT_WORKFLOW':
       return 'This older save contains the removed end-of-night private-result replay and cannot be migrated safely.'
     case 'PERSISTENCE_COMPATIBILITY_FAILURE':
-      return 'This older day save contains a death without enough evidence to prove its cause. It cannot be upgraded without guessing.'
+      return error.reason === 'legacy-day-death-cause-unavailable'
+        ? 'This older day save contains a death without enough evidence to prove its cause. It cannot be upgraded without guessing.'
+        : 'This older night save does not prove which actor follows its acknowledged result. It cannot be upgraded without guessing or skipping an action.'
     case 'V2_WRITE_FAILURE_AFTER_MIGRATION':
       return 'The older save was valid, but the upgraded V2 save could not be written. The older save was not removed.'
     case 'LEGACY_REMOVAL_FAILURE_AFTER_MIGRATION':

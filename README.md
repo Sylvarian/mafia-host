@@ -6,8 +6,8 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7C — final day outcome, execution, personal wins, and Executioner conversion — is implemented
-on top of the Phase 7B day screen. After verbal nominations, trials, and voting, the host records
+Phase 7C.1 streamlines the implemented Phase 7C host workflow without changing its game rules.
+After verbal nominations, trials, and voting, the host records
 exactly one final result with **Execute a player** or **End day without execution**. Both operations
 atomically replace the editable `day-discussion` session with a persisted `day-outcome` session in
 the existing `execution-resolution` phase.
@@ -16,6 +16,13 @@ The public day screen separates living and dead players, shows only authoritativ
 reveals, and never receives hidden assignments, factions, Executioner targets, or night data.
 Duplicate player names use stable labels such as `Alex (Player 1)`. Trials, nominations, verdict
 votes, and majority counting remain verbal and are not recorded by the app.
+
+Day discussion also has a temporary **Show host-only roles** control. Roles are absent from the
+public day model and DOM until requested, and visibility is React-only, hidden by default, never
+autosaved, and hidden again after refresh, recovery, or entry into a new day. The separate
+sanitized host view shows active role labels and alive/dead state. A converted Executioner appears
+as Jester with Executioner as the immutable original assignment; Executioner targets, personal
+wins, and pending revenge are never included.
 
 A private host-only execution dialog lists only living participants with duplicate-safe names and
 does not disclose assignments, targets, wins, conversions, or revenge. A separate irreversible
@@ -35,16 +42,19 @@ copies use role-instance ordinal and roster order. Disabled first-night killers 
 Consorts establish blocks before later actors wake; blocked actors still wake but receive an
 explicit **BLOCKED** screen and create no action, visit, result, or Doctor target history.
 
-Confirming a target atomically records the action and produces only that actor’s immediate outcome.
-Sheriff, Investigator, Consigliere, and Detective information is shown while the actor is awake,
-acknowledged, removed from the DOM, and sealed before the next actor. Detective investigations do
-not enter the trackable visit ledger, so Detectives tracking one another see “visited nobody.” The
-obsolete end-of-night investigative replay has been removed.
+Consort, Framer, Godfather, Serial Killer, and Doctor confirmation atomically seals the action and
+advances directly; they receive no fabricated `Action recorded` result. Sheriff, Investigator,
+Consigliere, and Detective receive exactly one private result screen, while blocked actors receive
+exactly one **BLOCKED** screen. In both cases **Continue to next actor** seals the private screen
+and advances atomically. There is no separate `Outcome acknowledged` state or screen. Detective
+investigations do not enter the trackable visit ledger, so Detectives tracking one another see
+“visited nobody.” The obsolete end-of-night investigative replay remains removed.
 
-After the final acknowledgement, the application validates the sequential record, constructs the
+After the final actor, the application validates the sequential record, constructs the
 canonical action batch, calculates ordinary attacks, protections, and provisional deaths, and
-enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate **Prepare Dawn
-Announcement** boundary. Dawn applies deaths once, records only unblocked Doctors’ confirmed
+enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate direct **Show
+Dawn announcement** boundary. The inline reminder tells the host to ensure every player’s eyes are
+open; no second confirmation dialog is used. Dawn applies deaths once, records only unblocked Doctors’ confirmed
 targets, honors `revealRoleOnDeath`, and exposes only public-safe announcement data.
 
 After final physical-card confirmation, every Executioner now receives one randomly selected
@@ -114,6 +124,13 @@ its night deaths and conversions during restoration. A prior Day save with any d
 cause evidence fails with an explicit compatibility error rather than inferring from `alive:
 false`. Dialogs, temporary selections, focus, guards, labels, and summary prose are never
 persisted.
+
+Phase 7C.1 new V2 saves persist no non-informational private outcome and no acknowledged-screen
+state. Earlier V2 `Action recorded` states are replayed through validation and canonicalized to the
+next exact actor; an earlier acknowledged result advances only when its persisted evidence proves
+the boundary unambiguously. Ambiguous advancement fails closed with a compatibility message.
+Host-role visibility and derived host-role display objects are rejected if injected into a day
+save and are never emitted by current persistence.
 
 The current first-Dawn representation must not be reused unchanged for later Dawns because it could
 announce earlier deaths again. Phase 7E must update the contract deliberately. There is no generic
@@ -203,8 +220,9 @@ ESLint separately rejects browser globals and global randomness in domain/applic
 because those dependencies do not appear in an import graph.
 
 The layer-specific README files point back to the architecture authority. Phase 4 introduced
-immutable domain action values and structural validation. Phase 7A.1 now coordinates those actions
-sequentially and seals each actor after immediate acknowledgement. Phase 5 adds permanent
+immutable domain action values and structural validation. Phase 7C.1 coordinates non-informational
+actions through direct confirmation/advancement and informational or blocked screens through one
+atomic continue. Phase 5 adds permanent
 investigation data and pure, separately testable resolution stages in the domain; the application
 uses those same mechanics for immediate outcomes and final resolution.
 Phase 6 adds pure death/history/reveal application and a public-safe Dawn model in the domain.
@@ -218,16 +236,18 @@ distribution, assigns targets, and selects either briefing or Night 1; briefing 
 atomically creates the night-action workflow. The dedicated feature renders only the current
 sanitized briefing and never owns target authority.
 
-Phase 7A.1 replaces collect-all/replay coordination with one application-owned sequential workflow.
-It records immutable actor steps, narrow immediate outcomes, explicit acknowledgements, and a
-bounded canonical position while deriving blocks, frames, visits, and investigation data through
+Phase 7A.1 replaced collect-all/replay coordination with one application-owned sequential workflow;
+Phase 7C.1 removes its obsolete acknowledged intermediate screen. The workflow records immutable
+actor steps, informational or blocked immediate outcomes only, and a bounded canonical position
+while deriving blocks, frames, visits, and investigation data through
 shared domain mechanics. `night-completion` owns the final resolution and deliberate Dawn boundary.
 Session persistence owns schema V2, narrow V1 migration, and canonical reconstruction. React owns
 only temporary unconfirmed target selection, focus, errors, dialogs, and repeated-operation guards.
 
 Phase 7B adds one pure domain transition from the matching first Dawn into Day 1 and one narrow
 voluntary-Mayor reveal operation. `application/day-discussion` owns the sanitized public roster and
-the separate private candidate selector. The day feature never receives `GameState`; React owns
+separate private candidate selector. Phase 7C.1 adds a third, sanitized host-role selector that is
+constructed only while its React-only toggle is visible. The day feature never receives `GameState`; React owns
 only the private dialog, temporary candidate selection, focus, and operation guards. V2 is extended
 compatibly with an exact `day-discussion` stage. New saves omit the obsolete `mayorRevealed`
 property; restoration narrowly accepts its former generated `false` value so earlier V2 saves

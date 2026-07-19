@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createExecutionerBriefingWorkflow } from '@/application/executioner-briefing/index.ts'
+import { beginFinalNightResolution } from '@/application/night-completion/index.ts'
 import {
   confirmNightActionTarget,
   continueNightActionCollection,
@@ -96,6 +97,23 @@ function activeWorkflow(
     throw new Error('Expected an active actor after overview.')
   }
   return advanced.value
+}
+
+function readyForDawnSession(
+  roles: Parameters<typeof createNightFixture>[0],
+  targetIndex: number,
+): Extract<LoadPersistedSessionResult, Readonly<{ ok: true }>>['value']['session'] {
+  const workflow = activeWorkflow(roles)
+  if (workflow.status !== 'collecting') throw new Error('Expected active night actor.')
+  const target = workflow.game.players[targetIndex]
+  if (target === undefined) throw new Error('Expected final action target.')
+  const completed = confirmNightActionTarget(workflow, target.playerId)
+  if (!completed.ok || completed.value.status !== 'complete') {
+    throw new Error('Expected completed night actions.')
+  }
+  const ready = beginFinalNightResolution(completed.value)
+  if (!ready.ok) throw new Error(`Expected final night resolution: ${ready.error.type}`)
+  return { stage: 'night-resolution', workflow: ready.value }
 }
 
 function dawnSession() {
@@ -232,7 +250,7 @@ describe('Phase 7A.1 App integration', () => {
     expect(store.saveCount).toBe(0)
 
     store.failSave = true
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(store.saveCount).toBe(1)
     expect(screen.getByText('Not suspicious')).toBeVisible()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
@@ -256,6 +274,9 @@ describe('Phase 7A.1 App integration', () => {
     if (target === undefined) throw new Error('Expected Sheriff target.')
     const confirmed = confirmNightActionTarget(collecting, target.playerId)
     if (!confirmed.ok) throw new Error('Expected immediate Sheriff result.')
+    if (confirmed.value.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Expected the Sheriff result to remain visible.')
+    }
     const title = document.title
     const url = window.location.href
     const { container } = renderLoaded({
@@ -277,7 +298,130 @@ describe('Phase 7A.1 App integration', () => {
     expect(screen.getByText('Target: Hidden Target')).toBeVisible()
   })
 
-  it('shows the result once, seals it, enters resolution, and reaches public Dawn without replay', () => {
+  it('guards direct non-informational advancement and retries the identical failed save', () => {
+    const workflow = activeWorkflow([
+      { roleId: ROLE_IDS.framer, name: 'Framer' },
+      { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+      { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+    ])
+    const { store } = renderLoaded({ stage: 'sequential-night', workflow })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen/ }))
+    store.failSave = true
+    const confirmButton = screen.getByRole('button', { name: 'Confirm target and continue' })
+    act(() => {
+      confirmButton.click()
+      confirmButton.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toHaveFocus()
+    expect(screen.queryByText('Action recorded')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
+    const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(store.saveCount).toBe(2)
+    expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
+    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toBeVisible()
+  })
+
+  it('guards one-button informational advancement and does not replay a result on retry', () => {
+    const workflow = activeWorkflow([
+      { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+      { roleId: ROLE_IDS.investigator, name: 'Investigator' },
+      { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+    ])
+    const { store } = renderLoaded({ stage: 'sequential-night', workflow })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Sheriff result' })).toBeVisible()
+
+    store.failSave = true
+    const continueButton = screen.getByRole('button', { name: 'Continue to next actor' })
+    act(() => {
+      continueButton.click()
+      continueButton.click()
+    })
+    expect(store.saveCount).toBe(2)
+    expect(screen.getByRole('heading', { name: 'Wake Investigator — Investigator' })).toHaveFocus()
+    expect(screen.queryByText('Not suspicious')).toBeNull()
+    const failedPayload = JSON.stringify(store.attemptedEnvelopes[1]?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(store.saveCount).toBe(3)
+    expect(JSON.stringify(store.attemptedEnvelopes[2]?.session)).toBe(failedPayload)
+    expect(screen.queryByText('Not suspicious')).toBeNull()
+  })
+
+  it('preserves one blocked screen through save failure and guards its direct continue', () => {
+    const workflow = activeWorkflow([
+      { roleId: ROLE_IDS.consort, name: 'Consort' },
+      { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+      { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+      { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+    ])
+    const { store } = renderLoaded({ stage: 'sequential-night', workflow })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: /Doctor, Doctor/ }))
+    store.failSave = true
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target and continue' }))
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'BLOCKED' })).toHaveFocus()
+    expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
+    const blockedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(blockedPayload)
+    const continueButton = screen.getByRole('button', { name: 'Continue to next actor' })
+    act(() => {
+      continueButton.click()
+      continueButton.click()
+    })
+    expect(store.saveCount).toBe(3)
+    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toHaveFocus()
+  })
+
+  it('guards direct Dawn, retains its failed in-memory save, and retries without reapplication', () => {
+    const session = readyForDawnSession(
+      [
+        { roleId: ROLE_IDS.godfather, name: 'Godfather' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+      ],
+      1,
+    )
+    const { store } = renderLoaded(session)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    store.failSave = true
+    const dawnButton = screen.getByRole('button', { name: 'Show Dawn announcement' })
+    act(() => {
+      dawnButton.click()
+      dawnButton.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Show Dawn announcement' })).toBeNull()
+    const attemptedDawn = store.attemptedEnvelopes[0]?.session
+    expect(attemptedDawn).toMatchObject({ stage: 'dawn' })
+    if (attemptedDawn?.stage !== 'dawn') throw new Error('Expected attempted Dawn save.')
+    expect(attemptedDawn.game.players.filter((player) => !player.alive)).toHaveLength(1)
+    expect(attemptedDawn.game.deathRecords).toHaveLength(1)
+    const failedPayload = JSON.stringify(attemptedDawn)
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(store.saveCount).toBe(2)
+    expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
+    expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toBeVisible()
+  })
+
+  it('shows the result once, continues atomically, and reaches public Dawn without replay', () => {
     const workflow = activeWorkflow([
       { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
       { roleId: ROLE_IDS.citizen, name: 'Citizen' },
@@ -286,18 +430,16 @@ describe('Phase 7A.1 App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     const targets = screen.getByRole('group', { name: 'Targets for Sheriff' })
     fireEvent.click(within(targets).getByRole('button', { name: /Citizen, Citizen/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Target / Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(screen.getByRole('heading', { name: 'Sheriff result' })).toBeVisible()
     expect(screen.getByText('Not suspicious')).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge result' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to next actor' }))
     expect(screen.queryByText('Not suspicious')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Complete Night Actions' }))
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toBeVisible()
     expect(screen.queryByText(/Sheriff result/)).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Dawn Announcement' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn Announcement' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn announcement' }))
     expect(screen.getByRole('heading', { name: 'A quiet Dawn' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /Acknowledge result/ })).toBeNull()
     expect(screen.queryByText(/Sheriff result|Detective result|Investigator result/)).toBeNull()
@@ -323,6 +465,36 @@ describe('Phase 7B App integration', () => {
     expect(screen.getByText('Casey').closest('li')).toHaveTextContent('Role hidden')
     expect(screen.getByRole('button', { name: 'Execute a player' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
+  })
+
+  it('keeps host roles transient, hidden by default, and absent after recovery', () => {
+    const firstRender = renderLoaded(dawnSession())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Begin day discussion' }))
+    expect(firstRender.store.saveCount).toBe(1)
+    expect(firstRender.container).not.toHaveTextContent('Host role: Mayor 1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show host-only roles' }))
+    expect(screen.getByText('Host role: Mayor 1')).toBeVisible()
+    expect(screen.getByText('Host role: Citizen')).toBeVisible()
+    expect(screen.getByText('Host role: Mayor 2')).toBeVisible()
+    expect(firstRender.store.saveCount).toBe(1)
+    expect(firstRender.store.lastSuccessfulEnvelope?.session).not.toHaveProperty('showHostRoles')
+    expect(JSON.stringify(firstRender.store.lastSuccessfulEnvelope?.session)).not.toMatch(
+      /hostOnlyRoles|hostRoleView|hostRoleVisibility/,
+    )
+
+    const saved = firstRender.store.lastSuccessfulEnvelope
+    if (saved === null) throw new Error('Expected saved day session.')
+    const restored = restorePersistedSessionEnvelopeV2(JSON.parse(JSON.stringify(saved)) as unknown)
+    if (!restored.ok) throw new Error('Expected day restoration.')
+    firstRender.unmount()
+    const recovered = renderLoaded(restored.value.session, firstRender.store)
+    expect(recovered.container).not.toHaveTextContent('Host role: Mayor 1')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    expect(screen.getByRole('button', { name: 'Show host-only roles' })).toBeVisible()
+    expect(recovered.container).not.toHaveTextContent('Host role: Mayor 1')
+    expect(firstRender.store.saveCount).toBe(1)
   })
 
   it('keeps Mayor candidates private, reveals independently, and guards rapid confirmation', () => {

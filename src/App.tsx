@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import {
   selectMayorRevealCandidates,
+  selectHostRoleDayView,
   selectPublicDayDiscussionView,
   type ConfirmMayorRevealWorkflowError,
 } from '@/application/day-discussion/index.ts'
@@ -30,7 +31,6 @@ import type {
   RoleDistributionError,
 } from '@/application/role-assignment/index.ts'
 import {
-  acknowledgeSessionNightOutcome,
   acknowledgeSessionExecutionerBriefing,
   assignSessionRoles,
   beginSessionDayDiscussion,
@@ -446,9 +446,6 @@ export default function App({
             onContinue={() => {
               runNightOperation(() => applyNightResult(continueSessionNight(session)))
             }}
-            onAcknowledgeOutcome={() => {
-              runNightOperation(() => applyNightResult(acknowledgeSessionNightOutcome(session)))
-            }}
           />
         )
       case 'night-resolution':
@@ -511,6 +508,7 @@ export default function App({
             onClearOutcomeError={() => {
               setDayOutcomeError(null)
             }}
+            getHostRoleView={() => selectHostRoleDayView(session)}
             onConfirmMayorReveal={(selectedPlayerId) =>
               runDayOperation(() => {
                 const result = confirmSessionMayorReveal(session, selectedPlayerId)
@@ -573,11 +571,7 @@ export default function App({
   }
 
   function applyNightResult(
-    result: ReturnType<
-      | typeof confirmSessionNightTarget
-      | typeof continueSessionNight
-      | typeof acknowledgeSessionNightOutcome
-    >,
+    result: ReturnType<typeof confirmSessionNightTarget | typeof continueSessionNight>,
   ): boolean {
     if (!result.ok) {
       if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
@@ -720,7 +714,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7C · Final day outcome and neutral consequences</p>
+        <p>Phase 7C.1 · Streamlined night, Dawn, and host day controls</p>
       </header>
 
       <main className="app-main">
@@ -932,18 +926,13 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'NO_VALID_TARGETS':
     case 'SEQUENCE_BOUNDARY':
     case 'ACTOR_ALREADY_COMPLETED':
-    case 'ACTOR_NOT_CURRENT':
     case 'ACTOR_BLOCKED':
     case 'MISSING_BLOCK_STATE':
     case 'INVALID_CURRENT_OUTCOME':
     case 'OUTCOME_ACTOR_MISMATCH':
-    case 'OUTCOME_RESULT_MISMATCH':
-    case 'OUTCOME_NOT_ACKNOWLEDGED':
-    case 'OUTCOME_ALREADY_ACKNOWLEDGED':
-    case 'INVALID_VISIT_LEDGER':
+    case 'PRIVATE_OUTCOME_PENDING':
     case 'DETECTIVE_ACTION_RECORDED_AS_VISIT':
     case 'IMMEDIATE_RESULT_DISAGREEMENT':
-    case 'PREVIOUS_STEP_SEALED':
     case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
       return getNightActionCollectionErrorMessage(error)
   }

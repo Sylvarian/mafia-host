@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 import type {
   NightCompletionError,
@@ -25,23 +25,10 @@ export function DawnPresentation({
   onBeginDayDiscussion,
 }: DawnPresentationProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const prepareButtonRef = useRef<HTMLButtonElement>(null)
-  const confirmButtonRef = useRef<HTMLButtonElement>(null)
-  const confirmationWasOpenRef = useRef(false)
-  const [confirmationOpen, setConfirmationOpen] = useState(false)
 
   useEffect(() => {
     headingRef.current?.focus()
   }, [view.status])
-
-  useEffect(() => {
-    if (confirmationOpen) {
-      confirmButtonRef.current?.focus()
-    } else if (confirmationWasOpenRef.current) {
-      prepareButtonRef.current?.focus()
-    }
-    confirmationWasOpenRef.current = confirmationOpen
-  }, [confirmationOpen])
 
   if (view.status === 'dawn') {
     const announcement = view.announcement
@@ -85,91 +72,24 @@ export function DawnPresentation({
 
   return (
     <section className="dawn-ready" aria-labelledby="dawn-ready-heading">
-      <div
-        className="dawn-ready__content"
-        aria-hidden={confirmationOpen || undefined}
-        inert={confirmationOpen ? true : undefined}
-      >
+      <div className="dawn-ready__content">
         <p className="dawn-ready__eyebrow">Host-only Dawn boundary</p>
         <h2 id="dawn-ready-heading" ref={headingRef} tabIndex={-1}>
           Night resolution complete
         </h2>
-        <p>
-          Ordinary deaths are still hidden. Make sure all players’ eyes are open before showing
-          Dawn.
+        <p>Ordinary deaths are still hidden.</p>
+        <p className="dawn-ready__guidance">
+          Make sure every player’s eyes are open before showing Dawn.
         </p>
         {error === null ? null : (
           <p className="dawn-error" role="alert">
             {getNightCompletionErrorMessage(error)}
           </p>
         )}
-        <button
-          ref={prepareButtonRef}
-          type="button"
-          className="button button--prepare"
-          disabled={confirmationOpen}
-          onClick={() => {
-            setConfirmationOpen(true)
-          }}
-        >
-          Prepare Dawn Announcement
+        <button type="button" className="button button--prepare" onClick={onPrepareDawn}>
+          Show Dawn announcement
         </button>
       </div>
-
-      {confirmationOpen ? (
-        <div
-          className="dawn-confirmation__backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setConfirmationOpen(false)
-            }
-          }}
-        >
-          <section
-            className="dawn-confirmation"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="dawn-confirmation-heading"
-            aria-describedby="dawn-confirmation-description"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault()
-                setConfirmationOpen(false)
-              }
-            }}
-          >
-            <p className="dawn-confirmation__eyebrow">Final privacy check</p>
-            <h3 id="dawn-confirmation-heading">Show the public Dawn announcement?</h3>
-            <p id="dawn-confirmation-description">
-              Confirm that every player’s eyes are open. This applies ordinary night deaths exactly
-              once.
-            </p>
-            <div className="dawn-confirmation__actions">
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => {
-                  setConfirmationOpen(false)
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                ref={confirmButtonRef}
-                type="button"
-                className="button button--prepare"
-                onClick={() => {
-                  onPrepareDawn()
-                  setConfirmationOpen(false)
-                }}
-              >
-                Show Dawn Announcement
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </section>
   )
 }

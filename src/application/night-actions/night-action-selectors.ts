@@ -1,10 +1,10 @@
 import type { PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
 import type { Faction } from '@/domain/roles/faction.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
-import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
 import {
-  confirmNightActionTarget,
+  validateCurrentNightActionTarget,
   type AwaitingNightOutcomeWorkflow,
   type CollectingNightActionsWorkflow,
   type ImmediateNightOutcome,
@@ -47,6 +47,7 @@ export type CurrentNightStepView =
         faction: Faction
         factionLabel: 'Mafia' | 'Town' | 'Neutral'
         hostPrompt: string
+        confirmationMode: 'advance-directly' | 'show-private-result'
         targetOptions: readonly NightTargetOption[]
       }>)
 
@@ -62,11 +63,6 @@ type ImmediateNightOutcomeViewBase = Readonly<{
 
 export type ImmediateNightOutcomeView =
   | (ImmediateNightOutcomeViewBase & Readonly<{ kind: 'blocked' }>)
-  | (ImmediateNightOutcomeViewBase &
-      Readonly<{
-        kind: 'action-recorded'
-        targetDisplayLabel: string
-      }>)
   | (ImmediateNightOutcomeViewBase &
       Readonly<{
         kind: 'sheriff-result'
@@ -134,13 +130,20 @@ export function selectCurrentNightStepView(
     faction: role.faction,
     factionLabel: formatFaction(role.faction),
     hostPrompt: role.nightAction.hostPrompt,
+    confirmationMode:
+      role.id === ROLE_IDS.sheriff ||
+      role.id === ROLE_IDS.investigator ||
+      role.id === ROLE_IDS.consigliere ||
+      role.id === ROLE_IDS.detective
+        ? 'show-private-result'
+        : 'advance-directly',
     targetOptions: Object.freeze(
       workflow.game.players.map((target) => {
         const targetRole = findRoleDefinition(target.role.roleId)
         if (targetRole === undefined) {
           throw new Error(`Target ${target.playerId} has an unknown role.`)
         }
-        const confirmationResult = confirmNightActionTarget(workflow, target.playerId)
+        const confirmationResult = validateCurrentNightActionTarget(workflow, target.playerId)
 
         return Object.freeze({
           playerId: target.playerId,
@@ -185,12 +188,6 @@ export function selectImmediateNightOutcomeView(
   switch (outcome.kind) {
     case 'blocked':
       return Object.freeze({ ...base, kind: outcome.kind })
-    case 'action-recorded':
-      return Object.freeze({
-        ...base,
-        kind: outcome.kind,
-        targetDisplayLabel: selectPlayerDisplayLabel(workflow.participants, outcome.targetPlayerId),
-      })
     case 'sheriff-result':
       return Object.freeze({
         ...base,

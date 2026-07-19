@@ -32,6 +32,75 @@
   line-height: 1;
 }
 
+.host-role-control {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 2px solid var(--warning-border);
+  border-radius: var(--radius-medium);
+  background: var(--warning-soft);
+}
+
+.host-role-view {
+  display: grid;
+  gap: 0.8rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.host-role-view__warning,
+.host-role-view__error {
+  margin: 0;
+  padding: 0.85rem;
+  border-radius: var(--radius-small);
+  font-weight: 850;
+}
+
+.host-role-view__warning {
+  border: 2px solid var(--danger-border);
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+}
+
+.host-role-view__error {
+  border: 1px solid var(--danger-border);
+  color: var(--danger-strong);
+  background: var(--surface-raised);
+}
+
+.host-role-view__players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.7rem;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.host-role-view__players li {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.host-role-view__players li > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.host-role-view__players span {
+  color: var(--text-muted);
+}
+
 .day-discussion__guidance {
   display: grid;
   gap: 0.75rem;
@@ -281,6 +350,7 @@
 }
 
 @media (max-width: 24.375rem) {
+  .host-role-control .button,
   .day-discussion__mayor-control .button,
   .day-discussion__outcome-actions .button,
   .mayor-reveal__actions .button {

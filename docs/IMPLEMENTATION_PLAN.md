@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7C extends schema V2 with explicit neutral-state authority and a post-day stage<br>
+**Persistence:** One versioned local active-session save; Phase 7C.1 retains schema V2 while canonicalizing obsolete night-flow states and rejecting persisted host-role visibility<br>
 **Backend:** None
 
 ---
@@ -410,7 +410,7 @@ Help the host communicate night outcomes using physical cards/paper.
 
 Build `features/dawn`:
 
-- Deliberate host-only privacy confirmation before Dawn
+- One deliberate direct public-Dawn control with an inline eyes-open reminder
 - Immutable provisional-death application
 - Minimal per-Doctor submitted-target history
 - Public-safe death summary
@@ -477,13 +477,23 @@ Phase 7A extended this V1 contract for Executioner state:
 Phase 7A.1 replaces current-night authority with schema V2:
 
 - Persist setup, distribution, Executioner briefing, sequential night, current immediate outcome,
-  explicit acknowledgement, final `night-resolution`, and public Dawn.
+  final `night-resolution`, and public Dawn.
 - Rebuild canonical sequence, actions, blocks, frames, visits, and immediate outcomes during
   restoration without randomness.
 - Reject old V1 in-progress night-action and private-result stages rather than guessing which
   information was communicated.
 - Migrate only safe V1 setup, distribution, Executioner briefing, and first-Dawn saves.
 - Write V2 before removing a migrated V1 key; preserve V1 when migration or V2 writing fails.
+
+Phase 7C.1 simplifies current V2 night semantics without changing the schema version:
+
+- New non-informational action records contain no fabricated private outcome and advance directly.
+- New informational and blocked records retain one visible current outcome until one atomic
+  continue-and-advance operation; no acknowledged-screen state is emitted.
+- Earlier V2 `Action recorded` and acknowledged states are canonicalized only from exact persisted
+  evidence; ambiguous advancement fails closed with a compatibility error.
+- Day host-role visibility and derived host-role objects are never emitted and are rejected if
+  injected into a save.
 
 ### Current V2 boundary
 
@@ -508,9 +518,9 @@ Phase 7E must update the persisted contract deliberately. No generic migration f
 - Envelope version, timestamp, shape, extra-field, immutability, and canonical ownership tests.
 - Browser adapter success and unavailable/read/write/quota/clear failure tests.
 - Round trips for every current authoritative workflow status.
-- Forged acknowledgement, cross-game, stage/phase, and private-Dawn rejection tests.
+- Forged/ambiguous legacy acknowledgement, cross-game, stage/phase, and private-Dawn rejection tests.
 - React refresh/remount coverage at setup, partial distribution, immediate outcomes,
-  acknowledgement, final night resolution, and Dawn.
+  blocked outcomes, final night resolution, and Dawn.
 - Strict Mode deduplication, save failure/retry, delete/cancel, invalid/incompatible recovery, and
   privacy regressions.
 
@@ -526,7 +536,7 @@ Phase 7E must update the persisted contract deliberately. No generic migration f
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7C implemented; Phase 7D and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7C.1 implemented; Phase 7D and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -610,7 +620,7 @@ recovery only.**
 - Establish Consort block state before later actors; blocked actors still wake and receive an
   explicit BLOCKED outcome but create no action, visit, result, or Doctor history.
 - Keep unconfirmed target selection in React only. Confirmation atomically records an action and
-  narrow immediate outcome; acknowledgement seals the actor before explicit continuation.
+  its narrow immediate outcome; Phase 7C.1 below streamlines the later host controls.
 - Reuse shared domain frame, Sheriff, investigation-group, visit, block, and Detective mechanics for
   immediate and final results.
 - Exclude every Detective action from the trackable visit ledger.
@@ -636,7 +646,7 @@ recovery only.**
 
 - No investigative role wakes twice.
 - Immediate results agree with final canonical resolution.
-- Previous outcomes disappear after acknowledgement and cannot be edited.
+- Previous outcomes disappear after the actor is sealed and cannot be edited.
 - Ordinary deaths remain hidden and unapplied until Dawn.
 - Recovery reveals no current actor, role, target, result, blocked state, or role composition before
   host continuation.
@@ -718,6 +728,46 @@ recovery only.**
 - Execution and proven first-Dawn conversion consequences are atomic, canonically ordered, and
   persistable without exposing private effects. Pending revenge remains unresolved and no faction
   victory is declared.
+
+### Phase 7C.1 — Night-flow click reduction, direct Dawn, and host-only day roles
+
+**Status: Implemented.**
+
+#### Work
+
+- Make Consort, Framer, Godfather, Serial Killer, and Doctor confirmation seal the action and
+  advance directly with **Confirm target and continue**.
+- Retain exactly one immediate result screen for Sheriff, Investigator, Consigliere, and Detective,
+  and one **BLOCKED** screen for blocked actors; one **Continue to next actor** seals and advances.
+- Remove fabricated `Action recorded` outcomes, the `Outcome acknowledged` screen, its production
+  workflow state, persistence fields, selectors, errors, and translations.
+- Replace the Dawn confirmation dialog with one direct **Show Dawn announcement** operation and an
+  inline public-reveal reminder.
+- Add a React-only, hidden-by-default day control backed by a separate sanitized host-role selector.
+  Converted Executioners show active Jester plus original Executioner, while targets, wins, and
+  pending revenge remain excluded.
+- Keep all Phase 7C day outcomes and neutral effects unchanged. Do not resolve revenge, evaluate
+  victory, present game over, or create a later-night loop.
+
+#### Tests
+
+- Direct advancement and action sealing for all five non-informational roles.
+- One result for all four informational roles; one blocked screen for every blockable role.
+- Refresh/recovery, failed-save retry, Strict Mode, and rapid repeated operation coverage for the
+  night and direct-Dawn boundaries.
+- Hidden/shown/hidden host-role UI, warning, active/original Executioner roles, dead players,
+  duplicate labels, persistence absence/rejection, public DOM privacy, and responsive ownership.
+- Current and legacy V2 canonicalization, ambiguity rejection, fabricated-result rejection, and
+  unchanged V1/Phase 7C compatibility.
+
+#### Acceptance criteria
+
+- New saves contain no non-informational private outcome or acknowledged-screen state.
+- Host-role data is built only while requested; visibility never enters `GameState`,
+  `ActiveAppSession`, recovery metadata, or persistence.
+- Dawn remains the same authoritative one-time application boundary, reached in one deliberate
+  host action.
+- Phase 7D remains unimplemented.
 
 ### Phase 7D — Victory evaluation and game over
 
@@ -990,7 +1040,7 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7C are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7C.1 are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
 When further Phase 7 work is explicitly requested, begin with Phase 7D. Do not start later

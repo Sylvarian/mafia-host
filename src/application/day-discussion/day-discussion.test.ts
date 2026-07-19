@@ -7,6 +7,7 @@ import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 import {
   confirmMayorRevealDuringDay,
   createDayDiscussionState,
+  selectHostRoleDayView,
   selectMayorRevealCandidates,
   selectPublicDayDiscussionView,
   type DayDiscussionState,
@@ -264,5 +265,72 @@ describe('private Mayor candidate selector', () => {
     expect(JSON.stringify(candidates)).not.toMatch(
       /Not Mayor|Dead|roleId|role-instance|faction|executionerTarget/,
     )
+  })
+})
+
+describe('host-only day role selector', () => {
+  it('derives every active role without exposing neutral mechanics or raw IDs', () => {
+    const state = createDayState([
+      { roleId: ROLE_IDS.executioner, name: 'Alex' },
+      { roleId: ROLE_IDS.citizen, name: 'Taylor', alive: false },
+      { roleId: ROLE_IDS.godfather, name: 'Alex' },
+      { roleId: ROLE_IDS.jester, name: 'Dead neutral', alive: false },
+    ])
+    const result = selectHostRoleDayView(state)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected host role view.')
+    expect(result.value.players).toEqual([
+      {
+        playerDisplayLabel: 'Alex (Player 1)',
+        status: 'alive',
+        activeRoleDisplayName: 'Jester',
+        originallyAssignedRoleDisplayName: 'Executioner',
+        publicRole: null,
+      },
+      {
+        playerDisplayLabel: 'Taylor',
+        status: 'dead',
+        activeRoleDisplayName: 'Citizen',
+        originallyAssignedRoleDisplayName: null,
+        publicRole: null,
+      },
+      {
+        playerDisplayLabel: 'Alex (Player 3)',
+        status: 'alive',
+        activeRoleDisplayName: 'Godfather',
+        originallyAssignedRoleDisplayName: null,
+        publicRole: null,
+      },
+      {
+        playerDisplayLabel: 'Dead neutral',
+        status: 'dead',
+        activeRoleDisplayName: 'Jester',
+        originallyAssignedRoleDisplayName: null,
+        publicRole: null,
+      },
+    ])
+    expect(JSON.stringify(result.value)).not.toMatch(
+      /player-|role-instance|gameId|targetPlayerId|personalWin|pendingJester|revenge|conversion/i,
+    )
+  })
+
+  it('shows an unconverted Executioner assignment without its target', () => {
+    const state = createDayState([
+      { roleId: ROLE_IDS.executioner, name: 'Executioner player' },
+      { roleId: ROLE_IDS.citizen, name: 'Eligible Town' },
+      { roleId: ROLE_IDS.godfather, name: 'Mafia player' },
+    ])
+    const result = selectHostRoleDayView(state)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected host role view.')
+    expect(result.value.players[0]).toMatchObject({
+      activeRoleDisplayName: 'Executioner',
+      originallyAssignedRoleDisplayName: null,
+    })
+    expect(result.value.players[0]).not.toHaveProperty('targetPlayerId')
+    expect(result.value.players[0]).not.toHaveProperty('personalWins')
+    expect(result.value.players[0]).not.toHaveProperty('pendingJesterRevenges')
   })
 })

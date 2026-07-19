@@ -144,8 +144,6 @@ type PersistedImmediateOutcomeBaseV2 = Readonly<{
 export type PersistedImmediateNightOutcomeV2 =
   | (PersistedImmediateOutcomeBaseV2 & Readonly<{ kind: 'blocked' }>)
   | (PersistedImmediateOutcomeBaseV2 &
-      Readonly<{ kind: 'action-recorded'; targetPlayerId: string }>)
-  | (PersistedImmediateOutcomeBaseV2 &
       Readonly<{
         kind: 'sheriff-result'
         targetPlayerId: string
@@ -180,8 +178,7 @@ export type PersistedSequentialNightStepV2 =
       actorPlayerId: string
       actorRoleId: string
       actorRoleInstanceId: string
-      outcome: PersistedImmediateNightOutcomeV2
-      acknowledged: boolean
+      outcome: Extract<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>>
     }>
   | Readonly<{
       stepIndex: number
@@ -190,8 +187,7 @@ export type PersistedSequentialNightStepV2 =
       actorRoleId: string
       actorRoleInstanceId: string
       action: PersistedSubmittedNightActionV2
-      outcome: PersistedImmediateNightOutcomeV2
-      acknowledged: boolean
+      outcome: Exclude<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>> | null
     }>
 
 export type PersistedNightResolutionV2 = Readonly<{
@@ -319,7 +315,7 @@ export type PersistedAppSessionV2 =
     }>
   | Readonly<{
       stage: 'sequential-night'
-      workflowStatus: 'collecting' | 'awaiting-outcome-acknowledgement' | 'outcome-acknowledged'
+      workflowStatus: 'collecting' | 'awaiting-outcome-acknowledgement'
       game: PersistedGameV2
       participants: readonly PersistedPlayerV2[]
       currentStepIndex: number
@@ -652,7 +648,6 @@ function copySequentialStep(record: SequentialNightStepRecord): PersistedSequent
         actorRoleId: record.actorRoleId,
         actorRoleInstanceId: record.actorRoleInstanceId,
         outcome: copyImmediateOutcome(record.outcome),
-        acknowledged: record.acknowledged,
       }
     : {
         stepIndex: record.stepIndex,
@@ -661,15 +656,20 @@ function copySequentialStep(record: SequentialNightStepRecord): PersistedSequent
         actorRoleId: record.actorRoleId,
         actorRoleInstanceId: record.actorRoleInstanceId,
         action: copyNightAction(record.action),
-        outcome: copyImmediateOutcome(record.outcome),
-        acknowledged: record.acknowledged,
+        outcome: record.outcome === null ? null : copyImmediateOutcome(record.outcome),
       }
 }
 
+function copyImmediateOutcome(
+  outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+): Extract<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>>
+function copyImmediateOutcome(
+  outcome: Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+): Exclude<PersistedImmediateNightOutcomeV2, Readonly<{ kind: 'blocked' }>>
+function copyImmediateOutcome(outcome: ImmediateNightOutcome): PersistedImmediateNightOutcomeV2
 function copyImmediateOutcome(outcome: ImmediateNightOutcome): PersistedImmediateNightOutcomeV2 {
   switch (outcome.kind) {
     case 'blocked':
-    case 'action-recorded':
     case 'sheriff-result':
       return { ...outcome }
     case 'investigation-result':

@@ -15,7 +15,6 @@ import {
   prepareDawnAnnouncement,
 } from '@/application/night-completion/index.ts'
 import {
-  acknowledgeImmediateNightOutcome,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -74,14 +73,6 @@ function confirmSuccessfully(
   return result.value
 }
 
-function acknowledgeSuccessfully(
-  workflow: ActiveNightActionCollectionWorkflow,
-): ActiveNightActionCollectionWorkflow {
-  const result = acknowledgeImmediateNightOutcome(workflow)
-  if (!result.ok) throw new Error(`Could not acknowledge: ${result.error.type}`)
-  return result.value
-}
-
 function immediateOutcomeSession(
   kind: 'blocked' | 'sheriff' | 'investigator' | 'detective',
 ): SequentialNightAppSession {
@@ -94,8 +85,6 @@ function immediateOutcomeSession(
       ]),
     )
     workflow = confirmSuccessfully(workflow, 1)
-    workflow = acknowledgeSuccessfully(workflow)
-    workflow = continueSuccessfully(workflow)
     if (workflow.status !== 'awaiting-outcome-acknowledgement') {
       throw new Error('Expected a blocked outcome.')
     }
@@ -133,8 +122,6 @@ function completeDoctorNight(nightNumber = 2) {
     startedWorkflow([{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.citizen }], nightNumber),
   )
   workflow = confirmSuccessfully(workflow, 1)
-  workflow = acknowledgeSuccessfully(workflow)
-  workflow = continueSuccessfully(workflow)
   if (workflow.status !== 'complete') throw new Error('Expected completed workflow.')
   return workflow
 }
@@ -245,25 +232,30 @@ describe('persisted sequential session V2', () => {
     },
   )
 
-  it('persists acknowledgement explicitly and removes the current private outcome', () => {
-    const session = immediateOutcomeSession('sheriff')
-    const acknowledgement = acknowledgeImmediateNightOutcome(session.workflow)
-    if (!acknowledgement.ok || acknowledgement.value.status === 'complete') {
-      throw new Error('Expected acknowledged Sheriff outcome.')
+  it('persists a result only while visible and advances without an acknowledged state', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow([
+        { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.investigator },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    workflow = confirmSuccessfully(workflow, 2)
+    expect(workflow.status).toBe('awaiting-outcome-acknowledgement')
+    workflow = continueSuccessfully(workflow)
+    if (workflow.status !== 'collecting') {
+      throw new Error('Expected direct advancement to Investigator collection.')
     }
-    const acknowledgedSession: SequentialNightAppSession = {
-      stage: 'sequential-night',
-      workflow: acknowledgement.value,
-    }
-    const persisted = toPersistedAppSessionV2(acknowledgedSession)
+    const session: SequentialNightAppSession = { stage: 'sequential-night', workflow }
+    const persisted = toPersistedAppSessionV2(session)
 
     expect(persisted).toMatchObject({
       stage: 'sequential-night',
-      workflowStatus: 'outcome-acknowledged',
+      workflowStatus: 'collecting',
       currentOutcome: null,
-      completedSteps: [{ acknowledged: true }],
     })
-    expect(roundTrip(acknowledgedSession)).toEqual(acknowledgedSession)
+    expect(JSON.stringify(persisted)).not.toMatch(/outcome-acknowledged|"acknowledged"/)
+    expect(roundTrip(session)).toEqual(session)
   })
 
   it('round-trips collecting positions after the Mafia overview and after a sealed actor', () => {
@@ -283,7 +275,6 @@ describe('persisted sequential session V2', () => {
     })
 
     workflow = confirmSuccessfully(workflow, 2)
-    workflow = acknowledgeSuccessfully(workflow)
     workflow = continueSuccessfully(workflow)
     if (workflow.status !== 'collecting') {
       throw new Error('Expected Investigator collection after the sealed Sheriff.')
@@ -308,6 +299,355 @@ describe('persisted sequential session V2', () => {
     expect(persisted).not.toMatch(
       /selectedTarget|unconfirmedTarget|focus|dialog|operationPending|guard/,
     )
+  })
+
+  it('canonicalizes a legacy non-informational result into direct advancement', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow([
+        { roleId: ROLE_IDS.framer },
+        { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    workflow = confirmSuccessfully(workflow, 2)
+    if (workflow.status !== 'collecting') {
+      throw new Error('Expected direct advancement to Sheriff collection.')
+    }
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+      ),
+    ) as {
+      session: {
+        workflowStatus: string
+        currentStepIndex: number
+        currentOutcome: unknown
+        completedSteps: {
+          stepIndex: number
+          actorPlayerId: string
+          actorRoleId: string
+          actorRoleInstanceId: string
+          action: { targetPlayerId: string }
+          outcome: unknown
+          acknowledged?: boolean
+        }[]
+      }
+    }
+    const framerStep = envelope.session.completedSteps[0]
+    if (framerStep === undefined) throw new Error('Expected persisted Framer action.')
+    const legacyOutcome = {
+      kind: 'action-recorded',
+      actorPlayerId: framerStep.actorPlayerId,
+      actorRoleId: framerStep.actorRoleId,
+      actorRoleInstanceId: framerStep.actorRoleInstanceId,
+      targetPlayerId: framerStep.action.targetPlayerId,
+    }
+    framerStep.outcome = legacyOutcome
+    framerStep.acknowledged = false
+    envelope.session.workflowStatus = 'awaiting-outcome-acknowledgement'
+    envelope.session.currentStepIndex = framerStep.stepIndex
+    envelope.session.currentOutcome = legacyOutcome
+
+    const restored = restorePersistedSessionEnvelopeV2(envelope)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+      throw new Error('Expected canonical sequential-night restoration.')
+    }
+    expect(restored.value.session.workflow.status).toBe('collecting')
+    expect(
+      restored.value.session.workflow.completedSteps.map((step) => [
+        step.actorRoleId,
+        step.outcome,
+      ]),
+    ).toEqual([[ROLE_IDS.framer, null]])
+    const currentStep =
+      restored.value.session.workflow.steps[restored.value.session.workflow.currentStepIndex]
+    expect(currentStep).toMatchObject({ type: 'actor-action' })
+    if (currentStep?.type !== 'actor-action') throw new Error('Expected a current actor.')
+    expect(
+      restored.value.session.workflow.game.players.find(
+        (player) => player.playerId === currentStep.actorPlayerId,
+      )?.role.roleId,
+    ).toBe(ROLE_IDS.sheriff)
+    expect(JSON.stringify(toPersistedAppSessionV2(restored.value.session))).not.toMatch(
+      /action-recorded|"acknowledged"/,
+    )
+  })
+
+  it('canonicalizes an acknowledged legacy private result without redisplaying it', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow([
+        { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.investigator },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    workflow = confirmSuccessfully(workflow, 2)
+    if (workflow.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Expected visible Sheriff result.')
+    }
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+      ),
+    ) as {
+      session: {
+        workflowStatus: string
+        currentStepIndex: number
+        currentOutcome: unknown
+        completedSteps: { acknowledged?: boolean }[]
+      }
+    }
+    const sheriffStep = envelope.session.completedSteps[0]
+    if (sheriffStep === undefined) throw new Error('Expected persisted Sheriff result.')
+    sheriffStep.acknowledged = true
+    envelope.session.workflowStatus = 'outcome-acknowledged'
+    envelope.session.currentOutcome = null
+
+    const restored = restorePersistedSessionEnvelopeV2(envelope)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+      throw new Error('Expected canonical sequential-night restoration.')
+    }
+    expect(restored.value.session.workflow).toMatchObject({
+      status: 'collecting',
+      currentOutcome: null,
+    })
+    expect(restored.value.session.workflow.completedSteps).toHaveLength(1)
+    const currentStep =
+      restored.value.session.workflow.steps[restored.value.session.workflow.currentStepIndex]
+    if (currentStep?.type !== 'actor-action') throw new Error('Expected Investigator actor.')
+    expect(
+      restored.value.session.workflow.game.players.find(
+        (player) => player.playerId === currentStep.actorPlayerId,
+      )?.role.roleId,
+    ).toBe(ROLE_IDS.investigator)
+  })
+
+  it('fails closed when legacy acknowledged-state evidence is ambiguous', () => {
+    const session = immediateOutcomeSession('sheriff')
+    const envelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(session, SAVED_AT)),
+    ) as {
+      session: {
+        workflowStatus: string
+        currentOutcome: unknown
+        completedSteps: { acknowledged?: boolean }[]
+      }
+    }
+    const sheriffStep = envelope.session.completedSteps[0]
+    if (sheriffStep === undefined) throw new Error('Expected persisted Sheriff result.')
+    sheriffStep.acknowledged = false
+    envelope.session.workflowStatus = 'outcome-acknowledged'
+    envelope.session.currentOutcome = null
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'PERSISTENCE_COMPATIBILITY_FAILURE',
+        reason: 'ambiguous-legacy-night-advancement',
+      },
+    })
+  })
+
+  it('requires persisted evidence for every intermediate legacy blocked step', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow([
+        { roleId: ROLE_IDS.consort },
+        { roleId: ROLE_IDS.consort },
+        { roleId: ROLE_IDS.doctor },
+        { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.investigator },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    workflow = confirmSuccessfully(workflow, 2)
+    if (workflow.status !== 'collecting') throw new Error('Expected second Consort collection.')
+    workflow = confirmSuccessfully(workflow, 3)
+    if (workflow.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Expected blocked Doctor outcome.')
+    }
+    workflow = continueSuccessfully(workflow)
+    if (workflow.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Expected blocked Sheriff outcome.')
+    }
+    workflow = continueSuccessfully(workflow)
+    if (workflow.status !== 'collecting') {
+      throw new Error('Expected Investigator collection after both blocked actors.')
+    }
+
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+      ),
+    ) as {
+      session: {
+        completedSteps: (
+          | {
+              stepIndex: number
+              status: 'action-confirmed'
+              actorPlayerId: string
+              actorRoleId: string
+              actorRoleInstanceId: string
+              action: { targetPlayerId: string }
+              outcome: unknown
+              acknowledged?: boolean
+            }
+          | {
+              stepIndex: number
+              status: 'blocked'
+              actorPlayerId: string
+              actorRoleId: string
+              actorRoleInstanceId: string
+              outcome: unknown
+              acknowledged?: boolean
+            }
+        )[]
+      }
+    }
+    const steps = envelope.session.completedSteps
+    for (const step of steps) {
+      step.acknowledged = true
+      if (step.status === 'action-confirmed') {
+        step.outcome = {
+          kind: 'action-recorded',
+          actorPlayerId: step.actorPlayerId,
+          actorRoleId: step.actorRoleId,
+          actorRoleInstanceId: step.actorRoleInstanceId,
+          targetPlayerId: step.action.targetPlayerId,
+        }
+      }
+    }
+
+    expect(
+      restorePersistedSessionEnvelopeV2(JSON.parse(JSON.stringify(envelope)) as unknown).ok,
+    ).toBe(true)
+
+    const missingIntermediate = JSON.parse(JSON.stringify(envelope)) as typeof envelope
+    const omittedIntermediate = missingIntermediate.session.completedSteps.splice(2, 1)[0]
+    expect(omittedIntermediate).toMatchObject({
+      status: 'blocked',
+      actorRoleId: ROLE_IDS.doctor,
+    })
+    expect(restorePersistedSessionEnvelopeV2(missingIntermediate)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_SEQUENTIAL_NIGHT_SESSION',
+        reason: 'restore-position-mismatch',
+      },
+    })
+
+    const missingTrailing = JSON.parse(JSON.stringify(envelope)) as typeof envelope
+    const omittedTrailing = missingTrailing.session.completedSteps.splice(3, 1)[0]
+    expect(omittedTrailing).toMatchObject({ status: 'blocked', actorRoleId: ROLE_IDS.sheriff })
+    expect(restorePersistedSessionEnvelopeV2(missingTrailing)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_SEQUENTIAL_NIGHT_SESSION',
+        reason: 'restore-position-mismatch',
+      },
+    })
+  })
+
+  it('rejects a fabricated informational result on a current non-informational action', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow([
+        { roleId: ROLE_IDS.framer },
+        { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.citizen },
+      ]),
+    )
+    workflow = confirmSuccessfully(workflow, 2)
+    if (workflow.status !== 'collecting') throw new Error('Expected Sheriff collection.')
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+      ),
+    ) as {
+      session: {
+        completedSteps: {
+          actorPlayerId: string
+          actorRoleId: string
+          actorRoleInstanceId: string
+          action: { targetPlayerId: string }
+          outcome: unknown
+        }[]
+      }
+    }
+    const framerStep = envelope.session.completedSteps[0]
+    if (framerStep === undefined) throw new Error('Expected persisted Framer action.')
+    framerStep.outcome = {
+      kind: 'sheriff-result',
+      actorPlayerId: framerStep.actorPlayerId,
+      actorRoleId: framerStep.actorRoleId,
+      actorRoleInstanceId: framerStep.actorRoleInstanceId,
+      targetPlayerId: framerStep.action.targetPlayerId,
+      status: 'not-suspicious',
+    }
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_SEQUENTIAL_NIGHT_SESSION',
+        reason: 'invalid-fabricated-non-informational-outcome',
+      },
+    })
+  })
+
+  it('rejects a missing informational result and a normal action fabricated for a blocked actor', () => {
+    const informational = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(immediateOutcomeSession('sheriff'), SAVED_AT),
+      ),
+    ) as {
+      session: {
+        currentOutcome: unknown
+        completedSteps: { outcome: unknown }[]
+      }
+    }
+    const sheriffStep = informational.session.completedSteps[0]
+    if (sheriffStep === undefined) throw new Error('Expected persisted Sheriff result.')
+    sheriffStep.outcome = null
+    informational.session.currentOutcome = null
+    expect(restorePersistedSessionEnvelopeV2(informational)).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_SEQUENTIAL_NIGHT_SESSION', reason: 'invalid-step' },
+    })
+
+    const blocked = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(immediateOutcomeSession('blocked'), SAVED_AT),
+      ),
+    ) as {
+      session: {
+        workflowStatus: string
+        currentOutcome: unknown
+        completedSteps: Record<string, unknown>[]
+      }
+    }
+    const blockedStep = blocked.session.completedSteps[1]
+    if (blockedStep === undefined) throw new Error('Expected persisted blocked Doctor.')
+    blocked.session.completedSteps[1] = {
+      stepIndex: blockedStep.stepIndex,
+      status: 'action-confirmed',
+      actorPlayerId: blockedStep.actorPlayerId,
+      actorRoleId: blockedStep.actorRoleId,
+      actorRoleInstanceId: blockedStep.actorRoleInstanceId,
+      action: {
+        actorPlayerId: blockedStep.actorPlayerId,
+        actorRoleInstanceId: blockedStep.actorRoleInstanceId,
+        actorRoleId: blockedStep.actorRoleId,
+        actionKind: 'protect',
+        targetPlayerId: 'player-3',
+      },
+      outcome: null,
+    }
+    blocked.session.workflowStatus = 'collecting'
+    blocked.session.currentOutcome = null
+    expect(restorePersistedSessionEnvelopeV2(blocked)).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_SEQUENTIAL_NIGHT_SESSION', reason: 'invalid-step' },
+    })
   })
 
   it('rejects forged immediate results, out-of-order data, and runtime extra fields', () => {
@@ -341,7 +681,10 @@ describe('persisted sequential session V2', () => {
     reorderedStep.stepIndex += 1
     expect(restorePersistedSessionEnvelopeV2(outOfOrder)).toMatchObject({
       ok: false,
-      error: { type: 'INVALID_SEQUENTIAL_NIGHT_SESSION', reason: 'invalid-order' },
+      error: {
+        type: 'INVALID_SEQUENTIAL_NIGHT_SESSION',
+        reason: 'restore-position-mismatch',
+      },
     })
 
     const extraField = JSON.parse(
@@ -561,6 +904,10 @@ describe('persisted Phase 7B day discussion V2', () => {
     ['dawnAnnouncement', { outcome: 'no-deaths', nightNumber: 1 }],
     ['mayorDialogOpen', true],
     ['selectedMayorPlayerId', 'player-1'],
+    ['showHostRoles', true],
+    ['hostOnlyRoles', []],
+    ['hostRoleView', {}],
+    ['hostRoleVisibility', 'shown'],
   ] as const)('rejects stale or private day field %s', (field, value) => {
     const envelope = JSON.parse(
       JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),

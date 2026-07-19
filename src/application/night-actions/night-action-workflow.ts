@@ -42,11 +42,6 @@ export type ImmediateNightOutcome =
   | (ImmediateOutcomeBase & Readonly<{ kind: 'blocked' }>)
   | (ImmediateOutcomeBase &
       Readonly<{
-        kind: 'action-recorded'
-        targetPlayerId: PlayerId
-      }>)
-  | (ImmediateOutcomeBase &
-      Readonly<{
         kind: 'sheriff-result'
         targetPlayerId: PlayerId
         status: SheriffResult['status']
@@ -75,7 +70,6 @@ export type SequentialNightStepRecord =
       actorRoleId: RoleId
       actorRoleInstanceId: RoleInstanceId
       outcome: Extract<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>
-      acknowledged: boolean
     }>
   | Readonly<{
       stepIndex: number
@@ -84,8 +78,7 @@ export type SequentialNightStepRecord =
       actorRoleId: RoleId
       actorRoleInstanceId: RoleInstanceId
       action: SubmittedNightAction
-      outcome: Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>
-      acknowledged: boolean
+      outcome: Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>> | null
     }>
 
 type ActiveSequentialNightFields = Readonly<{
@@ -112,11 +105,6 @@ export type NightActionCollectionWorkflow =
         status: 'awaiting-outcome-acknowledgement'
         currentOutcome: ImmediateNightOutcome
       }>)
-  | (ActiveSequentialNightFields &
-      Readonly<{
-        status: 'outcome-acknowledged'
-        currentOutcome: null
-      }>)
   | (Omit<ActiveSequentialNightFields, 'currentStepIndex'> &
       Readonly<{
         status: 'complete'
@@ -140,18 +128,12 @@ export type CompleteNightActionsWorkflow = Extract<
   Readonly<{ status: 'complete' }>
 >
 
-export type AcknowledgedNightOutcomeWorkflow = Extract<
-  NightActionCollectionWorkflow,
-  Readonly<{ status: 'outcome-acknowledged' }>
->
-
 export type ActiveNightActionCollectionWorkflow = Exclude<
   NightActionCollectionWorkflow,
   Readonly<{ status: 'not-started' }>
 >
 
-export type NightActionCollectionOperation =
-  'begin-first-night' | 'confirm-target' | 'continue' | 'acknowledge-outcome'
+export type NightActionCollectionOperation = 'begin-first-night' | 'confirm-target' | 'continue'
 
 export type NightActionCollectionError =
   | NightSequenceError
@@ -183,10 +165,6 @@ export type NightActionCollectionError =
       actorRoleInstanceId: RoleInstanceId
     }>
   | Readonly<{
-      type: 'ACTOR_NOT_CURRENT'
-      actorRoleInstanceId: RoleInstanceId
-    }>
-  | Readonly<{
       type: 'ACTOR_BLOCKED'
       actorRoleInstanceId: RoleInstanceId
     }>
@@ -202,16 +180,9 @@ export type NightActionCollectionError =
       type: 'OUTCOME_ACTOR_MISMATCH'
       actorRoleInstanceId: RoleInstanceId
     }>
-  | Readonly<{
-      type: 'OUTCOME_RESULT_MISMATCH'
-      actorRoleInstanceId: RoleInstanceId
-    }>
-  | Readonly<{ type: 'OUTCOME_NOT_ACKNOWLEDGED' }>
-  | Readonly<{ type: 'OUTCOME_ALREADY_ACKNOWLEDGED' }>
-  | Readonly<{ type: 'INVALID_VISIT_LEDGER' }>
+  | Readonly<{ type: 'PRIVATE_OUTCOME_PENDING' }>
   | Readonly<{ type: 'DETECTIVE_ACTION_RECORDED_AS_VISIT' }>
   | Readonly<{ type: 'IMMEDIATE_RESULT_DISAGREEMENT' }>
-  | Readonly<{ type: 'PREVIOUS_STEP_SEALED' }>
   | Readonly<{
       type: 'INVALID_IMMEDIATE_OUTCOME_ROLE'
       actorRoleId: RoleId
@@ -338,10 +309,7 @@ export function continueNightActionCollection(
   workflow: NightActionCollectionWorkflow,
 ): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
   if (workflow.status === 'awaiting-outcome-acknowledgement') {
-    return fail({ type: 'OUTCOME_NOT_ACKNOWLEDGED' })
-  }
-  if (workflow.status === 'outcome-acknowledged') {
-    return advanceAfterAcknowledgedOutcome(workflow)
+    return advanceAfterPrivateOutcome(workflow)
   }
   if (workflow.status !== 'collecting') {
     return invalidWorkflowState('continue', workflow.status)
@@ -365,9 +333,59 @@ export function continueNightActionCollection(
 export function confirmNightActionTarget(
   workflow: NightActionCollectionWorkflow,
   targetPlayerId: PlayerId,
-): DomainResult<AwaitingNightOutcomeWorkflow, NightActionCollectionError> {
+): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
+  const actionResult = validateCurrentNightActionTarget(workflow, targetPlayerId)
+  if (!actionResult.ok) {
+    return actionResult
+  }
+  if (workflow.status !== 'collecting') {
+    return invalidWorkflowState('confirm-target', workflow.status)
+  }
+
+  const confirmedActions = selectConfirmedActions(workflow.completedSteps)
+  const immediateOutcomeResult = resolveImmediateOutcome(
+    workflow.game,
+    [...confirmedActions, actionResult.value],
+    actionResult.value,
+  )
+  if (!immediateOutcomeResult.ok) {
+    return immediateOutcomeResult
+  }
+  const record: SequentialNightStepRecord = deepFreeze({
+    stepIndex: workflow.currentStepIndex,
+    status: 'action-confirmed',
+    actorPlayerId: actionResult.value.actorPlayerId,
+    actorRoleId: actionResult.value.actorRoleId,
+    actorRoleInstanceId: actionResult.value.actorRoleInstanceId,
+    action: actionResult.value,
+    outcome: immediateOutcomeResult.value,
+  })
+
+  const confirmedWorkflow: CollectingNightActionsWorkflow = deepFreeze({
+    ...workflow,
+    completedSteps: [...workflow.completedSteps, record],
+    currentOutcome: null,
+  })
+
+  if (immediateOutcomeResult.value === null) {
+    return advanceAfterCurrentStep(confirmedWorkflow)
+  }
+
+  return succeed(
+    deepFreeze({
+      ...confirmedWorkflow,
+      status: 'awaiting-outcome-acknowledgement',
+      currentOutcome: immediateOutcomeResult.value,
+    }),
+  )
+}
+
+export function validateCurrentNightActionTarget(
+  workflow: NightActionCollectionWorkflow,
+  targetPlayerId: PlayerId,
+): DomainResult<SubmittedNightAction, NightActionCollectionError> {
   if (workflow.status === 'awaiting-outcome-acknowledgement') {
-    return fail({ type: 'OUTCOME_NOT_ACKNOWLEDGED' })
+    return fail({ type: 'PRIVATE_OUTCOME_PENDING' })
   }
   if (workflow.status !== 'collecting') {
     return invalidWorkflowState('confirm-target', workflow.status)
@@ -412,45 +430,12 @@ export function confirmNightActionTarget(
   if (!actionResult.ok) {
     return actionResult
   }
-
-  const immediateOutcomeResult = resolveImmediateOutcome(
-    workflow.game,
-    [...confirmedActions, actionResult.value],
-    actionResult.value,
-  )
-  if (!immediateOutcomeResult.ok) {
-    return immediateOutcomeResult
-  }
-  const record: SequentialNightStepRecord = deepFreeze({
-    stepIndex: workflow.currentStepIndex,
-    status: 'action-confirmed',
-    actorPlayerId: actionResult.value.actorPlayerId,
-    actorRoleId: actionResult.value.actorRoleId,
-    actorRoleInstanceId: actionResult.value.actorRoleInstanceId,
-    action: actionResult.value,
-    outcome: immediateOutcomeResult.value,
-    acknowledged: false,
-  })
-
-  return succeed(
-    deepFreeze({
-      ...workflow,
-      status: 'awaiting-outcome-acknowledgement',
-      completedSteps: [...workflow.completedSteps, record],
-      currentOutcome: immediateOutcomeResult.value,
-    }),
-  )
+  return actionResult
 }
 
-export function acknowledgeImmediateNightOutcome(
-  workflow: NightActionCollectionWorkflow,
+function advanceAfterPrivateOutcome(
+  workflow: AwaitingNightOutcomeWorkflow,
 ): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
-  if (workflow.status !== 'awaiting-outcome-acknowledgement') {
-    return workflow.status === 'collecting'
-      ? fail({ type: 'OUTCOME_ALREADY_ACKNOWLEDGED' })
-      : invalidWorkflowState('acknowledge-outcome', workflow.status)
-  }
-
   const currentStep = getCurrentStep(workflow)
   if (
     currentStep.type !== 'actor-action' ||
@@ -466,7 +451,9 @@ export function acknowledgeImmediateNightOutcome(
   if (
     currentRecord === undefined ||
     currentRecord.actorRoleInstanceId !== workflow.currentOutcome.actorRoleInstanceId ||
-    currentRecord.acknowledged
+    currentRecord.stepIndex !== workflow.currentStepIndex ||
+    currentRecord.outcome === null ||
+    !immediateOutcomesMatch(currentRecord.outcome, workflow.currentOutcome)
   ) {
     return fail({
       type: 'INVALID_CURRENT_OUTCOME',
@@ -474,41 +461,13 @@ export function acknowledgeImmediateNightOutcome(
     })
   }
 
-  const acknowledgedRecord = deepFreeze({ ...currentRecord, acknowledged: true })
-  const acknowledgedSteps = Object.freeze([
-    ...workflow.completedSteps.slice(0, -1),
-    acknowledgedRecord,
-  ])
-  return succeed(
-    deepFreeze({
-      ...workflow,
-      status: 'outcome-acknowledged',
-      completedSteps: acknowledgedSteps,
-      currentOutcome: null,
-    }),
-  )
-}
-
-function advanceAfterAcknowledgedOutcome(
-  workflow: AcknowledgedNightOutcomeWorkflow,
-): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
-  const nextIndex = workflow.currentStepIndex + 1
-  if (nextIndex >= workflow.steps.length) {
-    return completeNightActionCollection(workflow)
-  }
-
-  return advanceToStep(
-    deepFreeze({
-      ...workflow,
-      status: 'collecting',
-      currentOutcome: null,
-    }),
-    nextIndex,
+  return advanceAfterCurrentStep(
+    deepFreeze({ ...workflow, status: 'collecting', currentOutcome: null }),
   )
 }
 
 function completeNightActionCollection(
-  workflow: CollectingNightActionsWorkflow | AcknowledgedNightOutcomeWorkflow,
+  workflow: CollectingNightActionsWorkflow,
 ): DomainResult<CompleteNightActionsWorkflow, NightActionCollectionError> {
   const collectedResult = createCollectedNightActions(
     workflow.game,
@@ -528,6 +487,15 @@ function completeNightActionCollection(
       collectedActions: collectedResult.value,
     }),
   )
+}
+
+function advanceAfterCurrentStep(
+  workflow: CollectingNightActionsWorkflow,
+): DomainResult<ActiveNightActionCollectionWorkflow, NightActionCollectionError> {
+  const nextIndex = workflow.currentStepIndex + 1
+  return nextIndex >= workflow.steps.length
+    ? completeNightActionCollection(workflow)
+    : advanceToStep(workflow, nextIndex)
 }
 
 function advanceToStep(
@@ -577,7 +545,6 @@ function advanceToStep(
     actorRoleId: actor.role.roleId,
     actorRoleInstanceId: actor.role.instanceId,
     outcome,
-    acknowledged: false,
   })
 
   return succeed(
@@ -595,7 +562,7 @@ function resolveImmediateOutcome(
   confirmedActions: readonly SubmittedNightAction[],
   currentAction: SubmittedNightAction,
 ): DomainResult<
-  Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>>,
+  Exclude<ImmediateNightOutcome, Readonly<{ kind: 'blocked' }>> | null,
   NightActionCollectionError
 > {
   const base = Object.freeze({
@@ -610,13 +577,7 @@ function resolveImmediateOutcome(
     case ROLE_IDS.godfather:
     case ROLE_IDS.serialKiller:
     case ROLE_IDS.doctor:
-      return succeed(
-        Object.freeze({
-          ...base,
-          kind: 'action-recorded',
-          targetPlayerId: currentAction.targetPlayerId,
-        }),
-      )
+      return succeed(null)
     case ROLE_IDS.sheriff: {
       const frames = resolveFrames(game, confirmedActions)
       const result = resolveSheriffResults(game, confirmedActions, frames)
@@ -684,6 +645,47 @@ function resolveImmediateOutcome(
         type: 'INVALID_IMMEDIATE_OUTCOME_ROLE',
         actorRoleId: currentAction.actorRoleId,
       })
+  }
+}
+
+function immediateOutcomesMatch(
+  left: ImmediateNightOutcome,
+  right: ImmediateNightOutcome,
+): boolean {
+  if (
+    left.kind !== right.kind ||
+    left.actorPlayerId !== right.actorPlayerId ||
+    left.actorRoleId !== right.actorRoleId ||
+    left.actorRoleInstanceId !== right.actorRoleInstanceId
+  ) {
+    return false
+  }
+
+  switch (left.kind) {
+    case 'blocked':
+      return true
+    case 'sheriff-result':
+      return (
+        right.kind === left.kind &&
+        left.targetPlayerId === right.targetPlayerId &&
+        left.status === right.status
+      )
+    case 'investigation-result':
+      return (
+        right.kind === left.kind &&
+        left.targetPlayerId === right.targetPlayerId &&
+        left.investigationRole === right.investigationRole &&
+        left.group.id === right.group.id
+      )
+    case 'detective-result':
+      return (
+        right.kind === left.kind &&
+        left.targetPlayerId === right.targetPlayerId &&
+        (left.result.status === 'visited-nobody'
+          ? right.result.status === 'visited-nobody'
+          : right.result.status === 'visited-player' &&
+            left.result.visitedPlayerId === right.result.visitedPlayerId)
+      )
   }
 }
 

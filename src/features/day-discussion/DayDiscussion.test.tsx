@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import type {
+  HostRoleDayView,
   MayorRevealCandidateView,
   PublicDayDiscussionView,
 } from '@/application/day-discussion/index.ts'
@@ -124,6 +125,68 @@ describe('public day discussion UI', () => {
     expect(screen.getByText('No players remain alive.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Mayor reveal unavailable' })).toBeDisabled()
     expect(screen.queryByText(/winner|victory/i)).toBeNull()
+  })
+})
+
+describe('temporary host-only role view', () => {
+  it('constructs roles only when requested, warns clearly, and removes them when hidden', () => {
+    const hostView: HostRoleDayView = {
+      players: [
+        {
+          playerDisplayLabel: 'Alex (Player 1)',
+          status: 'alive',
+          activeRoleDisplayName: 'Jester',
+          originallyAssignedRoleDisplayName: 'Executioner',
+          publicRole: null,
+        },
+        {
+          playerDisplayLabel: 'Taylor',
+          status: 'dead',
+          activeRoleDisplayName: 'Doctor',
+          originallyAssignedRoleDisplayName: null,
+          publicRole: { displayName: 'Doctor', status: 'revealed-on-death' },
+        },
+      ],
+    }
+    const getHostRoleView = vi.fn(() => ({ ok: true as const, value: hostView }))
+    const { container } = render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        revealError={null}
+        onConfirmMayorReveal={() => true}
+        onClearRevealError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+        getHostRoleView={getHostRoleView}
+      />,
+    )
+
+    expect(getHostRoleView).not.toHaveBeenCalled()
+    expect(container).not.toHaveTextContent('Host role: Jester')
+    expect(container).not.toHaveTextContent('Originally assigned: Executioner')
+    expect(container).not.toHaveTextContent('HOST-ONLY VIEW')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show host-only roles' }))
+
+    expect(getHostRoleView).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Hide host-only roles' })).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'HOST-ONLY VIEW — hide roles before showing this screen to players.',
+    )
+    expect(screen.getByText('Host role: Jester')).toBeVisible()
+    expect(screen.getByText('Originally assigned: Executioner')).toBeVisible()
+    expect(screen.getByText('Host role: Doctor')).toBeVisible()
+    expect(screen.getByText('Public role: Doctor')).toBeVisible()
+    expect(container.innerHTML).not.toMatch(
+      /private-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide host-only roles' }))
+
+    expect(screen.getByRole('button', { name: 'Show host-only roles' })).toBeVisible()
+    expect(container).not.toHaveTextContent('Host role: Jester')
+    expect(container).not.toHaveTextContent('Originally assigned: Executioner')
+    expect(container).not.toHaveTextContent('HOST-ONLY VIEW')
   })
 })
 
@@ -389,5 +452,8 @@ describe('day discussion responsive ownership', () => {
     expect(css).toContain('@media (max-width: 20rem)')
     expect(css).toContain('min-height: 2.75rem')
     expect(css).toContain('min-width: 0')
+    expect(css).toMatch(
+      /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*14rem\),\s*1fr\)\)/,
+    )
   })
 })

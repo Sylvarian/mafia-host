@@ -1,6 +1,7 @@
 export {
   confirmMayorRevealDuringDay,
   createDayDiscussionState,
+  selectHostRoleDayView,
   selectMayorRevealCandidates,
   selectPublicDayDiscussionView,
   validateDayDiscussionState,
@@ -9,6 +10,9 @@ export type {
   BeginDayDiscussionWorkflowError,
   ConfirmMayorRevealWorkflowError,
   DayDiscussionState,
+  HostRoleDayPlayerView,
+  HostRoleDayView,
+  HostRoleDayViewError,
   InvalidDayDiscussionStateError,
   MayorRevealCandidateView,
   PublicDayDiscussionView,

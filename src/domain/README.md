@@ -81,3 +81,10 @@ of owner alive/dead state, and creates one Jester win/revenge where applicable. 
 non-execution deaths convert all affected Executioners exactly once. Selectors derive active
 Jester behavior without changing the immutable original Executioner assignment. Revenge
 resolution, faction victory, game over, and the next night remain outside the domain boundary.
+
+Phase 7C.1 changes host workflow only and adds no domain state or game rule. Non-informational
+night actions remain ordinary authoritative submitted actions, blocked actors still produce no
+action or visit, and Dawn still uses the same one-time night-application boundary. The application
+host-role selector reuses the canonical active-role derivation, so a converted Executioner is
+displayed as active Jester while the original Executioner assignment remains immutable. Host-role
+visibility is not represented in `GameState`.

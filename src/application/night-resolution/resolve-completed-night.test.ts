@@ -61,39 +61,36 @@ describe('resolveCompletedNightWorkflow', () => {
     })
   })
 
-  it.each(['collecting', 'outcome-acknowledged'] as const)(
-    'rejects a runtime %s workflow even when a collected batch is injected',
-    (status) => {
-      const fixture = createResolutionFixture(
-        [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
-        [1, null],
-      )
-      const complete = toCompleteWorkflow(fixture)
-      const incomplete: NightActionCollectionWorkflow = {
-        status,
-        game: complete.game,
-        participants: complete.participants,
-        steps: complete.steps,
-        previousTargets: complete.previousTargets,
-        currentStepIndex: 0,
-        completedSteps: Object.freeze([]),
-        currentOutcome: null,
-      }
+  it('rejects a runtime collecting workflow even when a collected batch is injected', () => {
+    const fixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      [1, null],
+    )
+    const complete = toCompleteWorkflow(fixture)
+    const incomplete: NightActionCollectionWorkflow = {
+      status: 'collecting',
+      game: complete.game,
+      participants: complete.participants,
+      steps: complete.steps,
+      previousTargets: complete.previousTargets,
+      currentStepIndex: 0,
+      completedSteps: Object.freeze([]),
+      currentOutcome: null,
+    }
 
-      Object.defineProperty(incomplete, 'collectedActions', {
-        value: complete.collectedActions,
-        enumerable: true,
-      })
+    Object.defineProperty(incomplete, 'collectedActions', {
+      value: complete.collectedActions,
+      enumerable: true,
+    })
 
-      expect(resolveCompletedNightWorkflow(incomplete)).toEqual({
-        ok: false,
-        error: {
-          type: 'NIGHT_ACTION_WORKFLOW_NOT_COMPLETE',
-          status,
-        },
-      })
-    },
-  )
+    expect(resolveCompletedNightWorkflow(incomplete)).toEqual({
+      ok: false,
+      error: {
+        type: 'NIGHT_ACTION_WORKFLOW_NOT_COMPLETE',
+        status: 'collecting',
+      },
+    })
+  })
 })
 
 function toCompleteWorkflow(fixture: ResolutionFixture): CompleteNightActionsWorkflow {

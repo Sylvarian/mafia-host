@@ -6,7 +6,7 @@ import { nightFixturePlayerId } from '../../../tests/support/night-action-fixtur
 import { DawnPresentation } from './DawnPresentation.tsx'
 
 describe('public Dawn presentation', () => {
-  it('keeps deaths hidden behind a deliberate confirmation boundary', () => {
+  it('keeps deaths hidden behind one deliberate direct announcement control', () => {
     const onPrepareDawn = vi.fn()
     const view: NightCompletionView = { status: 'ready-for-dawn' }
     render(
@@ -21,10 +21,12 @@ describe('public Dawn presentation', () => {
 
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
     expect(screen.queryByText(/died during the night/i)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Dawn Announcement' }))
-    expect(screen.getByRole('alertdialog')).toBeVisible()
-    expect(onPrepareDawn).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn Announcement' }))
+    expect(
+      screen.getByText('Make sure every player’s eyes are open before showing Dawn.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show Dawn announcement' }))
     expect(onPrepareDawn).toHaveBeenCalledTimes(1)
   })
 

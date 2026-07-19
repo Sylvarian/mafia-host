@@ -65,26 +65,18 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return 'This actor has no valid living target. Correct the game state before continuing.'
     case 'SEQUENCE_BOUNDARY':
       return 'The night sequence is already at its final step.'
-    case 'ACTOR_NOT_CURRENT':
-      return 'Only the currently awake actor may act.'
     case 'ACTOR_BLOCKED':
       return 'This actor is blocked and cannot select a target.'
     case 'MISSING_BLOCK_STATE':
       return 'The current role-block state could not be established safely.'
     case 'INVALID_CURRENT_OUTCOME':
     case 'OUTCOME_ACTOR_MISMATCH':
-    case 'OUTCOME_RESULT_MISMATCH':
     case 'IMMEDIATE_RESULT_DISAGREEMENT':
       return 'The private outcome does not match the confirmed sequential-night state.'
-    case 'OUTCOME_NOT_ACKNOWLEDGED':
-      return 'Acknowledge the current private outcome before continuing.'
-    case 'OUTCOME_ALREADY_ACKNOWLEDGED':
-      return 'There is no unacknowledged private outcome on screen.'
-    case 'INVALID_VISIT_LEDGER':
+    case 'PRIVATE_OUTCOME_PENDING':
+      return 'Continue from the current private outcome before confirming another target.'
     case 'DETECTIVE_ACTION_RECORDED_AS_VISIT':
       return 'The Detective visit ledger is invalid and the result was not shown.'
-    case 'PREVIOUS_STEP_SEALED':
-      return 'That earlier action is sealed and cannot be changed.'
     case 'INVALID_IMMEDIATE_OUTCOME_ROLE':
       return 'The current role has no supported immediate-outcome rule.'
   }

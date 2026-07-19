@@ -325,14 +325,6 @@
   justify-self: start;
 }
 
-.outcome-acknowledged {
-  border-top-color: var(--success);
-}
-
-.outcome-acknowledged > p:not(.night-runner__eyebrow, .night-runner__error) {
-  color: var(--text-muted);
-}
-
 @media (max-width: 42rem) {
   .night-runner__header,
   .night-runner__actions,

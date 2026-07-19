@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7C<br>
+**Status:** Authoritative rules finalized through R-012; implementation complete through Phase 7C.1<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -113,9 +113,17 @@ not retain it, and one host tab is recommended because tabs are not synchronised
 Phase 7A.1 uses schema V2 because the sequential immediate-result workflow cannot safely share the
 old collect-all/private-replay semantics. V2 persists setup, distribution, Executioner briefing,
 the sequential current step and canonical completed records, the current narrow immediate outcome,
-explicit acknowledgement state, the final `night-resolution` boundary, and public Dawn. It never
+the final `night-resolution` boundary, and public Dawn. Phase 7C.1 immediate outcomes exist only
+for a current informational or blocked screen; non-informational actions advance immediately and
+new saves contain no separate acknowledged-screen state. V2 never
 persists temporary target selection, focus, dialogs, operation guards, derived labels, display
 prose, colors, or an old private-result queue.
+
+Earlier V2 non-informational `Action recorded` records are validated and canonicalized to the next
+actor. Earlier acknowledged-result states advance only when the persisted record proves that the
+exact result was acknowledged and the next canonical position is unambiguous. Ambiguous evidence
+fails closed rather than redisplaying, guessing, or skipping. Day host-role visibility and derived
+host-role view objects are neither emitted nor accepted as authority.
 
 Narrow V1 migration is permitted only for setup, distribution, Executioner briefing, and a valid
 first-Dawn save. Old in-progress night-action and private-result-replay saves are rejected with
@@ -649,9 +657,12 @@ alive/availability state. Duplicate names use roster positions such as `Alex (Pl
 display raw technical IDs. Faction color is a secondary cue only.
 
 Target selection is temporary React state. It does not commit, resolve, autosave, consume
-randomness, or affect later actors. **Confirm Target / Continue** atomically records the action and
-its immediate outcome. Confirmation is final once the outcome is acknowledged; earlier actors
-cannot be edited after later private information may depend on them.
+randomness, or affect later actors. For Consort, Framer, Godfather, Serial Killer, and Doctor,
+**Confirm target and continue** atomically records and seals the action and makes the next actor
+current. For Sheriff, Investigator, Consigliere, and Detective, **Confirm target** records the
+action and its private result; the single **Continue to next actor** operation seals that result
+and advances atomically. Earlier actors cannot be edited after later private information may
+depend on them.
 
 Confirmed Consort actions establish block state before later actors wake. A blocked non-Consort
 still receives its normal wake step but sees:
@@ -667,23 +678,25 @@ result, or Doctor previous-target record. Consorts never receive this blocked ou
 are immune. Multiple Consorts targeting one non-Consort create one blocked state; mutual
 Consort-on-Consort targeting produces two visits and both Consorts act.
 
+The blocked screen has exactly one **Continue to next actor** control. It has no target selection,
+fabricated action, or second acknowledgement screen.
+
 ## 11.4 Immediate outcomes and Detective timing
 
 Only these immediate outcome categories exist:
 
 - Blocked
-- Action recorded
 - Sheriff result
 - Investigator group result
 - Consigliere group result
 - Detective result
 
-Consort, Framer, Godfather, Serial Killer, and Doctor receive only generic **Action recorded**
-confirmation. Attacks, protection success, immunity, collisions, and ordinary deaths are not
-revealed. Sheriff and permanent investigation groups use frames already confirmed earlier in the
-same sequence. The host shows one outcome at a time, acknowledges it, removes it from the rendered
-DOM, and explicitly continues. The current heading receives focus and the privacy warning remains
-visible.
+Consort, Framer, Godfather, Serial Killer, and Doctor receive no private result screen. Attacks,
+protection success, immunity, collisions, and ordinary deaths are not revealed. Sheriff and
+permanent investigation groups use frames already confirmed earlier in the same sequence. The host
+sees exactly one current private result and one **Continue to next actor** control. Continuing
+removes the result from the rendered DOM and advances; there is no `Outcome acknowledged` screen.
+The current heading receives focus and the privacy warning remains visible.
 
 All Detectives act after every other actionable role. A Detective immediately sees the target's
 confirmed non-Detective visit, or “visited nobody.” Trackable visits include Consort, Framer,
@@ -768,13 +781,14 @@ boundary.
 
 ## 13. Dawn
 
-After the last sequential outcome is acknowledged, the application constructs and validates the
+After the last sequential actor is sealed, the application constructs and validates the
 canonical completed action batch, resolves ordinary attacks, protections, and provisional deaths,
 and enters `night-resolution`. Investigative results have already been communicated during each
 actor's wake step and are not presented again. Deaths remain unapplied and hidden.
 
-The host then deliberately selects **Prepare Dawn Announcement** and confirms that every player's
-eyes are open. At this boundary:
+The host then deliberately selects **Show Dawn announcement**. Inline guidance says, “Make sure
+every player’s eyes are open before showing Dawn.” There is no second confirmation dialog. At this
+boundary:
 
 - Provisional deaths are applied exactly once.
 - Every unblocked Doctor's confirmed target is retained as the minimum next-night repeat-target
@@ -845,6 +859,7 @@ During day discussion, the public-safe screen shows every player with:
 Available controls:
 
 - Deliberately confirm a Mayor's verbal public reveal.
+- Show or hide a temporary host-only role list.
 - Execute a living participating player.
 - End the day without execution.
 
@@ -852,6 +867,15 @@ Opening the Mayor control crosses a deliberate host-only privacy boundary and li
 unrevealed Mayor players. The public view never receives hidden assignments, factions, Executioner
 targets, or night state. Multiple Mayor copies reveal independently. The existing
 `publiclyRevealedRoleId` field is the only Mayor-reveal authority.
+
+The host-role control is hidden by default and is React-only: it never changes or autosaves the
+game/session and returns hidden on refresh, recovery, and new-day entry. The public day selector
+remains role-free. A separate sanitized selector is invoked only while the host-only list is
+visible and returns duplicate-safe player labels, alive/dead status, current active role, immutable
+original assignment where different, and legitimate public-role status. Converted Executioners
+display active Jester and original Executioner. Executioner targets, personal wins, pending
+revenge, raw IDs, and other private neutral mechanics are excluded. A textual **HOST-ONLY VIEW**
+warning remains visible until the host hides the list.
 
 Both final controls use deliberate private host-only confirmations. The execution candidate list
 contains only living duplicate-safe player labels and no roles, factions, targets, personal
@@ -1003,11 +1027,13 @@ When nobody remains alive after all required ordinary and revenge deaths:
 Minimum current correction support:
 
 - Before confirmation, the current actor's temporary target may change freely.
-- After confirmation, the current immediate outcome is authoritative.
-- After acknowledgement, the actor step is sealed and cannot be edited.
-- A later actor cannot proceed until the earlier outcome is acknowledged and explicitly continued.
+- After non-informational confirmation, the action is sealed and the next actor becomes current.
+- After informational confirmation, the one current private result is authoritative until the host
+  selects **Continue to next actor**, which seals and advances atomically.
+- A blocked actor is sealed and advanced by the same one-button operation.
+- A later actor cannot proceed while an informational or blocked private screen remains current.
 - Before confirming execution, the host can cancel or change the selected player.
-- Before entering the next phase, the host receives a summary confirmation.
+- Deliberate phase-boundary controls use explicit action labels and inline guidance where needed.
 
 Recommended later support:
 

@@ -8,8 +8,7 @@
 }
 
 .dawn-ready__eyebrow,
-.dawn-public__eyebrow,
-.dawn-confirmation__eyebrow {
+.dawn-public__eyebrow {
   margin: 0 0 0.45rem;
   font-size: 0.74rem;
   font-weight: 900;
@@ -25,15 +24,7 @@
   line-height: 1.05;
 }
 
-.dawn-confirmation__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
 .dawn-ready .button,
-.dawn-confirmation .button,
 .dawn-public .button {
   min-height: 2.75rem;
 }
@@ -53,39 +44,17 @@
   margin-block: 0;
 }
 
-.dawn-ready__eyebrow,
-.dawn-confirmation__eyebrow {
+.dawn-ready__eyebrow {
   color: var(--warning-strong);
 }
 
-.dawn-confirmation__backdrop {
-  position: fixed;
-  z-index: 50;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgb(8 8 10 / 78%);
-}
-
-.dawn-confirmation {
-  width: min(100%, 34rem);
-  padding: clamp(1.25rem, 4vw, 2rem);
+.dawn-ready__guidance {
+  padding: 0.8rem;
   border: 1px solid var(--warning-border);
-  border-radius: var(--radius-large);
+  border-radius: var(--radius-small);
+  color: var(--warning-strong);
   background: var(--surface-raised);
-  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 45%);
-}
-
-.dawn-confirmation h3 {
-  margin: 0;
-  color: var(--text-strong);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 1.75rem;
-}
-
-.dawn-confirmation > p:not(.dawn-confirmation__eyebrow) {
-  color: var(--text-muted);
+  font-weight: 850;
 }
 
 .dawn-public {
@@ -139,10 +108,4 @@
   color: var(--danger-strong);
   background: var(--danger-soft);
   font-weight: 750;
-}
-
-@media (max-width: 32rem) {
-  .dawn-confirmation__actions > .button {
-    width: 100%;
-  }
 }
