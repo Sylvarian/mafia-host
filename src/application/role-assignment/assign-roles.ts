@@ -1,7 +1,7 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
 import { createGame } from '@/domain/game/game-invariants.ts'
 import type { GamePlayerCandidate, GameState } from '@/domain/game/game-state.ts'
-import type { GameId, PlayerId, RoleInstanceId } from '@/domain/identifiers.ts'
+import { playerId, type GameId, type PlayerId, type RoleInstanceId } from '@/domain/identifiers.ts'
 import type { RandomSource } from '@/domain/randomness/random-source.ts'
 import {
   assignDuplicateRoleOrdinals,
@@ -22,11 +22,13 @@ export type RoleAssignmentDependencies = Readonly<{
 
 export type RoleAssignmentIdentifierReservations = Readonly<{
   gameIds: readonly GameId[]
+  playerIds: readonly PlayerId[]
   roleInstanceIds: readonly RoleInstanceId[]
 }>
 
 const NO_RESERVED_IDENTIFIERS: RoleAssignmentIdentifierReservations = {
   gameIds: [],
+  playerIds: [],
   roleInstanceIds: [],
 }
 
@@ -47,6 +49,7 @@ export function assignRolesToValidatedSetup(
 
   const reservedIdentityValues = new Set<string>([
     ...reservedIdentifiers.gameIds,
+    ...reservedIdentifiers.playerIds,
     ...reservedIdentifiers.roleInstanceIds,
   ])
   const expansionResult = expandRoleCounts(
@@ -66,40 +69,47 @@ export function assignRolesToValidatedSetup(
     return shuffleResult
   }
 
-  const unnumberedAssignments: PlayerRoleAssignment[] = []
-
-  for (const [playerIndex, player] of setup.participatingPlayers.entries()) {
-    const role = shuffleResult.value[playerIndex]
-
-    if (role === undefined) {
-      return fail({
-        type: 'ASSIGNMENT_COUNT_MISMATCH',
-        participatingPlayerCount: setup.participatingPlayers.length,
-        roleInstanceCount: shuffleResult.value.length,
-      })
-    }
-
-    unnumberedAssignments.push({ playerId: player.id, role })
-  }
-
-  const ordinalResult = assignDuplicateRoleOrdinals(unnumberedAssignments)
-
-  if (!ordinalResult.ok) {
-    return fail({ type: 'DOMAIN_ASSIGNMENT_REJECTED', error: ordinalResult.error })
-  }
-
   const nextGameId = dependencies.identitySource.nextGameId()
 
   if (!isValidIdentifier(nextGameId)) {
     return fail({ type: 'INVALID_IDENTIFIER', identityKind: 'game', value: nextGameId })
   }
 
-  const currentRoleInstanceIds = new Set(
-    ordinalResult.value.map((assignment) => String(assignment.role.instanceId)),
-  )
+  const currentRoleInstanceIds = new Set(shuffleResult.value.map((role) => String(role.instanceId)))
 
   if (reservedIdentityValues.has(nextGameId) || currentRoleInstanceIds.has(nextGameId)) {
     return fail({ type: 'IDENTIFIER_COLLISION', identityKind: 'game', id: nextGameId })
+  }
+
+  const matchParticipants = setup.participatingPlayers.map((player, index) => ({
+    ...player,
+    id: playerId(`${nextGameId}-player-${String(index + 1)}`),
+  }))
+  for (const participant of matchParticipants) {
+    if (reservedIdentityValues.has(participant.id) || currentRoleInstanceIds.has(participant.id)) {
+      return fail({
+        type: 'IDENTIFIER_COLLISION',
+        identityKind: 'player',
+        id: participant.id,
+      })
+    }
+  }
+
+  const unnumberedAssignments: PlayerRoleAssignment[] = []
+  for (const [playerIndex, player] of matchParticipants.entries()) {
+    const role = shuffleResult.value[playerIndex]
+    if (role === undefined) {
+      return fail({
+        type: 'ASSIGNMENT_COUNT_MISMATCH',
+        participatingPlayerCount: matchParticipants.length,
+        roleInstanceCount: shuffleResult.value.length,
+      })
+    }
+    unnumberedAssignments.push({ playerId: player.id, role })
+  }
+  const ordinalResult = assignDuplicateRoleOrdinals(unnumberedAssignments)
+  if (!ordinalResult.ok) {
+    return fail({ type: 'DOMAIN_ASSIGNMENT_REJECTED', error: ordinalResult.error })
   }
 
   const gamePlayers: GamePlayerCandidate[] = ordinalResult.value.map((assignment) => ({
@@ -114,7 +124,7 @@ export function assignRolesToValidatedSetup(
   )
   const gameResult = createGame({
     id: nextGameId,
-    roster: setup.participatingPlayers,
+    roster: matchParticipants,
     players: gamePlayers,
     roleDefinitions,
     settings: setup.settings,

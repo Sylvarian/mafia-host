@@ -12,12 +12,9 @@ import type { RoleAssignmentDependencies } from './assign-roles.ts'
 import type { RoleAssignmentIdentitySource } from './identity-source.ts'
 import {
   assignRoleDistribution,
-  confirmRoleDistribution,
+  confirmAllRoleCardsDelivered,
   createRoleDistributionWorkflow,
-  getRoleDistributionProgress,
-  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
-  setCardDelivered,
   type DistributingRolesWorkflow,
 } from './role-distribution-workflow.ts'
 
@@ -31,228 +28,129 @@ const settings: GameSettings = {
 }
 
 describe('role-distribution workflow', () => {
-  it('starts unassigned and enters distribution with derived zero progress', () => {
+  it('assigns once and exposes no per-player delivery authority', () => {
     const setup = createSetup()
     const unassigned = createRoleDistributionWorkflow(setup)
-    const assigned = assignRoleDistribution(unassigned, dependencies([0.5, 0.5]))
+    const assigned = expectSuccess(assignRoleDistribution(unassigned, dependencies([0.5, 0.5])))
 
     expect(unassigned).toEqual({ status: 'unassigned', setup })
-    expect(getRoleDistributionProgress(unassigned)).toEqual({
-      deliveredCount: 0,
-      totalCount: 3,
-      isComplete: false,
-    })
-    expect(assigned.ok).toBe(true)
-    if (!assigned.ok) {
-      throw new Error('Expected role distribution to begin.')
-    }
-
-    expect(assigned.value.status).toBe('distributing')
-    expect(assigned.value.deliveredPlayerIds).toEqual([])
-  })
-
-  it('marks and unmarks cards without duplicates and rejects unknown players', () => {
-    const assigned = createDistributingWorkflow()
-    const aliceId = assigned.game.players[0]?.playerId ?? missingPlayerId()
-    const delivered = expectSuccess(setCardDelivered(assigned, aliceId, true))
-    const deliveredAgain = expectSuccess(setCardDelivered(delivered, aliceId, true))
-    const unmarked = expectSuccess(setCardDelivered(deliveredAgain, aliceId, false))
-
-    expect(delivered.deliveredPlayerIds).toEqual([aliceId])
-    expect(deliveredAgain).toBe(delivered)
-    expect(unmarked.deliveredPlayerIds).toEqual([])
-    expect(setCardDelivered(assigned, playerId('unknown'), true)).toEqual({
-      ok: false,
-      error: { type: 'UNKNOWN_CARD_DELIVERY_PLAYER', playerId: 'unknown' },
-    })
-  })
-
-  it('marks every participating card in one pure idempotent operation', () => {
-    const assigned = createDistributingWorkflow()
-    const firstPlayerId = assigned.game.players[0]?.playerId ?? missingPlayerId()
-    const partiallyDelivered = expectSuccess(setCardDelivered(assigned, firstPlayerId, true))
-    const snapshot = JSON.stringify(partiallyDelivered)
-    const allDelivered = expectSuccess(markAllParticipatingCardsDelivered(partiallyDelivered))
-    const repeated = expectSuccess(markAllParticipatingCardsDelivered(allDelivered))
-
-    expect(allDelivered.deliveredPlayerIds).toEqual(
+    expect(assigned).toMatchObject({ status: 'distributing' })
+    expect(assigned.setup.participatingPlayers.map((player) => player.name)).toEqual([
+      'Alice',
+      'Bob',
+      'Casey',
+    ])
+    expect(assigned.setup.participatingPlayers.map((player) => player.id)).toEqual(
       assigned.game.players.map((player) => player.playerId),
     )
-    expect(allDelivered.game).toBe(assigned.game)
-    expect(allDelivered.status).toBe('distributing')
-    expect(repeated).toBe(allDelivered)
-    expect(JSON.stringify(partiallyDelivered)).toBe(snapshot)
+    expect(assigned.game.phase).toBe('role-distribution')
+    expect(assigned).not.toHaveProperty('deliveredPlayerIds')
   })
 
-  it('allows an individual delivery to be undone after bulk marking', () => {
+  it('confirms every available private card in one atomic boundary', () => {
     const assigned = createDistributingWorkflow()
-    const allDelivered = expectSuccess(markAllParticipatingCardsDelivered(assigned))
-    const playerToUndo = assigned.game.players[1]?.playerId ?? missingPlayerId()
-    const undone = expectSuccess(setCardDelivered(allDelivered, playerToUndo, false))
+    const snapshot = JSON.stringify(assigned)
+    const confirmed = expectSuccess(confirmAllRoleCardsDelivered(assigned))
 
-    expect(undone.deliveredPlayerIds).not.toContain(playerToUndo)
-    expect(getRoleDistributionProgress(undone)).toEqual({
-      deliveredCount: 2,
-      totalCount: 3,
-      isComplete: false,
+    expect(confirmed).toEqual({
+      status: 'confirmed',
+      setup: assigned.setup,
+      game: assigned.game,
     })
-    expect(undone.status).toBe('distributing')
-  })
-
-  it('derives progress from unique participating delivery IDs and rejects unknown stored IDs', () => {
-    const assigned = createDistributingWorkflow()
-    const firstPlayerId = assigned.game.players[0]?.playerId ?? missingPlayerId()
-    const duplicatedDeliveries: DistributingRolesWorkflow = {
-      ...assigned,
-      deliveredPlayerIds: [firstPlayerId, firstPlayerId],
-    }
-    const unknownPlayerId = playerId('unknown-stored-delivery')
-    const malformedCompletedDeliveries: DistributingRolesWorkflow = {
-      ...assigned,
-      deliveredPlayerIds: [
-        ...assigned.game.players.map((player) => player.playerId),
-        unknownPlayerId,
-      ],
-    }
-
-    expect(getRoleDistributionProgress(duplicatedDeliveries)).toEqual({
-      deliveredCount: 1,
-      totalCount: 3,
-      isComplete: false,
-    })
-    expect(confirmRoleDistribution(malformedCompletedDeliveries)).toEqual({
+    expect(confirmed.game.phase).toBe('role-distribution')
+    expect(JSON.stringify(assigned)).toBe(snapshot)
+    expect(confirmAllRoleCardsDelivered(confirmed)).toEqual({
       ok: false,
-      error: { type: 'UNKNOWN_CARD_DELIVERY_PLAYER', playerId: unknownPlayerId },
+      error: { type: 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE' },
     })
   })
 
-  it('rejects early confirmation and confirms without entering a night phase', () => {
-    const assigned = createDistributingWorkflow()
-    const early = confirmRoleDistribution(assigned)
-
-    expect(early.ok).toBe(false)
-    if (early.ok) {
-      throw new Error('Expected incomplete delivery to be rejected.')
-    }
-    expect(early.error.type).toBe('CARD_DELIVERY_INCOMPLETE')
-
-    const delivered = assigned.game.players.reduce((workflow, player) => {
-      return expectSuccess(setCardDelivered(workflow, player.playerId, true))
-    }, assigned)
-    const confirmed = confirmRoleDistribution(delivered)
-
-    expect(confirmed.ok).toBe(true)
-    if (!confirmed.ok) {
-      throw new Error('Expected complete distribution to be confirmed.')
-    }
-
-    expect(confirmed.value.status).toBe('confirmed')
-    expect(confirmed.value.game).toBe(assigned.game)
-    expect(confirmed.value.game.phase).toBe('role-distribution')
-    expect(getRoleDistributionProgress(confirmed.value)).toEqual({
-      deliveredCount: 3,
-      totalCount: 3,
-      isComplete: true,
-    })
-  })
-
-  it('requires the delivered-card confirmation path and reassigns immutably', () => {
-    const assignmentDependencies = dependencies([0, 0, 0.999, 0.999])
-    const assigned = createDistributingWorkflow(assignmentDependencies)
-    const firstPlayerId = assigned.game.players[0]?.playerId ?? missingPlayerId()
-    const delivered = expectSuccess(setCardDelivered(assigned, firstPlayerId, true))
-    const originalSnapshot = JSON.stringify(delivered)
-    const blocked = reassignRoleDistribution(delivered, assignmentDependencies, false)
-
-    expect(blocked).toEqual({
-      ok: false,
-      error: {
-        type: 'REASSIGNMENT_CONFIRMATION_REQUIRED',
-        deliveredPlayerIds: [firstPlayerId],
-      },
-    })
-
-    const reassigned = reassignRoleDistribution(delivered, assignmentDependencies, true)
-
-    expect(reassigned.ok).toBe(true)
-    if (!reassigned.ok) {
-      throw new Error('Expected confirmed reassignment to succeed.')
-    }
-
-    expect(reassigned.value.setup).toBe(delivered.setup)
-    expect(reassigned.value.game).not.toBe(delivered.game)
-    expect(reassigned.value.game.id).not.toBe(delivered.game.id)
-    expect(reassigned.value.deliveredPlayerIds).toEqual([])
-    expect(reassigned.value.game.executionerTargets).toEqual([])
-    expect(reassigned.value.game.executionerBriefingStatus).toBe('not-started')
-    expect(reassigned.value.game.settings).toEqual(delivered.game.settings)
-    expect(reassigned.value.game.settings.godfatherAppearsSuspiciousToSheriff).toBe(false)
-    expect(reassigned.value.game.players.map((player) => player.role.roleId)).not.toEqual(
-      delivered.game.players.map((player) => player.role.roleId),
-    )
-    const previousRoleInstanceIds = new Set(
-      delivered.game.players.map((player) => player.role.instanceId),
-    )
-    expect(
-      reassigned.value.game.players.every(
-        (player) => !previousRoleInstanceIds.has(player.role.instanceId),
-      ),
-    ).toBe(true)
-    expect(JSON.stringify(delivered)).toBe(originalSnapshot)
-  })
-
-  it('rejects reassignment after final confirmation', () => {
-    const assigned = createDistributingWorkflow()
-    const delivered = assigned.game.players.reduce((workflow, player) => {
-      return expectSuccess(setCardDelivered(workflow, player.playerId, true))
-    }, assigned)
-    const confirmed = expectSuccess(confirmRoleDistribution(delivered))
-
-    expect(reassignRoleDistribution(confirmed, dependencies([0.5, 0.5]), true)).toEqual({
-      ok: false,
-      error: { type: 'REASSIGNMENT_AFTER_CONFIRMATION' },
-    })
-    expect(assignRoleDistribution(confirmed, dependencies([0.5, 0.5]))).toEqual({
-      ok: false,
-      error: {
-        type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-        operation: 'assign',
-        status: 'confirmed',
-      },
-    })
-    expect(
-      setCardDelivered(confirmed, confirmed.game.players[0]?.playerId ?? missingPlayerId(), false),
-    ).toEqual({
-      ok: false,
-      error: {
-        type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-        operation: 'set-card-delivery',
-        status: 'confirmed',
-      },
-    })
-    expect(confirmRoleDistribution(confirmed)).toEqual({
-      ok: false,
-      error: {
-        type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-        operation: 'confirm',
-        status: 'confirmed',
-      },
-    })
-  })
-
-  it('rejects assignment and delivery operations from invalid workflow states', () => {
+  it('rejects the bulk boundary from the wrong stage and without complete card authority', () => {
     const unassigned = createRoleDistributionWorkflow(createSetup())
-    const assigned = createDistributingWorkflow()
-
-    expect(setCardDelivered(unassigned, playerId('player-1'), true)).toEqual({
+    expect(confirmAllRoleCardsDelivered(unassigned)).toEqual({
       ok: false,
       error: {
         type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-        operation: 'set-card-delivery',
+        operation: 'confirm-all-role-cards-delivered',
         status: 'unassigned',
       },
     })
-    expect(assignRoleDistribution(assigned, dependencies([0.5, 0.5]))).toEqual({
+
+    const assigned = createDistributingWorkflow()
+    expect(
+      confirmAllRoleCardsDelivered({
+        ...assigned,
+        game: { ...assigned.game, phase: 'setup' },
+      }),
+    ).toEqual({
+      ok: false,
+      error: { type: 'INVALID_ROLE_DISTRIBUTION_AUTHORITY' },
+    })
+
+    const unavailable: DistributingRolesWorkflow = {
+      ...assigned,
+      setup: {
+        ...assigned.setup,
+        participatingPlayers: assigned.setup.participatingPlayers.slice(1),
+      },
+    }
+    expect(confirmAllRoleCardsDelivered(unavailable)).toEqual({
+      ok: false,
+      error: { type: 'ROLE_CARDS_UNAVAILABLE' },
+    })
+  })
+
+  it('reassigns immutably with fresh game and role-instance identities', () => {
+    const deps = dependencies([0, 0, 0.999, 0.999])
+    const assigned = createDistributingWorkflow(deps)
+    const snapshot = JSON.stringify(assigned)
+    const reassigned = expectSuccess(reassignRoleDistribution(assigned, deps))
+
+    expect(reassigned.setup.roleCounts).toBe(assigned.setup.roleCounts)
+    expect(reassigned.setup.settings).toBe(assigned.setup.settings)
+    expect(reassigned.setup.participatingPlayers.map((player) => player.name)).toEqual(
+      assigned.setup.participatingPlayers.map((player) => player.name),
+    )
+    expect(reassigned.setup.participatingPlayers.map((player) => player.id)).not.toEqual(
+      assigned.setup.participatingPlayers.map((player) => player.id),
+    )
+    expect(reassigned.game.id).not.toBe(assigned.game.id)
+    expect(reassigned.game.executionerTargets).toEqual([])
+    expect(reassigned.game.executionerBriefingStatus).toBe('not-started')
+    expect(reassigned.game.settings).toEqual(assigned.game.settings)
+    expect(reassigned.game.players.map((player) => player.role.roleId)).not.toEqual(
+      assigned.game.players.map((player) => player.role.roleId),
+    )
+    const priorRoleInstanceIds = new Set(
+      assigned.game.players.map((player) => player.role.instanceId),
+    )
+    expect(
+      reassigned.game.players.every((player) => !priorRoleInstanceIds.has(player.role.instanceId)),
+    ).toBe(true)
+    expect(JSON.stringify(assigned)).toBe(snapshot)
+  })
+
+  it('rejects reassignment after delivery completion', () => {
+    const confirmed = expectSuccess(confirmAllRoleCardsDelivered(createDistributingWorkflow()))
+    expect(reassignRoleDistribution(confirmed, dependencies([0.5, 0.5]))).toEqual({
+      ok: false,
+      error: { type: 'REASSIGNMENT_AFTER_CONFIRMATION' },
+    })
+  })
+
+  it('rejects assignment and reassignment from incompatible workflow stages', () => {
+    const unassigned = createRoleDistributionWorkflow(createSetup())
+    const assigned = createDistributingWorkflow()
+
+    expect(reassignRoleDistribution(unassigned, dependencies([0.5]))).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_ROLE_DISTRIBUTION_STATE',
+        operation: 'reassign',
+        status: 'unassigned',
+      },
+    })
+    expect(assignRoleDistribution(assigned, dependencies([0.5]))).toEqual({
       ok: false,
       error: {
         type: 'INVALID_ROLE_DISTRIBUTION_STATE',
@@ -270,27 +168,18 @@ describe('role-distribution workflow', () => {
       },
       nextRoleInstanceId: (() => {
         let next = 1
-        return () => {
-          const id = roleInstanceId(`role-${String(next)}`)
-          next += 1
-          return id
-        }
+        return () => roleInstanceId(`role-${String(next++)}`)
       })(),
     }
     const deps: RoleAssignmentDependencies = {
       randomSource: new DeterministicRandomSource([0.5, 0.5, 0.5, 0.5]),
       identitySource,
     }
-    const assignedResult = assignRoleDistribution(
-      createRoleDistributionWorkflow(createSetup()),
-      deps,
+    const assigned = expectSuccess(
+      assignRoleDistribution(createRoleDistributionWorkflow(createSetup()), deps),
     )
 
-    if (!assignedResult.ok) {
-      throw new Error('Expected the initial assignment to succeed.')
-    }
-
-    expect(reassignRoleDistribution(assignedResult.value, deps, true)).toEqual({
+    expect(reassignRoleDistribution(assigned, deps)).toEqual({
       ok: false,
       error: {
         type: 'IDENTIFIER_COLLISION',
@@ -300,30 +189,24 @@ describe('role-distribution workflow', () => {
     })
   })
 
-  it('returns a structured collision when reassignment reuses a previous role-instance ID', () => {
+  it('returns a structured collision for a reused role-instance identity', () => {
     let nextGameNumber = 1
     let nextRoleNumber = 0
     const identitySource: RoleAssignmentIdentitySource = {
-      nextGameId() {
-        const id = gameId(`fresh-game-${String(nextGameNumber)}`)
-        nextGameNumber += 1
-        return id
-      },
-      nextRoleInstanceId() {
-        const id = roleInstanceId(`reused-role-${String((nextRoleNumber % 3) + 1)}`)
-        nextRoleNumber += 1
-        return id
-      },
+      nextGameId: () => gameId(`fresh-game-${String(nextGameNumber++)}`),
+      nextRoleInstanceId: () => roleInstanceId(`reused-role-${String((nextRoleNumber++ % 3) + 1)}`),
     }
     const deps: RoleAssignmentDependencies = {
       randomSource: new DeterministicRandomSource([0.5, 0.5]),
       identitySource,
     }
     const assigned = createDistributingWorkflow(deps)
-    const reusedRoleInstanceId =
-      assigned.game.players[0]?.role.instanceId ?? missingRoleInstanceId()
+    const reusedRoleInstanceId = assigned.game.players[0]?.role.instanceId
+    if (reusedRoleInstanceId === undefined) {
+      throw new Error('Expected a role instance.')
+    }
 
-    expect(reassignRoleDistribution(assigned, deps, true)).toEqual({
+    expect(reassignRoleDistribution(assigned, deps)).toEqual({
       ok: false,
       error: {
         type: 'IDENTIFIER_COLLISION',
@@ -333,14 +216,9 @@ describe('role-distribution workflow', () => {
     })
   })
 
-  it('operates without mutating deeply frozen workflow records', () => {
+  it('accepts deeply frozen workflow records without mutation', () => {
     const assigned = createDistributingWorkflow()
-    const frozenPlayers = Object.freeze(
-      assigned.game.players.map((player) =>
-        Object.freeze({ ...player, role: Object.freeze({ ...player.role }) }),
-      ),
-    )
-    const frozenWorkflow: DistributingRolesWorkflow = Object.freeze({
+    const frozen = Object.freeze({
       ...assigned,
       setup: Object.freeze({
         ...assigned.setup,
@@ -348,28 +226,22 @@ describe('role-distribution workflow', () => {
           assigned.setup.participatingPlayers.map((player) => Object.freeze({ ...player })),
         ),
         roleCounts: Object.freeze(
-          assigned.setup.roleCounts.map((roleCount) => Object.freeze({ ...roleCount })),
+          assigned.setup.roleCounts.map((entry) => Object.freeze({ ...entry })),
         ),
         settings: Object.freeze({ ...assigned.setup.settings }),
       }),
       game: Object.freeze({
         ...assigned.game,
-        players: frozenPlayers,
-        roleDefinitions: Object.freeze(
-          assigned.game.roleDefinitions.map((role) => Object.freeze({ ...role })),
+        players: Object.freeze(
+          assigned.game.players.map((player) =>
+            Object.freeze({ ...player, role: Object.freeze({ ...player.role }) }),
+          ),
         ),
-        settings: Object.freeze({ ...assigned.game.settings }),
       }),
-      deliveredPlayerIds: Object.freeze([]),
     })
-    const firstPlayerId = frozenWorkflow.game.players[0]?.playerId ?? missingPlayerId()
-    const delivered = setCardDelivered(frozenWorkflow, firstPlayerId, true)
-    const bulkDelivered = markAllParticipatingCardsDelivered(frozenWorkflow)
-
-    expect(delivered.ok).toBe(true)
-    expect(bulkDelivered.ok).toBe(true)
-    expect(frozenWorkflow.deliveredPlayerIds).toEqual([])
-    expect(confirmRoleDistribution(frozenWorkflow).ok).toBe(false)
+    const snapshot = JSON.stringify(frozen)
+    expect(confirmAllRoleCardsDelivered(frozen).ok).toBe(true)
+    expect(JSON.stringify(frozen)).toBe(snapshot)
   })
 })
 
@@ -396,25 +268,14 @@ function dependencies(values: readonly number[]): RoleAssignmentDependencies {
 }
 
 function createDistributingWorkflow(
-  assignmentDependencies: RoleAssignmentDependencies = dependencies([0.5, 0.5]),
+  deps: RoleAssignmentDependencies = dependencies([0.5, 0.5]),
 ): DistributingRolesWorkflow {
-  return expectSuccess(
-    assignRoleDistribution(createRoleDistributionWorkflow(createSetup()), assignmentDependencies),
-  )
+  return expectSuccess(assignRoleDistribution(createRoleDistributionWorkflow(createSetup()), deps))
 }
 
 function expectSuccess<Value>(result: DomainResult<Value, unknown>): Value {
   if (!result.ok) {
     throw new Error('Expected the workflow operation to succeed.')
   }
-
   return result.value
-}
-
-function missingPlayerId(): never {
-  throw new Error('Expected the game player to exist.')
-}
-
-function missingRoleInstanceId(): never {
-  throw new Error('Expected the role instance to exist.')
 }

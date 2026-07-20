@@ -9,6 +9,15 @@ import { transitionPhase } from '../phases/phase-machine.ts'
 import type { GamePlayer } from '../players/game-player.ts'
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
 import type { FactionResult, TerminalFactionResult } from './faction-result.ts'
+import {
+  applyFinalTwoKillingRoleMutualElimination,
+  applyPostPromotionFinalTwoKillingRoleMutualElimination,
+  deriveStoredFinalTwoKillingRoleOutcome,
+  evaluateFinalTwoKillingRoleOutcome,
+  evaluatePostPromotionFinalTwoKillingRoleOutcome,
+  type FinalTwoKillingRoleOutcomeError,
+  type StoredFinalTwoKillingRoleDrawError,
+} from './final-two-killing-role-outcome.ts'
 
 export type FactionVictoryPredicate = 'town-victory' | 'mafia-victory' | 'serial-killer-victory'
 
@@ -34,6 +43,12 @@ export type FactionVictoryEvaluationError =
       type: 'CONTRADICTORY_VICTORY_PREDICATES'
       predicates: readonly FactionVictoryPredicate[]
     }>
+  | Readonly<{
+      type: 'VICTORY_EVALUATION_UNKNOWN_ACTIVE_ROLE'
+      playerId: PlayerId
+      roleId: ReturnType<typeof selectActiveRoleId>
+    }>
+  | FinalTwoKillingRoleOutcomeError
 
 type FactionResultShapeError =
   | Readonly<{ type: 'INVALID_STORED_FACTION_RESULT' }>
@@ -46,6 +61,7 @@ type FactionResultShapeError =
   | Readonly<{
       type: 'FACTION_RESULT_GAME_MISMATCH'
     }>
+  | Readonly<{ type: 'FACTION_RESULT_CONFLICTS_WITH_FINAL_TWO_DRAW' }>
 
 export type FinalizeFactionVictoryError =
   | FactionVictoryEvaluationError
@@ -59,6 +75,7 @@ export type FinalizeFactionVictoryError =
 export type StoredFactionResultError =
   | FactionResultShapeError
   | Readonly<{ type: 'GAME_OVER_RESULT_MISMATCH' }>
+  | StoredFinalTwoKillingRoleDrawError
   | FactionVictoryEvaluationError
 
 export type EvaluatedFactionVictory =
@@ -164,6 +181,52 @@ export function evaluateAndFinalizeFactionVictory(
     : finalGameResult
 }
 
+export function evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome(
+  game: GameState,
+): DomainResult<EvaluatedFactionVictory, FinalizeFactionVictoryError> {
+  const outcomeResult = evaluatePostPromotionFinalTwoKillingRoleOutcome(game)
+  if (!outcomeResult.ok) {
+    return outcomeResult
+  }
+  if (outcomeResult.value.kind === 'not-applicable') {
+    return succeed(
+      Object.freeze({
+        status: 'non-terminal',
+        game,
+        result: Object.freeze({ kind: 'none', gameId: game.id }),
+      }),
+    )
+  }
+  const evaluatedGameResult =
+    outcomeResult.value.kind === 'mutual-elimination'
+      ? applyPostPromotionFinalTwoKillingRoleMutualElimination(game)
+      : succeed(game)
+  if (!evaluatedGameResult.ok) {
+    return evaluatedGameResult
+  }
+  const result: TerminalFactionResult = Object.freeze({
+    kind: 'draw',
+    gameId: evaluatedGameResult.value.id,
+    reason:
+      outcomeResult.value.kind === 'mutual-elimination'
+        ? 'opposing-killers-mutual-elimination'
+        : 'opposing-killers-stalemate',
+  })
+  const finalGameResult =
+    outcomeResult.value.kind === 'mutual-elimination'
+      ? succeed(evaluatedGameResult.value)
+      : transitionEvaluatedFactionGame(evaluatedGameResult.value)
+  return finalGameResult.ok
+    ? succeed(
+        Object.freeze({
+          status: 'game-over',
+          game: finalGameResult.value,
+          result,
+        }),
+      )
+    : finalGameResult
+}
+
 export function finalizeFactionVictory(
   game: GameState,
   candidate: unknown,
@@ -180,6 +243,9 @@ export function finalizeFactionVictory(
     return result
   }
   if (!sameFactionResult(result.value, evaluationResult.value.result)) {
+    if (isOpposingKillerDraw(evaluationResult.value.result)) {
+      return fail({ type: 'FACTION_RESULT_CONFLICTS_WITH_FINAL_TWO_DRAW' })
+    }
     return invalidResult(result.value.kind)
   }
   return transitionEvaluatedFactionGame(evaluationResult.value.game)
@@ -208,7 +274,38 @@ function evaluateValidatedFactionVictory(
   if (!gateResult.ok) {
     return gateResult
   }
-  const result = deriveFactionResult(gateResult.value)
+  const finalTwoResult = evaluateFinalTwoKillingRoleOutcome(gateResult.value)
+  if (!finalTwoResult.ok) {
+    return finalTwoResult
+  }
+  if (finalTwoResult.value.kind === 'stalemate') {
+    return succeed(
+      Object.freeze({
+        game: gateResult.value,
+        result: Object.freeze({
+          kind: 'draw',
+          gameId: gateResult.value.id,
+          reason: 'opposing-killers-stalemate',
+        }),
+      }),
+    )
+  }
+  if (finalTwoResult.value.kind === 'mutual-elimination') {
+    const applicationResult = applyFinalTwoKillingRoleMutualElimination(gateResult.value)
+    return applicationResult.ok
+      ? succeed(
+          Object.freeze({
+            game: applicationResult.value,
+            result: Object.freeze({
+              kind: 'draw',
+              gameId: applicationResult.value.id,
+              reason: 'opposing-killers-mutual-elimination',
+            }),
+          }),
+        )
+      : applicationResult
+  }
+  const result = deriveOrdinaryFactionResult(gateResult.value)
   return result.ok
     ? succeed(Object.freeze({ game: gateResult.value, result: result.value }))
     : result
@@ -232,7 +329,28 @@ export function validateStoredTerminalFactionResult(
   if (!copiedResult.ok) {
     return copiedResult
   }
-  const canonicalResult = deriveFactionResult(gameResult.value)
+  const finalTwoResult = deriveStoredFinalTwoKillingRoleOutcome(gameResult.value)
+  if (!finalTwoResult.ok) {
+    return finalTwoResult
+  }
+  const canonicalResult =
+    finalTwoResult.value.kind === 'stalemate'
+      ? succeed<FactionResult>(
+          Object.freeze({
+            kind: 'draw',
+            gameId: gameResult.value.id,
+            reason: 'opposing-killers-stalemate',
+          }),
+        )
+      : finalTwoResult.value.kind === 'mutual-elimination'
+        ? succeed<FactionResult>(
+            Object.freeze({
+              kind: 'draw',
+              gameId: gameResult.value.id,
+              reason: 'opposing-killers-mutual-elimination',
+            }),
+          )
+        : deriveOrdinaryFactionResult(gameResult.value)
   if (!canonicalResult.ok) {
     return canonicalResult
   }
@@ -241,13 +359,19 @@ export function validateStoredTerminalFactionResult(
   }
   return sameFactionResult(copiedResult.value, canonicalResult.value)
     ? succeed(copiedResult.value)
-    : invalidResult(copiedResult.value.kind)
+    : isOpposingKillerDraw(canonicalResult.value)
+      ? fail({ type: 'FACTION_RESULT_CONFLICTS_WITH_FINAL_TWO_DRAW' })
+      : invalidResult(copiedResult.value.kind)
 }
 
-function deriveFactionResult(
+function deriveOrdinaryFactionResult(
   game: GameState,
 ): DomainResult<FactionResult, FactionVictoryEvaluationError> {
-  const state = selectLivingFactionState(game)
+  const stateResult = selectLivingFactionState(game)
+  if (!stateResult.ok) {
+    return stateResult
+  }
+  const state = stateResult.value
   if (state.livingPlayers.length === 0) {
     return succeed(
       Object.freeze({ kind: 'draw', gameId: game.id, reason: 'no-survivors' as const }),
@@ -297,7 +421,15 @@ function deriveFactionResult(
   return succeed(Object.freeze({ kind: 'none', gameId: game.id }))
 }
 
-function selectLivingFactionState(game: GameState): LivingFactionState {
+function selectLivingFactionState(
+  game: GameState,
+): DomainResult<
+  LivingFactionState,
+  Extract<
+    FactionVictoryEvaluationError,
+    Readonly<{ type: 'VICTORY_EVALUATION_UNKNOWN_ACTIVE_ROLE' }>
+  >
+> {
   const livingPlayers = game.players.filter((player) => player.alive)
   const livingTown: GamePlayer[] = []
   const livingMafia: GamePlayer[] = []
@@ -308,7 +440,11 @@ function selectLivingFactionState(game: GameState): LivingFactionState {
     const activeRoleId = selectActiveRoleId(game, player.playerId)
     const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
     if (role === undefined) {
-      throw new Error('A validated game contained unknown active role metadata.')
+      return fail({
+        type: 'VICTORY_EVALUATION_UNKNOWN_ACTIVE_ROLE',
+        playerId: player.playerId,
+        roleId: activeRoleId,
+      })
     }
     if (role.faction === 'town') {
       livingTown.push(player)
@@ -324,13 +460,15 @@ function selectLivingFactionState(game: GameState): LivingFactionState {
     }
   }
 
-  return Object.freeze({
-    livingPlayers: Object.freeze(livingPlayers),
-    livingTown: Object.freeze(livingTown),
-    livingMafia: Object.freeze(livingMafia),
-    livingSerialKillers: Object.freeze(livingSerialKillers),
-    livingJesters: Object.freeze(livingJesters),
-  })
+  return succeed(
+    Object.freeze({
+      livingPlayers: Object.freeze(livingPlayers),
+      livingTown: Object.freeze(livingTown),
+      livingMafia: Object.freeze(livingMafia),
+      livingSerialKillers: Object.freeze(livingSerialKillers),
+      livingJesters: Object.freeze(livingJesters),
+    }),
+  )
 }
 
 function copyStoredResult(
@@ -374,8 +512,10 @@ function copyStoredResult(
     }
     case 'draw':
       return hasExactKeys(candidate, ['kind', 'gameId', 'reason']) &&
-        candidate.reason === 'no-survivors'
-        ? succeed(Object.freeze({ kind: 'draw', gameId: game.id, reason: 'no-survivors' }))
+        (candidate.reason === 'no-survivors' ||
+          candidate.reason === 'opposing-killers-stalemate' ||
+          candidate.reason === 'opposing-killers-mutual-elimination')
+        ? succeed(Object.freeze({ kind: 'draw', gameId: game.id, reason: candidate.reason }))
         : fail({ type: 'INVALID_DRAW' })
     case 'none':
     default:
@@ -420,8 +560,7 @@ function sameFactionResult(left: TerminalFactionResult, right: TerminalFactionRe
     case 'town-victory':
       return true
     case 'draw':
-      // Stored candidates cross the exact-reason validator before reaching this comparison.
-      return right.kind === 'draw'
+      return right.kind === 'draw' && left.reason === right.reason
     case 'mafia-victory':
     case 'serial-killer-victory':
       return (
@@ -430,6 +569,14 @@ function sameFactionResult(left: TerminalFactionResult, right: TerminalFactionRe
         left.winnerPlayerIds.every((winnerId, index) => winnerId === right.winnerPlayerIds[index])
       )
   }
+}
+
+function isOpposingKillerDraw(result: FactionResult): boolean {
+  return (
+    result.kind === 'draw' &&
+    (result.reason === 'opposing-killers-stalemate' ||
+      result.reason === 'opposing-killers-mutual-elimination')
+  )
 }
 
 function invalidResult(

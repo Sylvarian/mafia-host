@@ -57,13 +57,13 @@ module.exports = {
     {
       name: 'infrastructure-only-imports-application-contracts',
       comment:
-        'Infrastructure may import the narrow application identity contract, not implementations.',
+        'Infrastructure may import narrow application adapter contracts, not implementations.',
       severity: 'error',
       from: { path: '(^|/)src/infrastructure/' },
       to: {
         path: '(^|/)src/application/',
         pathNot:
-          '(^|/)src/application/((role-assignment/)?identity-source|session-persistence/(game-session-store|persisted-session-v2))[.]ts$',
+          '(^|/)src/application/(game-setup/next-game-setup-template|(role-assignment/)?identity-source|session-persistence/(game-session-store|persisted-session-v2))[.]ts$',
       },
     },
     {

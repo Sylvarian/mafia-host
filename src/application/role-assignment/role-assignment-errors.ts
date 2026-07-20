@@ -23,8 +23,13 @@ export type RoleAssignmentError =
       id: RoleInstanceId
     }>
   | Readonly<{
+      type: 'IDENTIFIER_COLLISION'
+      identityKind: 'player'
+      id: PlayerId
+    }>
+  | Readonly<{
       type: 'INVALID_IDENTIFIER'
-      identityKind: 'game' | 'role-instance'
+      identityKind: 'game' | 'player' | 'role-instance'
       value: unknown
     }>
   | Readonly<{ type: 'INVALID_RANDOM_VALUE'; value: number }>
@@ -34,7 +39,7 @@ export type RoleAssignmentError =
     }>
   | Readonly<{ type: 'ACTIVE_GAME_REJECTED'; error: CreateGameError }>
 
-export type RoleDistributionOperation = 'assign' | 'set-card-delivery' | 'confirm' | 'reassign'
+export type RoleDistributionOperation = 'assign' | 'confirm-all-role-cards-delivered' | 'reassign'
 
 export type RoleDistributionError =
   | RoleAssignmentError
@@ -43,13 +48,7 @@ export type RoleDistributionError =
       operation: RoleDistributionOperation
       status: 'unassigned' | 'distributing' | 'confirmed'
     }>
-  | Readonly<{ type: 'UNKNOWN_CARD_DELIVERY_PLAYER'; playerId: PlayerId }>
-  | Readonly<{
-      type: 'CARD_DELIVERY_INCOMPLETE'
-      undeliveredPlayerIds: readonly PlayerId[]
-    }>
-  | Readonly<{
-      type: 'REASSIGNMENT_CONFIRMATION_REQUIRED'
-      deliveredPlayerIds: readonly PlayerId[]
-    }>
+  | Readonly<{ type: 'INVALID_ROLE_DISTRIBUTION_AUTHORITY' }>
+  | Readonly<{ type: 'ROLE_CARDS_UNAVAILABLE' }>
+  | Readonly<{ type: 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE' }>
   | Readonly<{ type: 'REASSIGNMENT_AFTER_CONFIRMATION' }>

@@ -419,7 +419,10 @@ function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
           ) : (
             <ul className="host-role-view__players">
               {group.players.map((player, playerIndex) => (
-                <li key={`${group.alignment}-${String(playerIndex)}`}>
+                <li
+                  className={getHostRoleCardClass(player.alignment)}
+                  key={`${group.alignment}-${String(playerIndex)}`}
+                >
                   <div>
                     <strong>{player.playerDisplayLabel}</strong>
                     <span>{player.status === 'alive' ? 'Alive' : 'Dead'}</span>
@@ -447,6 +450,22 @@ function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
       ))}
     </div>
   )
+}
+
+function getHostRoleCardClass(
+  alignment: HostRoleDayView['groups'][number]['alignment'],
+):
+  | 'host-role-card host-role-card--mafia'
+  | 'host-role-card host-role-card--town'
+  | 'host-role-card host-role-card--neutral' {
+  switch (alignment) {
+    case 'mafia':
+      return 'host-role-card host-role-card--mafia'
+    case 'town':
+      return 'host-role-card host-role-card--town'
+    case 'neutral':
+      return 'host-role-card host-role-card--neutral'
+  }
 }
 
 function getHostRoleViewErrorMessage(error: HostRoleDayViewError): string {

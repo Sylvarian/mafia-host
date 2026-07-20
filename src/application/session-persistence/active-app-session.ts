@@ -12,6 +12,7 @@ import type { RandomSource } from '@/domain/randomness/random-source.ts'
 import type { TerminalFactionResult } from '@/domain/win-conditions/faction-result.ts'
 import {
   evaluateAndFinalizeFactionVictory,
+  evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome,
   type FactionVictoryEvaluationError,
   type FinalizeFactionVictoryError,
 } from '@/domain/win-conditions/faction-victory.ts'
@@ -46,6 +47,7 @@ import {
   type GameSetupEditError,
   type GameSetupWorkflowCommand,
   type GameSetupWorkflowState,
+  type NextGameSetupTemplate,
 } from '../game-setup/index.ts'
 import { type InvalidGameOverStateError } from '../game-over/index.ts'
 import { createTrustedGameOverStateFromEvaluation } from '../game-over/game-over.ts'
@@ -70,11 +72,9 @@ import {
 } from '../night-actions/index.ts'
 import {
   assignRoleDistribution,
-  confirmRoleDistribution,
+  confirmAllRoleCardsDelivered,
   createRoleDistributionWorkflow,
-  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
-  setCardDelivered,
   type ConfirmedRoleDistributionWorkflow,
   type DistributingRolesWorkflow,
   type RoleAssignmentDependencies,
@@ -174,9 +174,7 @@ export type ActiveAppSessionStage = ActiveAppSession['stage']
 export type ActiveAppSessionOperation =
   | 'update-setup'
   | 'assign-roles'
-  | 'set-card-delivery'
-  | 'mark-all-cards-delivered'
-  | 'confirm-distribution'
+  | 'confirm-all-role-cards-delivered'
   | 'reassign-roles'
   | 'begin-first-night'
   | 'acknowledge-executioner-briefing'
@@ -226,11 +224,11 @@ export type SettlePostDaySessionError =
   | Readonly<{ type: 'RESULT_ALREADY_FINALIZED' }>
 
 export function createActiveAppSession(
-  rememberedPlayerNames: readonly string[] = [],
+  template: NextGameSetupTemplate | null = null,
 ): SetupAppSession {
   return Object.freeze({
     stage: 'setup',
-    workflow: createGameSetupWorkflow(rememberedPlayerNames),
+    workflow: createGameSetupWorkflow(template),
   })
 }
 
@@ -269,39 +267,7 @@ export function assignSessionRoles(
     : result
 }
 
-export function setSessionCardDelivered(
-  session: ActiveAppSession,
-  playerId: PlayerId,
-  delivered: boolean,
-): DomainResult<
-  RoleDistributionAppSession,
-  RoleDistributionError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'role-distribution') {
-    return invalidStage('set-card-delivery', session.stage)
-  }
-  const result = setCardDelivered(session.workflow, playerId, delivered)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
-    : result
-}
-
-export function markAllSessionCardsDelivered(
-  session: ActiveAppSession,
-): DomainResult<
-  RoleDistributionAppSession,
-  RoleDistributionError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'role-distribution') {
-    return invalidStage('mark-all-cards-delivered', session.stage)
-  }
-  const result = markAllParticipatingCardsDelivered(session.workflow)
-  return result.ok
-    ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
-    : result
-}
-
-export function confirmSessionRoleDistribution(
+export function confirmAllSessionRoleCardsDelivered(
   session: ActiveAppSession,
   randomSource: RandomSource,
 ): DomainResult<
@@ -313,9 +279,9 @@ export function confirmSessionRoleDistribution(
   | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'role-distribution') {
-    return invalidStage('confirm-distribution', session.stage)
+    return invalidStage('confirm-all-role-cards-delivered', session.stage)
   }
-  const result = confirmRoleDistribution(session.workflow)
+  const result = confirmAllRoleCardsDelivered(session.workflow)
   return result.ok ? startFirstNightStage(result.value, randomSource) : result
 }
 
@@ -329,7 +295,7 @@ export function reassignSessionRoles(
   if (session.stage !== 'role-distribution') {
     return invalidStage('reassign-roles', session.stage)
   }
-  const result = reassignRoleDistribution(session.workflow, dependencies, true)
+  const result = reassignRoleDistribution(session.workflow, dependencies)
   return result.ok
     ? succeed(Object.freeze({ stage: 'role-distribution', workflow: result.value }))
     : result
@@ -666,16 +632,41 @@ export function beginSessionNextNight(
 
 export function acknowledgeSessionGodfatherPromotion(
   session: ActiveAppSession,
-): DomainResult<SequentialNightAppSession, InvalidActiveAppSessionStageError> {
+): DomainResult<
+  SequentialNightAppSession | GameOverAppSession,
+  FinalizeFactionVictoryError | InvalidGameOverStateError | InvalidActiveAppSessionStageError
+> {
   if (session.stage !== 'godfather-promotion-briefing') {
     return invalidStage('acknowledge-godfather-promotion', session.stage)
   }
-  return succeed(
-    Object.freeze({
-      stage: 'sequential-night',
-      workflow: session.workflow,
-    }),
+  const evaluationResult = evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome(
+    session.workflow.game,
   )
+  if (!evaluationResult.ok) {
+    return evaluationResult
+  }
+  if (evaluationResult.value.status === 'non-terminal') {
+    return succeed(
+      Object.freeze({
+        stage: 'sequential-night',
+        workflow: session.workflow,
+      }),
+    )
+  }
+  const gameOverResult = createTrustedGameOverStateFromEvaluation(
+    evaluationResult.value,
+    session.workflow.participants,
+  )
+  return gameOverResult.ok
+    ? succeed(
+        Object.freeze({
+          stage: 'game-over',
+          game: gameOverResult.value.game,
+          participants: gameOverResult.value.participants,
+          result: gameOverResult.value.result,
+        }),
+      )
+    : gameOverResult
 }
 
 function toDayOutcomeSession(state: DayOutcomeState): DayOutcomeAppSession {

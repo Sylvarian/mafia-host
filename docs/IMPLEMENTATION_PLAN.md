@@ -2,7 +2,8 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7F retains schema V2 with neutral-state sub-version 4 for Godfather promotions, plus a separate names-only local preference<br>
+**Persistence:** One versioned local active-session save; Phase 7F.2 retains schema V2 with
+neutral-state sub-version 4, plus a separate complete next-game setup template<br>
 **Backend:** None
 
 ---
@@ -218,10 +219,8 @@ Randomly assign selected fixed roles to participating players.
 - Leave Executioner targets absent during initial assignment and reassignment; Phase 7A assigns
   them only after final physical distribution confirmation.
 - Build host-only assignment screen.
-- Add “Card given” confirmation per player.
-- Add one pure, idempotent **Mark all cards delivered** operation for participating players while
-  retaining individual undo before final confirmation.
-- Require all cards confirmed before Enter Night is enabled.
+- This original per-player delivery design is superseded by Phase 7F.1's single
+  **Confirm all role cards delivered** boundary.
 - Add restart assignment before the game begins.
 
 ### Tests
@@ -535,7 +534,7 @@ Only current-night deaths are announced. No generic migration framework exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7F implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7F.2 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -610,7 +609,9 @@ recovery only.**
 
 #### Work
 
-- Add pure bulk card delivery without automatic distribution confirmation.
+- Add the then-current bulk card-marking helper without automatic distribution confirmation.
+  Phase 7F.1 supersedes that historical two-step behavior with one authoritative bulk
+  confirmation and immediate transition.
 - Show target display label, role, faction text, alive/availability state, and subtle faction
   treatment through a narrow application view model.
 - Replace collect-all/review/private-replay coordination with the canonical sequence: Mafia
@@ -631,7 +632,9 @@ recovery only.**
 
 #### Tests
 
-- Partial, complete, idempotent, frozen-input, undo, Strict Mode, and rapid-click bulk delivery.
+- Historical partial, complete, idempotent, frozen-input, undo, Strict Mode, and rapid-click
+  delivery coverage. Phase 7F.1 replaces the partial/undo authority with atomic bulk-transition
+  coverage.
 - Faction-labelled target rows, duplicate-name labels, unavailable states, local selection, and
   public-safe recovery.
 - Canonical order, duplicate ordinals, first-night skipping, every blocked actionable role,
@@ -873,9 +876,8 @@ evaluateGameOutcome(gameState): GameOutcome
 - Group the temporary host-only role view under Mafia, Town, and Neutral using active roles,
   textual alignments, and red/green/grey treatments. Show current role/alignment inside the private
   execution boundary without exposing neutral targets, wins, revenge, or night data.
-- Store the most recently completed setup roster as a separate browser-local names-only
-  preference. Fresh setup may prefill it; active recovery never merges it. Clearing the preference
-  leaves the current setup and active save unchanged.
+- Phase 7F originally stored a browser-local names-only preference. Phase 7F.1 below supersedes it
+  with the complete next-game setup template while retaining narrow migration compatibility.
 - At the atomic transition into Night 2 or later, promote one canonical living active Mafia member
   when no living active Godfather exists. Use exactly one injected random sample, persist the
   promotion, preserve original assignment/role instance, rebuild wake order, and remove the old
@@ -906,10 +908,119 @@ evaluateGameOutcome(gameState): GameOutcome
 - Public day guidance never claims execution uses the trial threshold and no vote-entry state is
   introduced.
 - Host-only role visibility and execution selection remain temporary React state.
-- Remembered names contain no role or game authority and never pollute the active-session schema.
+- The Phase 7F names-only payload contains no role or game authority and never pollutes the
+  active-session schema; Phase 7F.1 migrates it deterministically.
 - Promotion is authoritative before night actions, never rerolls on restore/retry, and the promoted
   player acts only as Godfather while their immutable original assignment remains available to
   private host views.
+
+---
+
+### Phase 7F.1 — Persisted next-game setup, one-click role cards, and full host-card colours
+
+**Status: Implemented.**
+
+#### Work
+
+- Replace the names-only preference with one exact setup template containing the full ordered
+  roster, every participation choice, canonical role counts, and all reusable game settings.
+- Save it separately only after successful role assignment begins. Template failure never
+  invalidates or rewinds the active match.
+- Prefill direct fresh launch, confirmed abandon, and game-over **Start next game** while active
+  recovery always takes precedence.
+- Replace **Clear remembered names** with **Clear saved setup**; keep the visible setup and active
+  save unchanged.
+- Read the old names-only key only for deterministic migration using canonical zero-role/default
+  setup values.
+- Replace per-player delivery flags and controls with one guarded
+  **Confirm all role cards delivered** operation that immediately enters Executioner briefing or
+  Night 1.
+- Keep schema V2 and use exact stage-local `pending`/`complete` bulk delivery status. Restore exact
+  old all-delivered evidence as complete and zero/partial evidence as pending; reject duplicate,
+  unknown, or mixed delivery authority.
+- Apply full light red, green, and grey card backgrounds from the host selector's current active
+  Mafia, Town, and Neutral alignment. Keep textual alignment and all privacy boundaries.
+
+#### Tests
+
+- Template exact-shape validation, full prefill/editability, names-only migration, storage
+  failures, separate keys, clear behavior, active-recovery precedence, game-over/abandon reuse, and
+  absence of match authority.
+- One bulk action, no individual controls, direct Executioner/Night transition, rapid/Strict Mode
+  guards, save retry without reroll, wrong-stage/already-complete rejection, and new exact
+  persistence shape.
+- Legacy all/partial/zero, missing, duplicate, unknown, and mixed delivery evidence.
+- Full-card Mafia/Town/Neutral classes, promoted Godfather, converted Jester, dead Town,
+  alive/dead/original-role retention, hidden-DOM privacy, and responsive CSS ownership.
+
+#### Acceptance criteria
+
+- The last successfully started setup is ready to edit for the next game and contains no match
+  progress, IDs, assignments, or delivery state.
+- New games always create fresh game, match-player, role-instance, and assignment authority.
+- One host confirmation completes role-card delivery without reducing private-delivery
+  responsibility.
+- Host alignment colors remain private, derived, and non-persistent; public and recovery views
+  remain role-safe.
+
+---
+
+### Phase 7F.2 — Opposing killing-role final-two draw
+
+**Status: Implemented.**
+
+#### Work
+
+- At every valid post-day or post-Dawn faction-evaluation boundary, after pending revenge is
+  cleared, check for exactly two living active ordinary killing roles before ordinary faction
+  predicates.
+- Support the canonical active Godfather plus Serial Killer pairing, including a promoted
+  Godfather. Preserve same-role and same-faction pairings as non-applicable; reject any future
+  unsupported opposing ordinary-killer pairing with a structured domain error instead of
+  guessing its outcome.
+- Reuse the ordinary Godfather/Serial Killer attack-outcome authority. Disabled mutual killing
+  produces `opposing-killers-stalemate` with both players alive and no deaths; enabled mutual
+  killing atomically applies two linked `final-killing-role-showdown` deaths and produces
+  `opposing-killers-mutual-elimination`.
+- Preserve personal wins, original assignments, reveal policy, conversions, counters, and all
+  prior history. Do not create another night or collect final targets.
+- If succession creates the eligible pair while Night 2 or later is being started, retain the
+  private promotion briefing, then settle the draw on acknowledgement before exposing the wake
+  sequence. Retry must reuse the exact in-memory terminal payload.
+- Keep schema V2 and neutral-state sub-version 4. Extend only the exact draw-reason and death-cause
+  unions; restoration validates the selected branch and never simulates or reapplies it.
+- Narrowly upgrade pre-7F.2 neutral-state sub-version 2/3/4 saves stopped at an exact eligible
+  post-day or post-Dawn final two, and write the canonical terminal envelope before recovery.
+- Add public-safe draw explanations without exposing roles, settings, targets, promotion history,
+  conversions, personal wins, or raw identities.
+
+#### Tests
+
+- Original and promoted Godfather pairings, both roster orders, both setting branches, linked
+  simultaneous death evidence, reveal policy, and no-input mutation.
+- Same-faction killers, duplicate Godfathers, multiple Serial Killers, killer/non-killer pairs,
+  dead owners, more than two survivors, pending revenge, and all ordinary victory regressions.
+- Prior Jester, Executioner, and multiple personal wins remain recorded alongside the draw.
+- Post-day and post-Dawn integration, no next-night authority, Strict Mode/rapid actions,
+  save-failure retry, exact restore round trips, and no duplicated deaths.
+- Post-promotion final-two integration for both settings, including briefing recovery, no exposed
+  Night actions, exact terminal persistence, and save-failure retry without reevaluation.
+- Forged reason/branch mismatches, partial or malformed links, same-faction showdown evidence,
+  public/recovery privacy, responsive game-over presentation, and architecture/randomness gates.
+- Pre-rule sub-version 2/3/4 post-day and post-Dawn upgrades under both setting branches, including
+  one-time browser write-back and write-failure preservation.
+
+#### Acceptance criteria
+
+- The special draw precedes Mafia parity and Serial Killer victory only for the exact eligible
+  final two.
+- Mutual immunity ends immediately with both players alive; mutual lethality kills both
+  atomically. Both branches end in Draw without another playable night.
+- Same-faction killers never trigger this rule, existing saves remain compatible, and restoration
+  proves rather than replays the terminal evidence.
+- Existing permanent personal wins survive unchanged under the established private disclosure
+  policy.
+- No generic combat, showdown, scripting, backend, or networking abstraction is introduced.
 
 ---
 

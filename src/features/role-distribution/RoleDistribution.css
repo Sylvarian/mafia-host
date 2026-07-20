@@ -41,39 +41,13 @@
   color: var(--text-muted);
 }
 
-.delivery-progress {
-  display: grid;
-  min-width: 9rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-medium);
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  text-align: center;
-}
-
-.delivery-progress strong {
-  font-size: 1.3rem;
-}
-
-.delivery-progress span {
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-.delivery-progress-bar {
-  height: 0.75rem;
+.role-distribution__privacy-warning {
   margin-top: 1.25rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-soft);
-}
-
-.delivery-progress-bar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--success);
+  padding: 0.85rem 1rem;
+  border: 2px solid var(--danger-border);
+  border-radius: var(--radius-small);
+  color: var(--danger-strong);
+  background: var(--danger-soft);
 }
 
 .distribution-error {
@@ -86,14 +60,6 @@
   font-weight: 750;
 }
 
-.role-distribution__bulk-delivery {
-  margin-top: 1rem;
-}
-
-.role-distribution__bulk-delivery .button {
-  width: 100%;
-}
-
 .assignment-list {
   display: grid;
   gap: 0.9rem;
@@ -104,7 +70,7 @@
 
 .assignment-card {
   display: grid;
-  grid-template-columns: minmax(10rem, 0.8fr) minmax(15rem, 1.5fr) minmax(11rem, auto);
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(15rem, 1.5fr);
   align-items: center;
   gap: 1rem;
   padding: 1rem;
@@ -124,11 +90,6 @@
 
 .assignment-card--neutral {
   border-left-color: var(--neutral);
-}
-
-.assignment-card--delivered {
-  border-color: var(--success-border);
-  background: var(--success-soft);
 }
 
 .assignment-card__player > span,
@@ -166,56 +127,6 @@
   margin: 0;
   color: var(--text-muted);
   font-size: 0.86rem;
-}
-
-.card-delivery-control {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 3.25rem;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
-  background: var(--surface-raised);
-  cursor: pointer;
-}
-
-.card-delivery-control input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.card-delivery-control > span {
-  display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  place-items: center;
-  border: 2px solid var(--border-strong);
-  border-radius: 0.35rem;
-}
-
-.card-delivery-control input:checked + span {
-  border-color: var(--success);
-  color: #fff;
-  background: var(--success);
-}
-
-.card-delivery-control input:checked + span::after {
-  content: '✓';
-  font-weight: 900;
-}
-
-.card-delivery-control input:focus-visible + span {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.card-delivery-control strong {
-  color: var(--text-strong);
-  font-size: 0.85rem;
 }
 
 .role-distribution__actions,
@@ -282,10 +193,6 @@
   .assignment-card {
     grid-template-columns: minmax(9rem, 0.8fr) minmax(13rem, 1.2fr);
   }
-
-  .card-delivery-control {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 42rem) {
@@ -297,16 +204,8 @@
     flex-direction: column;
   }
 
-  .delivery-progress {
-    width: 100%;
-  }
-
   .assignment-card {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .card-delivery-control {
-    grid-column: auto;
   }
 
   .role-distribution__actions > .button,

@@ -5,7 +5,8 @@ browser-specific adapters for application/domain contracts and is composed only 
 
 The Web Crypto `RandomSource` and role-assignment identity source remain the only production
 randomness/identity adapters. Random values satisfy the domain `[0, 1)` contract. Game and
-role-instance IDs combine a browser session UUID with monotonic sequences. Phase 7A reuses the
+role-instance IDs combine a browser session UUID with monotonic sequences; new match-player IDs
+derive from the fresh game ID and roster position. Phase 7A reuses the
 injected random source exactly once per Executioner target; Phase 7A.1 bulk delivery, target
 selection, sequential outcomes, restoration, and migration consume no randomness.
 
@@ -55,8 +56,22 @@ sub-version `4` for Godfather promotions and the private unacknowledged briefing
 chooses a successor, builds wake order, acknowledges the briefing, or interprets promotion
 history; it only transports the already-canonical payload.
 
-`BrowserRememberedPlayerNamesRepository` owns the separate
-`mafia-host:remembered-player-names:v1` key. It reads untrusted JSON and transports only string
-arrays through the application contract. It never shares or clears the active-session keys.
-Unavailable/read/write/clear failures are structured, and no error is logged to the console.
-Remembered names are browser/profile-local convenience data with no cloud or multi-tab behavior.
+`BrowserNextGameSetupTemplateRepository` owns the separate
+`mafia-host:next-game-setup-template:v1` key and the narrow compatibility read/removal of
+`mafia-host:remembered-player-names:v1`. The new key always takes precedence. It transports
+untrusted JSON to exact application validation, writes only the validated template, removes the
+legacy key after a successful write, and clears both preference keys without touching active
+session V1/V2 keys.
+
+The transported setup-only payload contains an ordered roster of names and participation booleans,
+canonical role counts, and settings. Roster entries deliberately omit setup-row and match-player
+IDs.
+
+Unavailable/read/write/migration/clear failures are structured and never logged. The template is
+browser/profile-local convenience data with no cloud or multi-tab behavior. It contains no match
+progress and is never included in active recovery metadata.
+
+Phase 7F.1 keeps the active V2 transport key unchanged. New role-distribution envelopes contain
+only stage-local pending/complete bulk delivery status. Legacy per-player delivery arrays are
+interpreted and canonicalized by the application restorer; the adapter does not inspect players,
+rerun assignment, select targets, or consume randomness.

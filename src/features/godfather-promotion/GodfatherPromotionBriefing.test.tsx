@@ -23,7 +23,7 @@ describe('private Godfather promotion briefing', () => {
     expect(section).toHaveTextContent('Alex (Player 2) has been promoted to Godfather.')
     expect(section).toHaveTextContent('Privately tell Alex (Player 2) before continuing.')
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    screen.getByRole('button', { name: 'Continue to night actions' }).click()
+    screen.getByRole('button', { name: 'Continue after briefing' }).click()
     expect(onContinue).toHaveBeenCalledOnce()
   })
 

@@ -3,7 +3,6 @@ import type { PlayerId, RoleId } from '@/domain/identifiers.ts'
 
 import {
   addPlayer,
-  createInitialGameSetupDraft,
   decrementRoleCount,
   incrementRoleCount,
   removePlayer,
@@ -15,6 +14,10 @@ import {
   type GameSetupEditError,
 } from './game-setup-draft.ts'
 import { validateGameSetupDraft, type ValidatedGameSetup } from './game-setup-validation.ts'
+import {
+  createGameSetupDraftFromTemplate,
+  type NextGameSetupTemplate,
+} from './next-game-setup-template.ts'
 
 export type GameSetupWorkflowState =
   | Readonly<{
@@ -45,11 +48,11 @@ export type GameSetupWorkflowCommand =
   | Readonly<{ type: 'RETURN_TO_SETUP' }>
 
 export function createGameSetupWorkflow(
-  rememberedPlayerNames: readonly string[] = [],
+  template: NextGameSetupTemplate | null = null,
 ): GameSetupWorkflowState {
   return {
     status: 'editing',
-    draft: createInitialGameSetupDraft(rememberedPlayerNames),
+    draft: createGameSetupDraftFromTemplate(template),
     editError: null,
   }
 }

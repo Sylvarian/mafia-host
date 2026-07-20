@@ -8,18 +8,16 @@ export {
   completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionMayorReveal,
-  confirmSessionRoleDistribution,
+  confirmAllSessionRoleCardsDelivered,
   continueSessionNight,
   createActiveAppSession,
   endSessionDayWithoutExecution,
   executeSessionDayPlayer,
-  markAllSessionCardsDelivered,
   nextSessionExecutionerBriefing,
   prepareSessionDawn,
   resolveSessionJesterRevenge,
   previousSessionExecutionerBriefing,
   reassignSessionRoles,
-  setSessionCardDelivered,
   settleSessionAfterDayOutcome,
   updateSetupSession,
 } from './active-app-session.ts'
@@ -60,6 +58,7 @@ export type {
   SessionClock,
   StorageReadFailureError,
   StorageUnavailableError,
+  V2WriteFailureAfterCanonicalUpgradeError,
   V2WriteFailureAfterMigrationError,
 } from './game-session-store.ts'
 export { migratePersistedSessionEnvelopeV1 } from './migrate-persisted-session-v1.ts'

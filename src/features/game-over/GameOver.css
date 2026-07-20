@@ -11,6 +11,7 @@
 }
 
 .game-over__eyebrow,
+.game-over__explanation,
 .game-over__status,
 .game-over__privacy {
   margin: 0;
@@ -60,6 +61,7 @@
 }
 
 .game-over__status,
+.game-over__explanation,
 .game-over__privacy {
   color: var(--text-muted);
 }
@@ -94,4 +96,15 @@
 
 .game-over__players span {
   color: var(--text-muted);
+}
+
+.game-over__next-game {
+  min-height: 2.75rem;
+  justify-self: start;
+}
+
+@media (max-width: 24.375rem) {
+  .game-over__next-game {
+    width: 100%;
+  }
 }

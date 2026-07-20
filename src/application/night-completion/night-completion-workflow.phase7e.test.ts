@@ -9,6 +9,7 @@ import {
   beginNextNightActionCollection,
   confirmNightActionTarget,
   continueNightActionCollection,
+  createNightActionCollectionForStartedNight,
   type ActiveNightActionCollectionWorkflow,
   type CompleteNightActionsWorkflow,
 } from '../night-actions/index.ts'
@@ -153,5 +154,114 @@ describe('Phase 7E Dawn completion ordering', () => {
       result: { kind: 'mafia-victory' },
     })
     expect(terminal.value).not.toHaveProperty('dawnAnnouncement')
+  })
+
+  it('settles a post-revenge opposing-killer stalemate without exposing another Dawn or night', () => {
+    let workflow = pendingNight([
+      { roleId: ROLE_IDS.jester },
+      { roleId: ROLE_IDS.godfather },
+      { roleId: ROLE_IDS.serialKiller },
+      { roleId: ROLE_IDS.citizen },
+    ])
+    const godfather = workflow.game.players[1]
+    const serialKiller = workflow.game.players[2]
+    const revengeVictim = workflow.game.players[3]
+    if (godfather === undefined || serialKiller === undefined || revengeVictim === undefined) {
+      throw new Error('Expected final-two workflow players.')
+    }
+    workflow = confirm(workflow, serialKiller.playerId)
+    workflow = confirm(workflow, godfather.playerId)
+    const ready = beginFinalNightResolution(complete(workflow))
+    if (!ready.ok) throw new Error(`Expected night resolution: ${ready.error.type}`)
+    const revenge = prepareDawnAnnouncement(ready.value, { next: () => 0.99 })
+    if (!revenge.ok || revenge.value.status !== 'revenge-resolution') {
+      throw new Error('Expected selected revenge.')
+    }
+    expect(revenge.value.selectedRevenge.victimPlayerId).toBe(revengeVictim.playerId)
+
+    const terminal = continueJesterRevengeResolution(revenge.value)
+
+    expect(terminal.ok).toBe(true)
+    if (!terminal.ok || terminal.value.status !== 'game-over') {
+      throw new Error('Expected final-two terminal result.')
+    }
+    expect(terminal.value.result).toEqual({
+      kind: 'draw',
+      gameId: workflow.game.id,
+      reason: 'opposing-killers-stalemate',
+    })
+    expect(terminal.value.game.players.slice(1, 3).every((player) => player.alive)).toBe(true)
+    expect(
+      terminal.value.game.deathRecords.filter(
+        (record) => record.cause.kind === 'final-killing-role-showdown',
+      ),
+    ).toEqual([])
+    expect(terminal.value).not.toHaveProperty('dawnAnnouncement')
+    expect(terminal.value).not.toHaveProperty('nextNight')
+  })
+
+  it('applies a post-Dawn mutual showdown after ordinary deaths leave the opposing final two', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.godfather },
+        { roleId: ROLE_IDS.serialKiller },
+        { roleId: ROLE_IDS.citizen },
+      ],
+      {
+        phase: 'night-action-collection',
+        nightNumber: 2,
+        settings: {
+          allowFirstNightKills: false,
+          godfatherAndSerialCanKillEachOther: true,
+        },
+      },
+    )
+    const citizen = fixture.game.players[2]
+    if (citizen === undefined) throw new Error('Expected an ordinary night victim.')
+    const started = createNightActionCollectionForStartedNight(fixture.game, fixture.participants)
+    if (!started.ok) throw new Error(`Expected Night 2 workflow: ${started.error.type}`)
+    const afterOverview = continueNightActionCollection(started.value)
+    if (!afterOverview.ok) throw new Error('Expected Mafia overview continuation.')
+
+    let workflow: ActiveNightActionCollectionWorkflow = afterOverview.value
+    workflow = confirm(workflow, citizen.playerId)
+    workflow = confirm(workflow, citizen.playerId)
+    const ready = beginFinalNightResolution(complete(workflow))
+    if (!ready.ok) throw new Error(`Expected night resolution: ${ready.error.type}`)
+    const terminal = prepareDawnAnnouncement(ready.value, { next: () => 0 })
+
+    expect(terminal.ok).toBe(true)
+    if (!terminal.ok || terminal.value.status !== 'game-over') {
+      throw new Error('Expected a terminal post-Dawn showdown.')
+    }
+    expect(terminal.value.result).toEqual({
+      kind: 'draw',
+      gameId: fixture.game.id,
+      reason: 'opposing-killers-mutual-elimination',
+    })
+    expect(terminal.value.game.players.every((player) => !player.alive)).toBe(true)
+    expect(terminal.value.game.deathRecords.map((record) => record.cause.kind)).toEqual([
+      'night-death',
+      'final-killing-role-showdown',
+      'final-killing-role-showdown',
+    ])
+    expect(
+      terminal.value.game.deathRecords
+        .filter((record) => record.cause.kind === 'final-killing-role-showdown')
+        .map((record) => record.cause),
+    ).toEqual([
+      {
+        kind: 'final-killing-role-showdown',
+        boundary: { kind: 'post-dawn', nightNumber: 2 },
+        opponentPlayerId: fixture.game.players[1]?.playerId,
+      },
+      {
+        kind: 'final-killing-role-showdown',
+        boundary: { kind: 'post-dawn', nightNumber: 2 },
+        opponentPlayerId: fixture.game.players[0]?.playerId,
+      },
+    ])
+    expect(terminal.value).not.toHaveProperty('dawnAnnouncement')
+    expect(terminal.value).not.toHaveProperty('nextNight')
   })
 })

@@ -96,8 +96,9 @@ invariants, and no pending Jester revenge before any predicate is derived. The a
 evaluate-and-finalize operation derives the predicates once at that boundary. Town follows R-011;
 Mafia follows R-012 using living Mafia versus
 living Town while active Jesters block it; Serial Killer follows R-009 and wins only as the sole
-survivor. Converted Executioners count as active Jesters. The only draw is the documented
-no-survivors state. Winner IDs are stable and roster-ordered, and mutually true predicates fail
+survivor. Converted Executioners count as active Jesters. Draws include the documented
+no-survivors state and the Phase 7F.2 opposing killing-role final-two branches. Winner IDs are
+stable and roster-ordered, and mutually true predicates fail
 closed instead of gaining check-order precedence.
 
 Terminal finalization changes only the phase to `game-over`; deaths, conversions, targets,
@@ -138,3 +139,25 @@ application compatibility boundary. Wake order and every night mechanic use acti
 promoted Framers and Consorts lose those abilities immediately and act only as Godfather. Sheriff
 and permanent investigation groups likewise inspect active Godfather authority. Death reveal and
 faction-victory disclosure remain governed by their existing original/public rules.
+
+Phase 7F.1 adds no domain game state or rule. The reusable full-roster/participation setup template
+is application-owned setup data, bulk role-card delivery is an application workflow boundary, and
+alignment colors are feature CSS. No template, delivery flag, or color enters `GameState`.
+
+Phase 7F.2 adds `win-conditions/final-two-killing-role-outcome`. At a validated post-day or
+post-Dawn boundary it recognizes exactly two living current active ordinary killers, with the
+current registry deliberately supporting only Godfather versus Serial Killer. It reuses the
+ordinary attack-outcome function: mutual immunity yields a terminal stalemate with both alive,
+while mutual lethality applies two immutable, cross-linked `final-killing-role-showdown` deaths at
+one terminal boundary. This check precedes ordinary faction predicates. Same-faction killers and
+unsupported/non-killing pairs remain non-applicable.
+
+A narrow post-promotion boundary handles the case where succession first creates the pair at the
+start of a later Night. It requires the canonical current-Night promotion and completed prior Day,
+then finalizes before any wake step or target can become authoritative.
+
+Showdown application preserves personal wins and original assignments, applies ordinary public
+death-reveal and non-execution conversion rules, and never mutates the input. Stored terminal
+states must prove the exact draw reason, setting branch, active-role pairing, survivor state, and
+linked evidence. No generic combat simulator, role scripting system, or additional playable night
+was introduced.

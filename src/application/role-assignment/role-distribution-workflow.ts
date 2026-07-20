@@ -1,6 +1,6 @@
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
+import { validateGameState } from '@/domain/game/game-invariants.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
-import type { PlayerId } from '@/domain/identifiers.ts'
 
 import type { ValidatedGameSetup } from '../game-setup/game-setup-validation.ts'
 import { assignRolesToValidatedSetup, type RoleAssignmentDependencies } from './assign-roles.ts'
@@ -15,7 +15,6 @@ export type RoleDistributionWorkflow =
       status: 'distributing'
       setup: ValidatedGameSetup
       game: GameState
-      deliveredPlayerIds: readonly PlayerId[]
     }>
   | Readonly<{
       status: 'confirmed'
@@ -56,100 +55,38 @@ export function assignRoleDistribution(
   return assignmentResult.ok
     ? succeed({
         status: 'distributing',
-        setup: workflow.setup,
+        setup: createAssignedSetup(workflow.setup, assignmentResult.value),
         game: assignmentResult.value,
-        deliveredPlayerIds: [],
       })
     : assignmentResult
 }
 
-export function setCardDelivered(
-  workflow: RoleDistributionWorkflow,
-  playerId: PlayerId,
-  delivered: boolean,
-): DomainResult<DistributingRolesWorkflow, RoleDistributionError> {
-  if (workflow.status !== 'distributing') {
-    return fail({
-      type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-      operation: 'set-card-delivery',
-      status: workflow.status,
-    })
-  }
-
-  if (!workflow.game.players.some((player) => player.playerId === playerId)) {
-    return fail({ type: 'UNKNOWN_CARD_DELIVERY_PLAYER', playerId })
-  }
-
-  const alreadyDelivered = workflow.deliveredPlayerIds.some(
-    (deliveredPlayerId) => deliveredPlayerId === playerId,
-  )
-
-  if (delivered === alreadyDelivered) {
-    return succeed(workflow)
-  }
-
-  return succeed({
-    ...workflow,
-    deliveredPlayerIds: delivered
-      ? [...workflow.deliveredPlayerIds, playerId]
-      : workflow.deliveredPlayerIds.filter((deliveredPlayerId) => deliveredPlayerId !== playerId),
-  })
-}
-
-export function markAllParticipatingCardsDelivered(
-  workflow: RoleDistributionWorkflow,
-): DomainResult<DistributingRolesWorkflow, RoleDistributionError> {
-  if (workflow.status !== 'distributing') {
-    return fail({
-      type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-      operation: 'set-card-delivery',
-      status: workflow.status,
-    })
-  }
-
-  const deliveredPlayerIds = Object.freeze(workflow.game.players.map((player) => player.playerId))
-
-  if (
-    deliveredPlayerIds.length === workflow.deliveredPlayerIds.length &&
-    deliveredPlayerIds.every((playerId, index) => playerId === workflow.deliveredPlayerIds[index])
-  ) {
-    return succeed(workflow)
-  }
-
-  return succeed(
-    Object.freeze({
-      ...workflow,
-      deliveredPlayerIds,
-    }),
-  )
-}
-
-export function confirmRoleDistribution(
+export function confirmAllRoleCardsDelivered(
   workflow: RoleDistributionWorkflow,
 ): DomainResult<ConfirmedRoleDistributionWorkflow, RoleDistributionError> {
+  if (workflow.status === 'confirmed') {
+    return fail({ type: 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE' })
+  }
   if (workflow.status !== 'distributing') {
     return fail({
       type: 'INVALID_ROLE_DISTRIBUTION_STATE',
-      operation: 'confirm',
+      operation: 'confirm-all-role-cards-delivered',
       status: workflow.status,
     })
   }
 
-  const participatingPlayerIds = new Set(workflow.game.players.map((player) => player.playerId))
-
-  for (const deliveredPlayerId of workflow.deliveredPlayerIds) {
-    if (!participatingPlayerIds.has(deliveredPlayerId)) {
-      return fail({ type: 'UNKNOWN_CARD_DELIVERY_PLAYER', playerId: deliveredPlayerId })
-    }
+  const gameResult = validateGameState(workflow.game)
+  if (!gameResult.ok || gameResult.value.phase !== 'role-distribution') {
+    return fail({ type: 'INVALID_ROLE_DISTRIBUTION_AUTHORITY' })
   }
-
-  const deliveredPlayerIds = new Set(workflow.deliveredPlayerIds)
-  const undeliveredPlayerIds = workflow.game.players
-    .filter((player) => !deliveredPlayerIds.has(player.playerId))
-    .map((player) => player.playerId)
-
-  if (undeliveredPlayerIds.length > 0) {
-    return fail({ type: 'CARD_DELIVERY_INCOMPLETE', undeliveredPlayerIds })
+  if (
+    gameResult.value.players.length === 0 ||
+    gameResult.value.players.length !== workflow.setup.participatingPlayers.length ||
+    gameResult.value.players.some(
+      (player, index) => player.playerId !== workflow.setup.participatingPlayers[index]?.id,
+    )
+  ) {
+    return fail({ type: 'ROLE_CARDS_UNAVAILABLE' })
   }
 
   return succeed({
@@ -162,7 +99,6 @@ export function confirmRoleDistribution(
 export function reassignRoleDistribution(
   workflow: RoleDistributionWorkflow,
   dependencies: RoleAssignmentDependencies,
-  deliveredCardsResetConfirmed: boolean,
 ): DomainResult<DistributingRolesWorkflow, RoleDistributionError> {
   if (workflow.status === 'confirmed') {
     return fail({ type: 'REASSIGNMENT_AFTER_CONFIRMATION' })
@@ -176,49 +112,35 @@ export function reassignRoleDistribution(
     })
   }
 
-  if (workflow.deliveredPlayerIds.length > 0 && !deliveredCardsResetConfirmed) {
-    return fail({
-      type: 'REASSIGNMENT_CONFIRMATION_REQUIRED',
-      deliveredPlayerIds: [...workflow.deliveredPlayerIds],
-    })
-  }
-
   const assignmentResult = assignRolesToValidatedSetup(workflow.setup, dependencies, {
     gameIds: [workflow.game.id],
+    playerIds: workflow.game.players.map((player) => player.playerId),
     roleInstanceIds: workflow.game.players.map((player) => player.role.instanceId),
   })
 
   return assignmentResult.ok
     ? succeed({
         status: 'distributing',
-        setup: workflow.setup,
+        setup: createAssignedSetup(workflow.setup, assignmentResult.value),
         game: assignmentResult.value,
-        deliveredPlayerIds: [],
       })
     : assignmentResult
 }
 
-export function getRoleDistributionProgress(
-  workflow: RoleDistributionWorkflow,
-): Readonly<{ deliveredCount: number; totalCount: number; isComplete: boolean }> {
-  switch (workflow.status) {
-    case 'unassigned':
-      return {
-        deliveredCount: 0,
-        totalCount: workflow.setup.participatingPlayers.length,
-        isComplete: false,
-      }
-    case 'distributing': {
-      const participatingPlayerIds = new Set(workflow.game.players.map((player) => player.playerId))
-      const deliveredCount = new Set(
-        workflow.deliveredPlayerIds.filter((playerId) => participatingPlayerIds.has(playerId)),
-      ).size
-      const totalCount = workflow.game.players.length
-      return { deliveredCount, totalCount, isComplete: deliveredCount === totalCount }
-    }
-    case 'confirmed': {
-      const totalCount = workflow.game.players.length
-      return { deliveredCount: totalCount, totalCount, isComplete: true }
-    }
+function createAssignedSetup(setup: ValidatedGameSetup, game: GameState): ValidatedGameSetup {
+  if (setup.participatingPlayers.length !== game.players.length) {
+    throw new Error('Assigned game and validated setup have different participant counts.')
   }
+  return Object.freeze({
+    ...setup,
+    participatingPlayers: Object.freeze(
+      setup.participatingPlayers.map((participant, index) => {
+        const assignedPlayer = game.players[index]
+        if (assignedPlayer === undefined) {
+          throw new Error('Assigned game is missing a validated setup participant.')
+        }
+        return Object.freeze({ ...participant, id: assignedPlayer.playerId })
+      }),
+    ),
+  })
 }

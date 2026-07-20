@@ -1,6 +1,7 @@
 import type { GameId, PlayerId } from '../identifiers.ts'
 
-export type DrawReason = 'no-survivors'
+export type DrawReason =
+  'no-survivors' | 'opposing-killers-stalemate' | 'opposing-killers-mutual-elimination'
 
 export type FactionResult =
   | Readonly<{

@@ -1,81 +1,88 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { StrictMode } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { PlayerId } from '@/application/role-assignment/index.ts'
-import {
-  createNightFixture,
-  FIXTURE_ROLE_IDS as ROLE_IDS,
-} from '../../../tests/support/night-action-fixtures.ts'
+import { ROLE_IDS } from '@/application/night-actions/index.ts'
+import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import { RoleDistribution } from './RoleDistribution.tsx'
 
-function distributingFixture() {
-  const fixture = createNightFixture(
-    [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
-    { distributionStatus: 'distributing' },
-  )
-  if (fixture.distribution.status !== 'distributing') {
-    throw new Error('Expected distribution fixture.')
-  }
-  return fixture.distribution
-}
-
 describe('role distribution bulk delivery UI', () => {
-  it('offers the reversible bulk operation without finalising distribution', () => {
-    const onMarkAllCardsDelivered = vi.fn()
-    const onConfirmDistribution = vi.fn()
+  it('shows all private cards with exactly one delivery action and no player controls', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.godfather, name: 'Alex' },
+        { roleId: ROLE_IDS.citizen, name: 'Alex' },
+      ],
+      { distributionStatus: 'distributing' },
+    )
+    if (fixture.distribution.status !== 'distributing') {
+      throw new Error('Expected distribution.')
+    }
+    const confirmAll = vi.fn()
     render(
       <RoleDistribution
-        workflow={distributingFixture()}
+        workflow={fixture.distribution}
         error={null}
         beginNightErrorMessage={null}
-        onCardDeliveryChange={() => undefined}
-        onMarkAllCardsDelivered={onMarkAllCardsDelivered}
-        onConfirmDistribution={onConfirmDistribution}
+        onConfirmAllRoleCardsDelivered={confirmAll}
         onReassignRoles={() => undefined}
         onBeginFirstNight={() => undefined}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mark all cards delivered' }))
-    expect(onMarkAllCardsDelivered).toHaveBeenCalledTimes(1)
-    expect(onConfirmDistribution).not.toHaveBeenCalled()
-    expect(screen.getAllByRole('checkbox')).toHaveLength(2)
+    expect(screen.getByText(/HOST-ONLY VIEW/)).toBeVisible()
+    expect(screen.getByText('Godfather')).toBeVisible()
+    expect(screen.getByText('Citizen')).toBeVisible()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: /mark.*delivered/i })).toBeNull()
+    const button = screen.getByRole('button', {
+      name: 'Confirm all role cards delivered',
+    })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(confirmAll).toHaveBeenCalledOnce()
   })
 
-  it('shows the completed label, keeps individual undo controls, and disables bulk repeat', () => {
-    const workflow = distributingFixture()
-    const completed = {
-      ...workflow,
-      deliveredPlayerIds: workflow.game.players.map((player) => player.playerId),
+  it('renders a legacy completed boundary without private cards or a second delivery action', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],
+      { distributionStatus: 'confirmed' },
+    )
+    if (fixture.distribution.status !== 'confirmed') {
+      throw new Error('Expected confirmed distribution.')
     }
-    const onCardDeliveryChange = vi.fn<(playerId: PlayerId, delivered: boolean) => void>()
-
+    const begin = vi.fn()
     render(
-      <StrictMode>
-        <RoleDistribution
-          workflow={completed}
-          error={null}
-          beginNightErrorMessage={null}
-          onCardDeliveryChange={onCardDeliveryChange}
-          onMarkAllCardsDelivered={() => undefined}
-          onConfirmDistribution={() => undefined}
-          onReassignRoles={() => undefined}
-          onBeginFirstNight={() => undefined}
-        />
-      </StrictMode>,
+      <RoleDistribution
+        workflow={fixture.distribution}
+        error={null}
+        beginNightErrorMessage={null}
+        onConfirmAllRoleCardsDelivered={() => undefined}
+        onReassignRoles={() => undefined}
+        onBeginFirstNight={begin}
+      />,
     )
 
+    expect(screen.getByRole('heading', { name: 'Role-card delivery complete' })).toBeVisible()
     expect(
-      screen.getByRole('button', {
-        name: 'All participating players have received their cards.',
+      screen.queryByRole('button', {
+        name: 'Confirm all role cards delivered',
       }),
-    ).toBeDisabled()
-    const firstDelivery = screen.getAllByRole('checkbox')[0]
-    if (firstDelivery === undefined) throw new Error('Expected a delivery checkbox.')
-    fireEvent.click(firstDelivery)
-    expect(onCardDeliveryChange).toHaveBeenCalledTimes(1)
-    expect(onCardDeliveryChange).toHaveBeenCalledWith('player-1', false)
-    expect(screen.getByRole('button', { name: 'Confirm Distribution and Continue' })).toBeEnabled()
+    ).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to First Night' }))
+    expect(begin).toHaveBeenCalledOnce()
+  })
+
+  it('owns narrow 390px and 320px layouts without fixed-width card or action columns', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/role-distribution/RoleDistribution.css'),
+      'utf8',
+    )
+
+    expect(css).toContain('@media (max-width: 42rem)')
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(css).toMatch(/\.role-distribution__actions > \.button,[\s\S]*width: 100%/)
+    expect(css).not.toMatch(/min-width:\s*(?:[3-9]\d|\d{3,})rem/)
   })
 })

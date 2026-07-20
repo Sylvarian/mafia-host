@@ -14,6 +14,7 @@ export type {
   RoleCountEditError,
   RosterEditError,
 } from './game-setup-draft.ts'
+export { DEFAULT_GAME_SETTINGS } from './game-setup-draft.ts'
 export { inspectGameSetupDraft, validateGameSetupDraft } from './game-setup-validation.ts'
 export type {
   GameSetupDraftCandidate,
@@ -24,15 +25,21 @@ export type {
 export { createGameSetupWorkflow, reduceGameSetupWorkflow } from './game-setup-workflow.ts'
 export type { GameSetupWorkflowCommand, GameSetupWorkflowState } from './game-setup-workflow.ts'
 export {
-  clearRememberedPlayerNames,
-  loadRememberedPlayerNames,
-  saveRememberedPlayerNames,
-} from './remembered-player-names.ts'
+  clearNextGameSetupTemplate,
+  createDefaultNextGameSetupTemplate,
+  createGameSetupDraftFromTemplate,
+  createNextGameSetupTemplate,
+  loadNextGameSetupTemplate,
+  saveNextGameSetupTemplate,
+  validateNextGameSetupTemplate,
+} from './next-game-setup-template.ts'
 export type {
-  LoadedRememberedPlayerNames,
-  MalformedRememberedPlayerNamesError,
-  RememberedPlayerNamesRepository,
-  RememberedPlayerNamesRepositoryError,
-  RememberedPlayerNamesRepositoryLoadResult,
-  RememberedPlayerNamesRepositoryWriteResult,
-} from './remembered-player-names.ts'
+  InvalidNextGameSetupTemplateError,
+  LoadedNextGameSetupTemplate,
+  NextGameSetupRosterEntry,
+  NextGameSetupTemplate,
+  NextGameSetupTemplateRepository,
+  NextGameSetupTemplateRepositoryError,
+  NextGameSetupTemplateRepositoryLoadResult,
+  NextGameSetupTemplateRepositoryWriteResult,
+} from './next-game-setup-template.ts'

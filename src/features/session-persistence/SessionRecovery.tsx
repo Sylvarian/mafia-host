@@ -275,6 +275,8 @@ function getRecoveryDescription(error: LoadPersistedSessionError): string {
         : 'This older night save does not prove which actor follows its acknowledged result. It cannot be upgraded without guessing or skipping an action.'
     case 'V2_WRITE_FAILURE_AFTER_MIGRATION':
       return 'The older save was valid, but the upgraded V2 save could not be written. The older save was not removed.'
+    case 'V2_WRITE_FAILURE_AFTER_CANONICAL_UPGRADE':
+      return 'The saved game was valid, but its canonical upgrade could not be written. The original save remains available for another recovery attempt.'
     case 'LEGACY_REMOVAL_FAILURE_AFTER_MIGRATION':
       return 'The upgraded save could not safely replace the older save. No session was loaded.'
     case 'MIGRATION_FAILURE':

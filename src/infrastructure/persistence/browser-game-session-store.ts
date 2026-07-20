@@ -43,7 +43,25 @@ export class BrowserGameSessionStore implements GameSessionStore {
     }
     if (v2TextResult.value !== null) {
       const parsed = parseStoredJson(v2TextResult.value)
-      return parsed.ok ? this.#restoreV2(parsed.value) : parsed
+      if (!parsed.ok) {
+        return parsed
+      }
+      const restored = this.#restoreV2(parsed.value)
+      if (!restored.ok || restored.value.writeBackEnvelope === undefined) {
+        return restored
+      }
+      try {
+        this.#storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(restored.value.writeBackEnvelope))
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          error: {
+            type: 'V2_WRITE_FAILURE_AFTER_CANONICAL_UPGRADE',
+            errorName: getErrorName(error),
+          },
+        }
+      }
+      return restored
     }
 
     const v1TextResult = this.#read(LEGACY_SESSION_STORAGE_KEY)

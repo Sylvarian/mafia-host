@@ -42,7 +42,7 @@ export function GodfatherPromotionBriefing({
         </p>
       )}
       <button type="button" className="button button--primary" onClick={onContinue}>
-        Continue to night actions
+        Continue after briefing
       </button>
     </section>
   )

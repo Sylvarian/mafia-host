@@ -5,9 +5,11 @@ slice here. Slice internals remain private; cross-slice APIs are exposed only th
 `index` modules.
 
 `game-setup` renders the application setup workflow. `role-distribution` is the private assignment
-and physical-card screen. Phase 7A.1 adds one reversible **Mark all cards delivered** control while
-retaining individual checkboxes and final confirmation. Components do not shuffle roles, construct
-game state, assign Executioner targets, or finalize distribution themselves.
+and physical-card screen. Phase 7F.1 shows every private role card with exactly one
+**Confirm all role cards delivered** action and no per-player delivery controls. The host remains
+responsible for privately handing out every card before pressing it; that one guarded action
+immediately enters the correct Executioner or Night 1 stage. Components do not shuffle roles,
+construct game state, or assign Executioner targets themselves.
 
 `executioner-briefing` renders exactly one Phase 7A private briefing at a time. It exposes the
 Executioner identity and target player name but not the target role. Focus and confirmation state
@@ -46,8 +48,9 @@ or next-night controls.
 Phase 7C.1 adds **Show host-only roles** / **Hide host-only roles** only to editable day discussion.
 The list and prominent textual warning are absent by default. The component requests the separate
 sanitized host-role selector only while visible, and toggle state never autosaves or enters the
-application session. Rows are grouped under accessible Mafia, Town, and Neutral headings with
-textual red/green/grey treatments. They show duplicate-safe labels, alive/dead state, current
+application session. Rows are grouped under accessible Mafia, Town, and Neutral headings. Each
+entire player card uses a light red, green, or grey background derived from active alignment while
+retaining textual alignment. They show duplicate-safe labels, alive/dead state, current
 role/alignment, optional original assignment, and separate legitimate public-role status.
 Converted Executioners appear as active Jester/original Executioner and promoted Mafia as active
 Godfather/original assignment; targets, wins, pending revenge, and raw IDs never enter props or
@@ -80,10 +83,16 @@ only after Continue. Post-day recovery likewise shows only generic “Day comple
 Continue and never exposes personal wins, conversions, pending revenge, or targets.
 
 `game-over` renders a focused public `Game over` heading plus Town, Mafia, Serial Killer, or Draw.
+Phase 7F.2 distinguishes no survivors, opposing-killer stalemate, and opposing-killer mutual
+elimination with short public-safe explanations that do not name hidden roles or settings.
 Its responsive roster contains only duplicate-safe names, alive/dead state, and roles already
 legitimately public. Hidden roles are not automatically revealed; targets, conversions, pending
 revenge, personal wins, and raw IDs never enter its props or DOM. The feature has no next-night,
 revenge, or role-reveal control and remains usable without horizontal overflow at 320px and 390px.
+Both final-two branches arrive as terminal application authority, so the feature offers no target
+collection or next-night action. Existing private personal wins remain outside its props and DOM.
+The private promotion feature uses the neutral label **Continue after briefing** because its
+acknowledgement may either enter the ordinary wake sequence or settle an eligible final two first.
 
 Waiting recovery remains generic `Day complete` even when private pending revenge exists. Game-over
 recovery may show only `Game over`, its public faction/draw, Day number, player count, and saved
@@ -103,6 +112,9 @@ first later-night action. Its heading receives focus, its warning and duplicate-
 at 320px/390px, and its only 44px control continues to night actions. It cannot be dismissed with
 Escape. Save failure leaves the same briefing visible.
 
-Fresh setup may show editable remembered names and a setup-only **Clear remembered names** control.
-Clearing affects future prefill, keeps the current fields intact, and never deletes an active save.
-The feature receives only application callbacks and status text; it never accesses browser storage.
+Fresh setup may prefill the full ordered roster, Playing/Not playing choices, role quantities, and
+settings from the saved next-game template. **Clear saved setup** affects future prefill, keeps the
+current fields intact, and never
+deletes an active save. Game over provides **Start next game** through the existing explicit
+active-save clearing boundary; confirmed abandon uses the same fresh editable prefill. The feature
+receives only application callbacks and status text and never accesses browser storage.

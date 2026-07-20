@@ -26,22 +26,22 @@ type GameSetupProps = Readonly<{
   workflow: GameSetupWorkflowState
   editError: GameSetupEditError | null
   assignmentErrorMessage: string | null
-  rememberedNamesExist: boolean
-  rememberedNamesMessage: string | null
+  savedSetupExists: boolean
+  savedSetupMessage: string | null
   onCommand: (command: GameSetupWorkflowCommand) => void
   onAssignRoles: () => void
-  onClearRememberedNames: () => void
+  onClearSavedSetup: () => void
 }>
 
 export function GameSetup({
   workflow,
   editError,
   assignmentErrorMessage,
-  rememberedNamesExist,
-  rememberedNamesMessage,
+  savedSetupExists,
+  savedSetupMessage,
   onCommand,
   onAssignRoles,
-  onClearRememberedNames,
+  onClearSavedSetup,
 }: GameSetupProps) {
   if (workflow.status === 'ready') {
     return (
@@ -70,28 +70,24 @@ export function GameSetup({
 
   return (
     <div className="game-setup">
-      {rememberedNamesExist || rememberedNamesMessage !== null ? (
-        <section className="remembered-names" aria-labelledby="remembered-player-names-heading">
+      {savedSetupExists || savedSetupMessage !== null ? (
+        <section className="remembered-names" aria-labelledby="saved-setup-heading">
           <div>
             <p className="section-kicker">Local convenience</p>
-            <h2 id="remembered-player-names-heading">Remembered player names</h2>
+            <h2 id="saved-setup-heading">Saved next-game setup</h2>
             <p>
-              Names are stored only in this browser profile. Roles and previous game state are never
-              included.
+              Player names, role quantities, and game settings are stored only in this browser
+              profile. Match progress and assignments are never included.
             </p>
           </div>
-          {rememberedNamesExist ? (
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={onClearRememberedNames}
-            >
-              Clear remembered names
+          {savedSetupExists ? (
+            <button type="button" className="button button--secondary" onClick={onClearSavedSetup}>
+              Clear saved setup
             </button>
           ) : null}
-          {rememberedNamesMessage === null ? null : (
+          {savedSetupMessage === null ? null : (
             <p className="remembered-names__status" role="status">
-              {rememberedNamesMessage}
+              {savedSetupMessage}
             </p>
           )}
         </section>

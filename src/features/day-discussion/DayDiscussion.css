@@ -134,6 +134,21 @@
   background: var(--surface-raised);
 }
 
+.host-role-view__players .host-role-card--mafia {
+  border-color: var(--mafia);
+  background: var(--faction-mafia-soft);
+}
+
+.host-role-view__players .host-role-card--town {
+  border-color: var(--town);
+  background: var(--faction-town-soft);
+}
+
+.host-role-view__players .host-role-card--neutral {
+  border-color: var(--neutral);
+  background: var(--faction-neutral-soft);
+}
+
 .host-role-view__players li > div {
   display: grid;
   gap: 0.2rem;

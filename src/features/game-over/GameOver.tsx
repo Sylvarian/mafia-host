@@ -4,7 +4,10 @@ import type { PublicGameOverView } from '@/application/game-over/index.ts'
 
 import './GameOver.css'
 
-export function GameOver({ view }: Readonly<{ view: PublicGameOverView }>) {
+export function GameOver({
+  view,
+  onStartNextGame,
+}: Readonly<{ view: PublicGameOverView; onStartNextGame: () => void }>) {
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -18,6 +21,9 @@ export function GameOver({ view }: Readonly<{ view: PublicGameOverView }>) {
         Game over
       </h2>
       <p className="game-over__result">{view.heading}</p>
+      {view.explanation === null ? null : (
+        <p className="game-over__explanation">{view.explanation}</p>
+      )}
       <p className="game-over__status">The game ended {view.endedAtLabel}.</p>
 
       <section className="game-over__players" aria-labelledby="game-over-players-heading">
@@ -38,6 +44,13 @@ export function GameOver({ view }: Readonly<{ view: PublicGameOverView }>) {
       <p className="game-over__privacy">
         Hidden roles and private neutral information remain hidden.
       </p>
+      <button
+        type="button"
+        className="button button--prepare game-over__next-game"
+        onClick={onStartNextGame}
+      >
+        Start next game
+      </button>
     </section>
   )
 }

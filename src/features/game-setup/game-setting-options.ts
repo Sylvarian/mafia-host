@@ -11,7 +11,7 @@ export const GAME_SETTING_OPTIONS: readonly GameSettingOption[] = [
     key: 'godfatherAndSerialCanKillEachOther',
     label: 'Godfather and Serial Killer can kill each other',
     description:
-      'Store whether attacks between these two roles can be lethal. Resolution is not implemented yet.',
+      'When enabled, a final Godfather and Serial Killer eliminate each other; otherwise their final two is a stalemate.',
   },
   {
     key: 'godfatherAppearsSuspiciousToSheriff',

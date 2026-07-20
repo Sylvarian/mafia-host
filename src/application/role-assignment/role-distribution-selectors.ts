@@ -11,14 +11,11 @@ export type RoleDistributionRow = Readonly<{
   roleDisplayName: string
   faction: Faction
   description: string
-  delivered: boolean
 }>
 
 export function selectRoleDistributionRows(
   workflow: DistributingRolesWorkflow,
 ): readonly RoleDistributionRow[] {
-  const deliveredPlayerIds = new Set(workflow.deliveredPlayerIds)
-
   return workflow.game.players.map((gamePlayer) => {
     const player = workflow.setup.participatingPlayers.find(
       (participant) => participant.id === gamePlayer.playerId,
@@ -43,7 +40,6 @@ export function selectRoleDistributionRows(
       roleDisplayName: getRoleInstanceDisplayName(gamePlayer.role, role),
       faction: role.faction,
       description: role.description,
-      delivered: deliveredPlayerIds.has(gamePlayer.playerId),
     }
   })
 }

@@ -41,6 +41,8 @@ export type OutcomeStateInvariantError =
         | 'order-mismatch'
         | 'missing-dead-player'
         | 'revenge-resolution-mismatch'
+        | 'partial-final-showdown'
+        | 'invalid-final-showdown-evidence'
       index?: number
       playerId?: PlayerId
     }>
@@ -525,6 +527,11 @@ function copyDeathRecords(
     records.push(record)
   }
 
+  const showdownResult = validateFinalShowdownEvidence(records, context)
+  if (!showdownResult.ok) {
+    return showdownResult
+  }
+
   const unauthorizedReveal = context.players.find((player) => {
     if (player.publiclyRevealedRoleId === null) {
       return false
@@ -538,6 +545,7 @@ function copyDeathRecords(
       (player.alive ||
         death?.cause.kind === 'day-execution' ||
         death?.cause.kind === 'jester-revenge' ||
+        death?.cause.kind === 'final-killing-role-showdown' ||
         (death?.cause.kind === 'night-death' && death.cause.nightNumber > 1))
     return !authorizedByDeath && !authorizedMayorReveal
   })
@@ -615,7 +623,94 @@ function copyDeathCause(
       }),
     )
   }
+  if (
+    candidate.kind === 'final-killing-role-showdown' &&
+    hasExactKeys(candidate, ['kind', 'boundary', 'opponentPlayerId']) &&
+    isNonblankString(candidate.opponentPlayerId)
+  ) {
+    const boundary = copyFinalShowdownBoundary(candidate.boundary, context)
+    return boundary === null
+      ? fail('invalid-cause')
+      : succeed(
+          Object.freeze({
+            kind: 'final-killing-role-showdown',
+            boundary,
+            opponentPlayerId: playerId(candidate.opponentPlayerId),
+          }),
+        )
+  }
   return fail('invalid-cause')
+}
+
+function copyFinalShowdownBoundary(
+  candidate: unknown,
+  context: Parameters<typeof copyAndValidateOutcomeState>[1],
+): Extract<DeathCause, Readonly<{ kind: 'final-killing-role-showdown' }>>['boundary'] | null {
+  if (!isUnknownRecord(candidate)) {
+    return null
+  }
+  if (
+    candidate.kind === 'post-day' &&
+    hasExactKeys(candidate, ['kind', 'dayNumber']) &&
+    isPositiveInteger(candidate.dayNumber) &&
+    candidate.dayNumber === context.dayNumber &&
+    (context.phase === 'execution-resolution' ||
+      (context.phase === 'game-over' && context.nightNumber === context.dayNumber))
+  ) {
+    return Object.freeze({ kind: 'post-day', dayNumber: candidate.dayNumber })
+  }
+  if (
+    candidate.kind === 'post-dawn' &&
+    hasExactKeys(candidate, ['kind', 'nightNumber']) &&
+    isPositiveInteger(candidate.nightNumber) &&
+    candidate.nightNumber === context.nightNumber &&
+    (context.phase === 'dawn-resolution' ||
+      (context.phase === 'game-over' && context.nightNumber === context.dayNumber + 1))
+  ) {
+    return Object.freeze({ kind: 'post-dawn', nightNumber: candidate.nightNumber })
+  }
+  return null
+}
+
+function validateFinalShowdownEvidence(
+  deaths: readonly DeathRecord[],
+  context: Parameters<typeof copyAndValidateOutcomeState>[1],
+): DomainResult<true, OutcomeStateInvariantError> {
+  const showdownDeaths = deaths.filter(
+    (
+      death,
+    ): death is DeathRecord & {
+      cause: Extract<DeathCause, Readonly<{ kind: 'final-killing-role-showdown' }>>
+    } => death.cause.kind === 'final-killing-role-showdown',
+  )
+  if (showdownDeaths.length === 0) {
+    return succeed(true)
+  }
+  if (showdownDeaths.length !== 2) {
+    return invalidDeaths('partial-final-showdown')
+  }
+  const first = showdownDeaths[0]
+  const second = showdownDeaths[1]
+  if (
+    first === undefined ||
+    second === undefined ||
+    first.cause.opponentPlayerId !== second.playerId ||
+    second.cause.opponentPlayerId !== first.playerId ||
+    !sameFinalShowdownBoundary(first.cause.boundary, second.cause.boundary) ||
+    context.players.some((player) => player.alive)
+  ) {
+    return invalidDeaths('invalid-final-showdown-evidence')
+  }
+  return succeed(true)
+}
+
+function sameFinalShowdownBoundary(
+  left: Extract<DeathCause, Readonly<{ kind: 'final-killing-role-showdown' }>>['boundary'],
+  right: Extract<DeathCause, Readonly<{ kind: 'final-killing-role-showdown' }>>['boundary'],
+): boolean {
+  return left.kind === 'post-day'
+    ? right.kind === 'post-day' && left.dayNumber === right.dayNumber
+    : right.kind === 'post-dawn' && left.nightNumber === right.nightNumber
 }
 
 function copyConversions(
@@ -1155,11 +1250,7 @@ function validateRevengeResolutionEvidence(
       }
     } else {
       const earlierOrSameDeathCount = deaths.filter((death) =>
-        death.cause.kind === 'night-death'
-          ? death.cause.nightNumber <= resolution.resolvedAtNightNumber
-          : death.cause.kind === 'jester-revenge'
-            ? death.cause.nightNumber <= resolution.resolvedAtNightNumber
-            : death.cause.dayNumber < resolution.resolvedAtNightNumber,
+        deathOccursNoLaterThanNight(death.cause, resolution.resolvedAtNightNumber),
       ).length
       if (earlierOrSameDeathCount !== context.players.length) {
         return invalidRevengeResolutions('victim-death-mismatch', index, resolution.obligationId)
@@ -1230,15 +1321,44 @@ function deathTiming(cause: DeathCause): number {
       return cause.nightNumber * 3 + 1
     case 'day-execution':
       return cause.dayNumber * 3 + 2
+    case 'final-killing-role-showdown':
+      return cause.boundary.kind === 'post-day'
+        ? cause.boundary.dayNumber * 3 + 3
+        : cause.boundary.nightNumber * 3 + 2
   }
 }
 
 function deathRecordKey(record: DeathRecord): string {
-  const cause =
-    record.cause.kind === 'day-execution'
-      ? `${record.cause.kind}:${String(record.cause.dayNumber)}`
-      : `${record.cause.kind}:${String(record.cause.nightNumber)}`
+  const cause = deathCauseKey(record.cause)
   return `${record.gameId}:${record.playerId}:${record.roleInstanceId}:${cause}`
+}
+
+function deathCauseKey(cause: DeathCause): string {
+  switch (cause.kind) {
+    case 'night-death':
+    case 'jester-revenge':
+      return `${cause.kind}:${String(cause.nightNumber)}`
+    case 'day-execution':
+      return `${cause.kind}:${String(cause.dayNumber)}`
+    case 'final-killing-role-showdown':
+      return cause.boundary.kind === 'post-day'
+        ? `${cause.kind}:post-day:${String(cause.boundary.dayNumber)}:${cause.opponentPlayerId}`
+        : `${cause.kind}:post-dawn:${String(cause.boundary.nightNumber)}:${cause.opponentPlayerId}`
+  }
+}
+
+function deathOccursNoLaterThanNight(cause: DeathCause, nightNumber: number): boolean {
+  switch (cause.kind) {
+    case 'night-death':
+    case 'jester-revenge':
+      return cause.nightNumber <= nightNumber
+    case 'day-execution':
+      return cause.dayNumber < nightNumber
+    case 'final-killing-role-showdown':
+      return cause.boundary.kind === 'post-day'
+        ? cause.boundary.dayNumber < nightNumber
+        : cause.boundary.nightNumber <= nightNumber
+  }
 }
 
 function conversionKey(record: ExecutionerToJesterConversion): string {

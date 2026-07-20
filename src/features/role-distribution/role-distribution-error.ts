@@ -31,27 +31,25 @@ export function getRoleDistributionErrorMessage(error: RoleDistributionError): s
       return getActiveGameRejectionMessage(error.error)
     case 'INVALID_ROLE_DISTRIBUTION_STATE':
       return `The ${formatOperation(error.operation)} action is unavailable while distribution is ${error.status}.`
-    case 'UNKNOWN_CARD_DELIVERY_PLAYER':
-      return `Card delivery cannot be recorded because player ID ${error.playerId} is not participating.`
-    case 'CARD_DELIVERY_INCOMPLETE':
-      return `${String(error.undeliveredPlayerIds.length)} physical ${error.undeliveredPlayerIds.length === 1 ? 'card is' : 'cards are'} still waiting to be delivered.`
-    case 'REASSIGNMENT_CONFIRMATION_REQUIRED':
-      return `Confirm that ${String(error.deliveredPlayerIds.length)} existing card ${error.deliveredPlayerIds.length === 1 ? 'delivery will' : 'deliveries will'} be cleared before reassigning.`
+    case 'INVALID_ROLE_DISTRIBUTION_AUTHORITY':
+      return 'The role distribution is invalid, so delivery cannot be confirmed.'
+    case 'ROLE_CARDS_UNAVAILABLE':
+      return 'Every private role card must be available before delivery can be confirmed.'
+    case 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE':
+      return 'Role-card delivery is already complete and cannot be confirmed again.'
     case 'REASSIGNMENT_AFTER_CONFIRMATION':
       return 'Roles cannot be reassigned after distribution is finalised. Abandon this game to restart from setup.'
   }
 }
 
 function formatOperation(
-  operation: 'assign' | 'set-card-delivery' | 'confirm' | 'reassign',
+  operation: 'assign' | 'confirm-all-role-cards-delivered' | 'reassign',
 ): string {
   switch (operation) {
     case 'assign':
       return 'assign roles'
-    case 'set-card-delivery':
-      return 'update card delivery'
-    case 'confirm':
-      return 'confirm distribution'
+    case 'confirm-all-role-cards-delivered':
+      return 'confirm all role cards delivered'
     case 'reassign':
       return 'reassign roles'
   }

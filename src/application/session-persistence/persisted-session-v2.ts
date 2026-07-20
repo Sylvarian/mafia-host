@@ -83,6 +83,13 @@ export type PersistedGameV2 = Readonly<{
           obligationId: string
           resolutionId: string
         }>
+      | Readonly<{
+          kind: 'final-killing-role-showdown'
+          boundary:
+            | Readonly<{ kind: 'post-day'; dayNumber: number }>
+            | Readonly<{ kind: 'post-dawn'; nightNumber: number }>
+          opponentPlayerId: string
+        }>
   }>[]
   personalWins: readonly (
     | Readonly<{
@@ -331,7 +338,11 @@ export type PersistedTerminalFactionResultV2 =
       gameId: string
       winnerPlayerIds: readonly string[]
     }>
-  | Readonly<{ kind: 'draw'; gameId: string; reason: 'no-survivors' }>
+  | Readonly<{
+      kind: 'draw'
+      gameId: string
+      reason: 'no-survivors' | 'opposing-killers-stalemate' | 'opposing-killers-mutual-elimination'
+    }>
 
 export type PersistedAppSessionV2 =
   | Readonly<{
@@ -344,13 +355,14 @@ export type PersistedAppSessionV2 =
       workflowStatus: 'distributing'
       setup: PersistedValidatedSetupV2
       game: PersistedGameV2
-      deliveredPlayerIds: readonly string[]
+      roleCardsDeliveryStatus: 'pending'
     }>
   | Readonly<{
       stage: 'role-distribution'
       workflowStatus: 'confirmed'
       setup: PersistedValidatedSetupV2
       game: PersistedGameV2
+      roleCardsDeliveryStatus: 'complete'
     }>
   | Readonly<{
       stage: 'executioner-briefing'
@@ -451,6 +463,7 @@ export type RestoredSessionEnvelopeV2 = Readonly<{
   schemaVersion: 2
   savedAt: string
   session: ActiveAppSession
+  writeBackEnvelope?: PersistedSessionEnvelopeV2
 }>
 
 export type SessionStageSummary = Readonly<{
@@ -506,9 +519,13 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
         ? deepFreeze({
             ...source,
             workflowStatus: 'distributing' as const,
-            deliveredPlayerIds: [...session.workflow.deliveredPlayerIds],
+            roleCardsDeliveryStatus: 'pending' as const,
           })
-        : deepFreeze({ ...source, workflowStatus: 'confirmed' as const })
+        : deepFreeze({
+            ...source,
+            workflowStatus: 'confirmed' as const,
+            roleCardsDeliveryStatus: 'complete' as const,
+          })
     }
     case 'executioner-briefing':
       return deepFreeze({

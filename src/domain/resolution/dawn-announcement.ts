@@ -26,6 +26,7 @@ export function buildCurrentDawnAnnouncement(game: GameState): DawnAnnouncement 
         case 'jester-revenge':
           return record.cause.nightNumber === game.nightNumber ? [record.playerId] : []
         case 'day-execution':
+        case 'final-killing-role-showdown':
           return []
       }
     }),

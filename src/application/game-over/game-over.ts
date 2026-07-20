@@ -41,6 +41,7 @@ export type PublicGameOverPlayerView = Readonly<{
 export type PublicGameOverView = Readonly<{
   heading: 'Town wins' | 'Mafia wins' | 'Serial Killer wins' | 'Draw'
   status: 'town-victory' | 'mafia-victory' | 'serial-killer-victory' | 'draw'
+  explanation: string | null
   dayNumber: number
   endedAtLabel: string
   players: readonly PublicGameOverPlayerView[]
@@ -104,6 +105,7 @@ export function selectPublicGameOverView(state: GameOverState): PublicGameOverVi
   return Object.freeze({
     heading: selectResultHeading(result),
     status: result.kind,
+    explanation: selectResultExplanation(result),
     dayNumber: state.game.dayNumber,
     endedAtLabel:
       state.game.nightNumber === state.game.dayNumber
@@ -129,6 +131,24 @@ export function selectPublicGameOverView(state: GameOverState): PublicGameOverVi
       }),
     ),
   })
+}
+
+function selectResultExplanation(result: TerminalFactionResult): string | null {
+  switch (result.kind) {
+    case 'town-victory':
+    case 'mafia-victory':
+    case 'serial-killer-victory':
+      return null
+    case 'draw':
+      switch (result.reason) {
+        case 'no-survivors':
+          return 'No players survived.'
+        case 'opposing-killers-stalemate':
+          return 'The final two players could not eliminate each other.'
+        case 'opposing-killers-mutual-elimination':
+          return 'The final two players eliminated each other.'
+      }
+  }
 }
 
 function validateGameOverBase(

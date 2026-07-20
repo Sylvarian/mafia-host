@@ -14,9 +14,9 @@ export function GameSettingsForm({ settings, onSettingChange }: GameSettingsForm
         <div>
           <p className="section-kicker">Step 3</p>
           <h2 id="settings-heading">Game settings</h2>
-          <p>Choose the rule switches to carry forward. Their mechanics begin in later phases.</p>
+          <p>Choose the rule switches that govern this game.</p>
         </div>
-        <span className="setup-only-note">Stored in setup only</span>
+        <span className="setup-only-note">Applied during play</span>
       </div>
 
       <div className="settings-list">

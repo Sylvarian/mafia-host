@@ -264,6 +264,10 @@ function wasAliveAtStartOfNight(
       return death.cause.nightNumber >= nightNumber
     case 'day-execution':
       return death.cause.dayNumber >= nightNumber
+    case 'final-killing-role-showdown':
+      return death.cause.boundary.kind === 'post-day'
+        ? death.cause.boundary.dayNumber >= nightNumber
+        : death.cause.boundary.nightNumber >= nightNumber
   }
 }
 

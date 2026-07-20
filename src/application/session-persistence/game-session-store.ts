@@ -24,6 +24,11 @@ export type V2WriteFailureAfterMigrationError = Readonly<{
   errorName: string
 }>
 
+export type V2WriteFailureAfterCanonicalUpgradeError = Readonly<{
+  type: 'V2_WRITE_FAILURE_AFTER_CANONICAL_UPGRADE'
+  errorName: string
+}>
+
 export type LegacyRemovalFailureAfterMigrationError = Readonly<{
   type: 'LEGACY_REMOVAL_FAILURE_AFTER_MIGRATION'
   errorName: string
@@ -45,6 +50,7 @@ export type LoadPersistedSessionError =
   | RestorePersistedSessionV2Error
   | MigratePersistedSessionV1Error
   | V2WriteFailureAfterMigrationError
+  | V2WriteFailureAfterCanonicalUpgradeError
   | LegacyRemovalFailureAfterMigrationError
 
 export type LoadPersistedSessionResult =

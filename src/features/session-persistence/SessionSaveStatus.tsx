@@ -16,9 +16,13 @@ type SessionSaveStatusProps = Readonly<{
   saveStatus: LocalSaveStatus
   hasStoredSave: boolean
   gameActive: boolean
+  gameComplete: boolean
+  savedSetupMessage: string | null
+  savedSetupRetryAvailable: boolean
   clearError: ClearFailureError | null
   confirmationOpen: boolean
   onRetrySave: () => void
+  onRetrySavedSetup: () => void
   onRequestClear: () => void
   onCancelClear: () => void
   onClear: () => void
@@ -28,9 +32,13 @@ export function SessionSaveStatus({
   saveStatus,
   hasStoredSave,
   gameActive,
+  gameComplete,
+  savedSetupMessage,
+  savedSetupRetryAvailable,
   clearError,
   confirmationOpen,
   onRetrySave,
+  onRetrySavedSetup,
   onRequestClear,
   onCancelClear,
   onClear,
@@ -72,7 +80,21 @@ export function SessionSaveStatus({
             </>
           )}
         </div>
-        {hasStoredSave ? (
+        {savedSetupMessage === null ? null : (
+          <div className="session-save-panel__setup-status" role="status">
+            <span>{savedSetupMessage}</span>
+            {savedSetupRetryAvailable ? (
+              <button
+                type="button"
+                className="session-save-panel__retry"
+                onClick={onRetrySavedSetup}
+              >
+                Retry saved setup
+              </button>
+            ) : null}
+          </div>
+        )}
+        {hasStoredSave && !gameComplete ? (
           <button
             ref={clearButtonRef}
             type="button"
@@ -96,7 +118,13 @@ export function SessionSaveStatus({
           className="session-confirmation"
           role="alertdialog"
           aria-modal="true"
-          aria-label={gameActive ? 'Abandon this game?' : 'Delete this saved game?'}
+          aria-label={
+            gameComplete
+              ? 'Start the next game?'
+              : gameActive
+                ? 'Abandon this game?'
+                : 'Delete this saved game?'
+          }
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault()
@@ -104,10 +132,16 @@ export function SessionSaveStatus({
             }
           }}
         >
-          <strong>{gameActive ? 'Abandon this game?' : 'Delete this saved game?'}</strong>
+          <strong>
+            {gameComplete
+              ? 'Start the next game?'
+              : gameActive
+                ? 'Abandon this game?'
+                : 'Delete this saved game?'}
+          </strong>
           <p>
-            This removes only Mafia Host’s local save and resets this tab to a fresh setup. It
-            cannot be undone.
+            This removes only the active match save and opens an editable setup from your saved
+            next-game choices. The completed or abandoned match cannot be recovered afterward.
           </p>
           {clearError === null ? null : (
             <p className="session-persistence__error" role="alert">
@@ -123,7 +157,11 @@ export function SessionSaveStatus({
               className="button button--danger"
               onClick={onClear}
             >
-              {gameActive ? 'Yes, abandon and delete' : 'Yes, delete saved game'}
+              {gameComplete
+                ? 'Yes, start next game'
+                : gameActive
+                  ? 'Yes, abandon and delete'
+                  : 'Yes, delete saved game'}
             </button>
             <button type="button" className="button button--secondary" onClick={onCancelClear}>
               Cancel

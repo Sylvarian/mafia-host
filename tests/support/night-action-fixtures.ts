@@ -206,7 +206,7 @@ export function createNightFixture(
       distribution = { status: 'unassigned', setup }
       break
     case 'distributing':
-      distribution = { status: 'distributing', setup, game, deliveredPlayerIds: [] }
+      distribution = { status: 'distributing', setup, game }
       break
     case 'confirmed':
       distribution = { status: 'confirmed', setup, game }

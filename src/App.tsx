@@ -19,12 +19,14 @@ import {
   type FinalizeRoleDistributionError,
 } from '@/application/executioner-briefing/index.ts'
 import {
-  clearRememberedPlayerNames,
-  saveRememberedPlayerNames,
-  type LoadedRememberedPlayerNames,
-  type RememberedPlayerNamesRepository,
+  clearNextGameSetupTemplate,
+  createNextGameSetupTemplate,
+  saveNextGameSetupTemplate,
   type GameSetupEditError,
   type GameSetupWorkflowCommand,
+  type LoadedNextGameSetupTemplate,
+  type NextGameSetupTemplate,
+  type NextGameSetupTemplateRepository,
 } from '@/application/game-setup/index.ts'
 import { selectPublicGameOverView } from '@/application/game-over/index.ts'
 import { selectGodfatherPromotionBriefingView } from '@/application/godfather-promotion/index.ts'
@@ -35,7 +37,6 @@ import {
   selectRevengeResolutionView,
 } from '@/application/night-completion/index.ts'
 import type {
-  PlayerId,
   RoleAssignmentDependencies,
   RoleDistributionError,
 } from '@/application/role-assignment/index.ts'
@@ -49,19 +50,17 @@ import {
   completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionMayorReveal,
-  confirmSessionRoleDistribution,
+  confirmAllSessionRoleCardsDelivered,
   continueSessionNight,
   createActiveAppSession,
   createPersistedSessionEnvelopeV2,
   endSessionDayWithoutExecution,
   executeSessionDayPlayer,
-  markAllSessionCardsDelivered,
   nextSessionExecutionerBriefing,
   prepareSessionDawn,
   resolveSessionJesterRevenge,
   previousSessionExecutionerBriefing,
   reassignSessionRoles,
-  setSessionCardDelivered,
   settleSessionAfterDayOutcome,
   toPersistedAppSessionV2,
   updateSetupSession,
@@ -107,8 +106,8 @@ export type AppProps = Readonly<{
   sessionStore: GameSessionStore
   sessionClock: SessionClock
   initialLoadResult: LoadPersistedSessionResult
-  rememberedPlayerNamesRepository?: RememberedPlayerNamesRepository
-  initialRememberedPlayerNames?: LoadedRememberedPlayerNames
+  nextGameSetupTemplateRepository?: NextGameSetupTemplateRepository
+  initialNextGameSetupTemplate?: LoadedNextGameSetupTemplate
 }>
 
 type AppState =
@@ -140,18 +139,21 @@ export default function App({
   sessionStore,
   sessionClock,
   initialLoadResult,
-  rememberedPlayerNamesRepository = NOOP_REMEMBERED_PLAYER_NAMES_REPOSITORY,
-  initialRememberedPlayerNames = EMPTY_REMEMBERED_PLAYER_NAMES,
+  nextGameSetupTemplateRepository = NOOP_NEXT_GAME_SETUP_TEMPLATE_REPOSITORY,
+  initialNextGameSetupTemplate = EMPTY_NEXT_GAME_SETUP_TEMPLATE,
 }: AppProps) {
   const [initialState] = useState<InitialAppState>(() =>
-    createInitialAppState(initialLoadResult, initialRememberedPlayerNames.names),
+    createInitialAppState(initialLoadResult, initialNextGameSetupTemplate.template),
   )
   const [appState, setAppState] = useState<AppState>(initialState.state)
-  const [rememberedPlayerNames, setRememberedPlayerNames] = useState(
-    initialRememberedPlayerNames.names,
+  const [savedSetupTemplate, setSavedSetupTemplate] = useState(
+    initialNextGameSetupTemplate.template,
   )
-  const [rememberedNamesMessage, setRememberedNamesMessage] = useState<string | null>(() =>
-    getRememberedNamesLoadMessage(initialRememberedPlayerNames),
+  const [savedSetupMessage, setSavedSetupMessage] = useState<string | null>(() =>
+    getSavedSetupLoadMessage(initialNextGameSetupTemplate),
+  )
+  const [pendingSetupTemplate, setPendingSetupTemplate] = useState<NextGameSetupTemplate | null>(
+    null,
   )
   const [setupError, setSetupError] = useState<GameSetupEditError | null>(null)
   const [distributionError, setDistributionError] = useState<RoleDistributionError | null>(null)
@@ -180,6 +182,7 @@ export default function App({
   const dayOperationPendingRef = useRef(false)
   const recoveryContinuePendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
+  const pendingPromotionAcknowledgementRef = useRef<ActiveAppSession | null>(null)
   const activeSession = appState.mode === 'active' ? appState.session : null
 
   useEffect(() => {
@@ -248,9 +251,10 @@ export default function App({
       return
     }
 
-    const freshSession = createActiveAppSession(rememberedPlayerNames)
+    const freshSession = createActiveAppSession(savedSetupTemplate)
     const fingerprint = createSessionFingerprint(freshSession)
     persistedFingerprintRef.current = fingerprint
+    pendingPromotionAcknowledgementRef.current = null
     clearOperationPendingRef.current = false
     clearErrors()
     setClearConfirmationOpen(false)
@@ -265,7 +269,7 @@ export default function App({
 
   function retryLoad(): void {
     const result = sessionStore.load()
-    const nextState = createInitialAppState(result, rememberedPlayerNames)
+    const nextState = createInitialAppState(result, savedSetupTemplate)
     persistedFingerprintRef.current = nextState.persistedFingerprint
     setAppState(nextState.state)
   }
@@ -286,6 +290,23 @@ export default function App({
         : { status: 'failed', error: saveResult.error },
       hasStoredSave: saveResult.ok ? true : appState.hasStoredSave,
     })
+  }
+
+  function retrySavedSetup(): void {
+    const template = pendingSetupTemplate
+    if (template === null) {
+      return
+    }
+    const result = saveNextGameSetupTemplate(nextGameSetupTemplateRepository, template)
+    if (!result.ok) {
+      setSavedSetupMessage(
+        'The current game is safe, but its setup still could not be saved for the next game.',
+      )
+      return
+    }
+    setPendingSetupTemplate(null)
+    setSavedSetupTemplate(template)
+    setSavedSetupMessage('Saved setup is ready for the next game.')
   }
 
   function continueSavedSession(): void {
@@ -350,8 +371,8 @@ export default function App({
           <GameSetup
             workflow={session.workflow}
             editError={setupError}
-            rememberedNamesExist={rememberedPlayerNames.length > 0}
-            rememberedNamesMessage={rememberedNamesMessage}
+            savedSetupExists={savedSetupTemplate !== null}
+            savedSetupMessage={savedSetupMessage}
             assignmentErrorMessage={
               distributionError === null ? null : getRoleDistributionErrorMessage(distributionError)
             }
@@ -377,19 +398,22 @@ export default function App({
                   setDistributionError(result.error)
                   return false
                 }
-                const names = Object.freeze(
-                  session.workflow.draft.roster.map((player) => player.name),
+                if (session.workflow.status !== 'ready') {
+                  throw new Error('Role assignment succeeded without a validated setup.')
+                }
+                const template = createNextGameSetupTemplate(session.workflow.draft)
+                const savedSetupResult = saveNextGameSetupTemplate(
+                  nextGameSetupTemplateRepository,
+                  template,
                 )
-                const rememberedNamesResult = saveRememberedPlayerNames(
-                  rememberedPlayerNamesRepository,
-                  names,
-                )
-                if (rememberedNamesResult.ok) {
-                  setRememberedPlayerNames(names)
-                  setRememberedNamesMessage('Player names remembered for the next new game.')
+                setSavedSetupTemplate(template)
+                if (savedSetupResult.ok) {
+                  setPendingSetupTemplate(null)
+                  setSavedSetupMessage('Saved setup is ready for the next game.')
                 } else {
-                  setRememberedNamesMessage(
-                    'The game started, but player names could not be remembered in this browser.',
+                  setPendingSetupTemplate(template)
+                  setSavedSetupMessage(
+                    'The game started, but its setup could not be saved for the next game.',
                   )
                 }
                 clearErrors()
@@ -397,18 +421,17 @@ export default function App({
                 return true
               })
             }}
-            onClearRememberedNames={() => {
-              const result = clearRememberedPlayerNames(rememberedPlayerNamesRepository)
+            onClearSavedSetup={() => {
+              const result = clearNextGameSetupTemplate(nextGameSetupTemplateRepository)
               if (!result.ok) {
-                setRememberedNamesMessage(
-                  'Remembered names could not be cleared. The current setup was not changed.',
+                setSavedSetupMessage(
+                  'Saved setup could not be cleared. The current setup was not changed.',
                 )
                 return
               }
-              setRememberedPlayerNames(Object.freeze([]))
-              setRememberedNamesMessage(
-                'Remembered names cleared. The current setup remains unchanged.',
-              )
+              setPendingSetupTemplate(null)
+              setSavedSetupTemplate(null)
+              setSavedSetupMessage('Saved setup cleared. The current setup remains unchanged.')
             }}
           />
         )
@@ -421,36 +444,9 @@ export default function App({
               firstNightErrorMessage ??
               (nightError === null ? null : getNightActionCollectionErrorMessage(nightError))
             }
-            onCardDeliveryChange={(playerId: PlayerId, delivered: boolean) => {
-              const result = setSessionCardDelivered(session, playerId, delivered)
-              if (!result.ok) {
-                if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                  handleInvalidStage(result.error)
-                }
-                setDistributionError(result.error)
-                return
-              }
-              setDistributionError(null)
-              setActiveSession(result.value)
-            }}
-            onMarkAllCardsDelivered={() => {
+            onConfirmAllRoleCardsDelivered={() => {
               runIdentityOperation(() => {
-                const result = markAllSessionCardsDelivered(session)
-                if (!result.ok) {
-                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                    handleInvalidStage(result.error)
-                  }
-                  setDistributionError(result.error)
-                  return false
-                }
-                setDistributionError(null)
-                setActiveSession(result.value)
-                return true
-              })
-            }}
-            onConfirmDistribution={() => {
-              runIdentityOperation(() => {
-                const result = confirmSessionRoleDistribution(
+                const result = confirmAllSessionRoleCardsDelivered(
                   session,
                   roleAssignmentDependencies.randomSource,
                 )
@@ -563,18 +559,34 @@ export default function App({
             errorMessage={promotionBriefingErrorMessage}
             onContinue={() => {
               runBriefingOperation(() => {
-                const result = acknowledgeSessionGodfatherPromotion(session)
-                if (!result.ok) {
-                  handleInvalidStage(result.error)
+                let acknowledgedSession = pendingPromotionAcknowledgementRef.current
+                if (acknowledgedSession === null) {
+                  const result = acknowledgeSessionGodfatherPromotion(session)
+                  if (!result.ok) {
+                    if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
+                      handleInvalidStage(result.error)
+                    }
+                    setPromotionBriefingErrorMessage(
+                      'The promotion was preserved, but the final transition was rejected. Retry from this briefing.',
+                    )
+                    return false
+                  }
+                  acknowledgedSession = result.value
+                  pendingPromotionAcknowledgementRef.current = acknowledgedSession
                 }
                 if (appState.mode !== 'active') {
                   throw new Error('Godfather promotion acknowledgement requires an active session.')
                 }
-                const envelope = createPersistedSessionEnvelopeV2(result.value, sessionClock.now())
+                const envelope = createPersistedSessionEnvelopeV2(
+                  acknowledgedSession,
+                  sessionClock.now(),
+                )
                 const saveResult = sessionStore.save(envelope)
                 if (!saveResult.ok) {
                   setPromotionBriefingErrorMessage(
-                    'The promotion is preserved, but it could not be saved. Retry before beginning night actions.',
+                    acknowledgedSession.stage === 'game-over'
+                      ? 'The promotion and final draw are preserved, but they could not be saved. Retry from this briefing.'
+                      : 'The promotion is preserved, but it could not be saved. Retry before beginning night actions.',
                   )
                   setAppState({
                     ...appState,
@@ -584,11 +596,12 @@ export default function App({
                   })
                   return false
                 }
-                persistedFingerprintRef.current = createSessionFingerprint(result.value)
+                persistedFingerprintRef.current = createSessionFingerprint(acknowledgedSession)
+                pendingPromotionAcknowledgementRef.current = null
                 setPromotionBriefingErrorMessage(null)
                 setAppState({
                   ...appState,
-                  session: result.value,
+                  session: acknowledgedSession,
                   saveStatus: { status: 'saved', savedAt: envelope.savedAt },
                   hasStoredSave: true,
                   clearError: null,
@@ -833,6 +846,9 @@ export default function App({
               participants: session.participants,
               result: session.result,
             })}
+            onStartNextGame={() => {
+              setClearConfirmationOpen(true)
+            }}
           />
         )
     }
@@ -884,6 +900,14 @@ export default function App({
         result.error.type === 'VICTORY_EVALUATION_MISSING_DAY_OUTCOME' ||
         result.error.type === 'PENDING_JESTER_REVENGE_BLOCKS_VICTORY' ||
         result.error.type === 'CONTRADICTORY_VICTORY_PREDICATES' ||
+        result.error.type === 'VICTORY_EVALUATION_UNKNOWN_ACTIVE_ROLE' ||
+        result.error.type === 'FINAL_TWO_KILLING_ROLE_GAME_REJECTED' ||
+        result.error.type === 'INVALID_FINAL_TWO_KILLING_ROLE_STATE' ||
+        result.error.type === 'UNSUPPORTED_FINAL_TWO_KILLING_ROLE_PAIRING' ||
+        result.error.type === 'INVALID_FINAL_TWO_KILLING_ROLE_ACTIVE_ROLE' ||
+        result.error.type === 'CONTRADICTORY_FINAL_TWO_ATTACK_OUTCOMES' ||
+        result.error.type === 'PREEXISTING_FINAL_TWO_KILLING_ROLE_SHOWDOWN' ||
+        result.error.type === 'FINAL_TWO_KILLING_ROLE_APPLICATION_REJECTED' ||
         result.error.type === 'INVALID_STORED_FACTION_RESULT' ||
         result.error.type === 'INVALID_TOWN_RESULT' ||
         result.error.type === 'INVALID_MAFIA_RESULT' ||
@@ -892,6 +916,7 @@ export default function App({
         result.error.type === 'UNKNOWN_WINNER_PLAYER' ||
         result.error.type === 'DUPLICATE_WINNER_PLAYER' ||
         result.error.type === 'FACTION_RESULT_GAME_MISMATCH' ||
+        result.error.type === 'FACTION_RESULT_CONFLICTS_WITH_FINAL_TWO_DRAW' ||
         result.error.type === 'NON_TERMINAL_FACTION_RESULT' ||
         result.error.type === 'FACTION_GAME_FINALIZATION_REJECTED' ||
         result.error.type === 'DAWN_FINALIZATION_GAME_REJECTED' ||
@@ -1010,7 +1035,7 @@ export default function App({
           <span aria-hidden="true">MH</span>
           <strong>Mafia Host</strong>
         </div>
-        <p>Phase 7F · Safer day guidance and Mafia succession</p>
+        <p>Phase 7F.2 · Opposing final-two draw</p>
       </header>
 
       <main className="app-main">
@@ -1064,7 +1089,11 @@ export default function App({
                 gameActive={appState.session.stage !== 'setup'}
                 clearError={appState.clearError}
                 confirmationOpen={clearConfirmationOpen}
+                gameComplete={appState.session.stage === 'game-over'}
+                savedSetupMessage={appState.session.stage === 'setup' ? null : savedSetupMessage}
+                savedSetupRetryAvailable={pendingSetupTemplate !== null}
                 onRetrySave={retrySave}
+                onRetrySavedSetup={retrySavedSetup}
                 onRequestClear={() => {
                   setClearConfirmationOpen(true)
                 }}
@@ -1088,7 +1117,7 @@ export default function App({
 
 function createInitialAppState(
   loadResult: LoadPersistedSessionResult,
-  rememberedPlayerNames: readonly string[],
+  savedSetupTemplate: NextGameSetupTemplate | null,
 ): InitialAppState {
   if (loadResult.ok) {
     return {
@@ -1111,7 +1140,7 @@ function createInitialAppState(
     }
   }
 
-  const session = createActiveAppSession(rememberedPlayerNames)
+  const session = createActiveAppSession(savedSetupTemplate)
   const fingerprint = createSessionFingerprint(session)
   return {
     state: {
@@ -1125,24 +1154,38 @@ function createInitialAppState(
   }
 }
 
-const EMPTY_REMEMBERED_PLAYER_NAMES: LoadedRememberedPlayerNames = Object.freeze({
-  names: Object.freeze([]),
+const EMPTY_NEXT_GAME_SETUP_TEMPLATE: LoadedNextGameSetupTemplate = Object.freeze({
+  template: null,
   error: null,
+  migratedLegacyPlayerNames: false,
 })
 
-const NOOP_REMEMBERED_PLAYER_NAMES_REPOSITORY: RememberedPlayerNamesRepository = Object.freeze({
+const NOOP_NEXT_GAME_SETUP_TEMPLATE_REPOSITORY: NextGameSetupTemplateRepository = Object.freeze({
   load: () => ({ ok: true as const, value: null }),
   save: () => ({ ok: true as const }),
   clear: () => ({ ok: true as const }),
 })
 
-function getRememberedNamesLoadMessage(result: LoadedRememberedPlayerNames): string | null {
+function getSavedSetupLoadMessage(result: LoadedNextGameSetupTemplate): string | null {
+  if (result.migratedLegacyPlayerNames) {
+    return 'Remembered player names were migrated into saved setup defaults.'
+  }
   if (result.error === null) {
     return null
   }
-  return result.error.type === 'MALFORMED_REMEMBERED_PLAYER_NAMES'
-    ? 'Stored player names were invalid and were not loaded.'
-    : 'Player names could not be loaded from this browser. You can still set up a game.'
+  switch (result.error.type) {
+    case 'INVALID_SETUP_TEMPLATE_PAYLOAD':
+    case 'INVALID_SAVED_ROSTER':
+    case 'INVALID_SAVED_ROLE_DISTRIBUTION':
+    case 'INVALID_SAVED_SETTINGS':
+      return 'The saved setup was invalid and was not loaded.'
+    case 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE':
+      return 'Remembered names were loaded, but could not be migrated into saved setup storage.'
+    case 'NEXT_GAME_SETUP_TEMPLATE_LOAD_FAILURE':
+    case 'NEXT_GAME_SETUP_TEMPLATE_SAVE_FAILURE':
+    case 'NEXT_GAME_SETUP_TEMPLATE_CLEAR_FAILURE':
+      return 'Saved setup could not be loaded from this browser. You can still set up a game.'
+  }
 }
 
 function createSessionFingerprint(session: ActiveAppSession): string {
@@ -1177,9 +1220,9 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'INVALID_RANDOM_VALUE':
     case 'DOMAIN_ASSIGNMENT_REJECTED':
     case 'INVALID_ROLE_DISTRIBUTION_STATE':
-    case 'UNKNOWN_CARD_DELIVERY_PLAYER':
-    case 'CARD_DELIVERY_INCOMPLETE':
-    case 'REASSIGNMENT_CONFIRMATION_REQUIRED':
+    case 'INVALID_ROLE_DISTRIBUTION_AUTHORITY':
+    case 'ROLE_CARDS_UNAVAILABLE':
+    case 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE':
     case 'REASSIGNMENT_AFTER_CONFIRMATION':
       return getRoleDistributionErrorMessage(error)
     case 'ACTIVE_GAME_REJECTED':

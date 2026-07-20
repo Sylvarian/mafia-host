@@ -117,6 +117,69 @@ describe('corrected Phase 7D application settlement', () => {
     expect(first.value).not.toHaveProperty('nextNight')
   })
 
+  it.each([
+    {
+      name: 'stalemate',
+      setting: false,
+      reason: 'opposing-killers-stalemate',
+      alive: true,
+      deathCount: 0,
+    },
+    {
+      name: 'mutual elimination',
+      setting: true,
+      reason: 'opposing-killers-mutual-elimination',
+      alive: false,
+      deathCount: 2,
+    },
+  ] as const)(
+    'settles the opposing-killer $name exactly once without starting another night',
+    ({ setting, reason, alive, deathCount }) => {
+      const fixture = createNightFixture(
+        [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.serialKiller }],
+        {
+          phase: 'day-discussion',
+          nightNumber: 1,
+          settings: { godfatherAndSerialCanKillEachOther: setting },
+        },
+      )
+      const state = {
+        game: { ...fixture.game, dayNumber: 1 },
+        participants: fixture.participants,
+      }
+      const completed = completeDayWithoutExecution(state)
+      if (!completed.ok) throw new Error(`Could not complete day: ${completed.error.type}`)
+      const session: DayOutcomeAppSession = {
+        stage: 'day-outcome',
+        game: completed.value.game,
+        participants: completed.value.participants,
+      }
+
+      const first = settleSessionAfterDayOutcome(session)
+      const retried = settleSessionAfterDayOutcome(session)
+
+      expect(first.ok).toBe(true)
+      expect(retried).toEqual(first)
+      if (!first.ok || first.value.stage !== 'game-over') {
+        throw new Error('Expected immediate game over.')
+      }
+      expect(first.value.result).toEqual({
+        kind: 'draw',
+        gameId: session.game.id,
+        reason,
+      })
+      expect(first.value.game.players.every((player) => player.alive === alive)).toBe(true)
+      expect(first.value.game.deathRecords).toHaveLength(deathCount)
+      expect(first.value.game).toMatchObject({
+        phase: 'game-over',
+        nightNumber: 1,
+        dayNumber: 1,
+      })
+      expect(first.value).not.toHaveProperty('nextNight')
+      expect(first.value).not.toHaveProperty('workflow')
+    },
+  )
+
   it('fails safely when a finalized result is evaluated again', () => {
     const settled = settleSessionAfterDayOutcome(
       dayOutcomeSession([

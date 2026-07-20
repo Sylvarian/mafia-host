@@ -87,6 +87,52 @@ describe('public game-over application view', () => {
     expect(JSON.stringify(view)).not.toMatch(/personal|Executioner|target|conversion/i)
   })
 
+  it.each([
+    {
+      setting: false,
+      reason: 'opposing-killers-stalemate',
+      explanation: 'The final two players could not eliminate each other.',
+    },
+    {
+      setting: true,
+      reason: 'opposing-killers-mutual-elimination',
+      explanation: 'The final two players eliminated each other.',
+    },
+  ] as const)(
+    'selects public-safe copy for the $reason draw without exposing the roles',
+    ({ setting, reason, explanation }) => {
+      const fixture = createNightFixture(
+        [
+          { roleId: ROLE_IDS.godfather, name: 'First finalist' },
+          { roleId: ROLE_IDS.serialKiller, name: 'Second finalist' },
+        ],
+        {
+          phase: 'day-discussion',
+          nightNumber: 1,
+          settings: { godfatherAndSerialCanKillEachOther: setting },
+        },
+      )
+      const completed = endDayWithoutExecution({ ...fixture.game, dayNumber: 1 })
+      if (!completed.ok) throw new Error(`Expected day completion: ${completed.error.type}`)
+      const evaluated = evaluateFactionVictory(completed.value)
+      if (!evaluated.ok || evaluated.value.kind !== 'draw') {
+        throw new Error('Expected final-two draw.')
+      }
+      const finalized = finalizeFactionVictory(completed.value, evaluated.value)
+      if (!finalized.ok) throw new Error(`Expected finalization: ${finalized.error.type}`)
+
+      const view = selectPublicGameOverView({
+        game: finalized.value,
+        participants: fixture.participants,
+        result: evaluated.value,
+      })
+
+      expect(evaluated.value.reason).toBe(reason)
+      expect(view).toMatchObject({ heading: 'Draw', status: 'draw', explanation })
+      expect(JSON.stringify(view)).not.toMatch(/Godfather|Serial Killer|personalWins/i)
+    },
+  )
+
   it('rejects a result from the wrong game and a noncanonical winner list', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.citizen }],

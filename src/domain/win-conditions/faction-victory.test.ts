@@ -192,10 +192,6 @@ describe('faction victory evaluation', () => {
       roles: [{ roleId: ROLE_IDS.serialKiller }, { roleId: ROLE_IDS.citizen }],
     },
     {
-      name: 'living Mafia',
-      roles: [{ roleId: ROLE_IDS.serialKiller }, { roleId: ROLE_IDS.godfather }],
-    },
-    {
       name: 'living neutral',
       roles: [{ roleId: ROLE_IDS.serialKiller }, { roleId: ROLE_IDS.jester }],
     },

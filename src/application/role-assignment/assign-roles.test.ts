@@ -38,10 +38,10 @@ describe('role assignment and active game creation', () => {
     expect(
       result.value.players.map(({ playerId: id, role }) => [id, role.roleId, role.ordinal]),
     ).toEqual([
-      ['player-1', ROLE_IDS.doctor, 1],
-      ['player-2', ROLE_IDS.doctor, 2],
-      ['player-3', ROLE_IDS.citizen, null],
-      ['player-4', ROLE_IDS.godfather, null],
+      ['game-1-player-1', ROLE_IDS.doctor, 1],
+      ['game-1-player-2', ROLE_IDS.doctor, 2],
+      ['game-1-player-3', ROLE_IDS.citizen, null],
+      ['game-1-player-4', ROLE_IDS.godfather, null],
     ])
     expect(new Set(result.value.players.map((player) => player.role.instanceId)).size).toBe(4)
     expect(JSON.stringify(setup)).toBe(snapshot)
@@ -179,7 +179,7 @@ describe('role assignment and active game creation', () => {
       throw new Error('Expected the participating player to be assigned.')
     }
 
-    expect(result.value.players.map((player) => player.playerId)).toEqual(['playing'])
+    expect(result.value.players.map((player) => player.playerId)).toEqual(['game-1-player-1'])
   })
 
   it('returns a structured domain rejection for a malformed non-participant boundary value', () => {
@@ -197,7 +197,7 @@ describe('role assignment and active game creation', () => {
       ok: false,
       error: {
         type: 'ACTIVE_GAME_REJECTED',
-        error: { type: 'NON_PARTICIPATING_PLAYER', playerId: 'not-playing' },
+        error: { type: 'NON_PARTICIPATING_PLAYER', playerId: 'game-1-player-1' },
       },
     })
   })
@@ -284,6 +284,31 @@ describe('role assignment and active game creation', () => {
         type: 'IDENTIFIER_COLLISION',
         identityKind: 'game',
         id: sharedIdentity,
+      },
+    })
+  })
+
+  it('rejects a role-instance identity that collides with a fresh match-player identity', () => {
+    const setup: ValidatedGameSetup = {
+      participatingPlayers: [{ id: playerId('setup-player'), name: 'Alice', playing: true }],
+      roleCounts: [{ roleId: ROLE_IDS.godfather, count: 1 }],
+      settings,
+    }
+
+    expect(
+      assignRolesToValidatedSetup(setup, {
+        randomSource: new DeterministicRandomSource([0]),
+        identitySource: {
+          nextGameId: () => gameId('fresh-game'),
+          nextRoleInstanceId: () => roleInstanceId('fresh-game-player-1'),
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'IDENTIFIER_COLLISION',
+        identityKind: 'player',
+        id: 'fresh-game-player-1',
       },
     })
   })

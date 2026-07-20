@@ -152,7 +152,17 @@ describe('temporary host-only role view', () => {
         {
           alignment: 'mafia',
           alignmentDisplayName: 'Mafia',
-          players: [],
+          players: [
+            {
+              playerDisplayLabel: 'Morgan',
+              status: 'alive',
+              activeRoleDisplayName: 'Godfather',
+              alignment: 'mafia',
+              alignmentDisplayName: 'Mafia',
+              originallyAssignedRoleDisplayName: 'Framer',
+              publicRole: null,
+            },
+          ],
         },
         {
           alignment: 'town',
@@ -215,6 +225,15 @@ describe('temporary host-only role view', () => {
     expect(screen.getByText('Originally assigned: Executioner')).toBeVisible()
     expect(screen.getByText('Host role: Doctor')).toBeVisible()
     expect(screen.getByText('Public role: Doctor')).toBeVisible()
+    expect(screen.getByText('Host role: Godfather')).toBeVisible()
+    expect(screen.getByText('Originally assigned: Framer')).toBeVisible()
+    expect(screen.getByText('Host role: Godfather').closest('li')).toHaveClass(
+      'host-role-card--mafia',
+    )
+    expect(screen.getByText('Host role: Doctor').closest('li')).toHaveClass('host-role-card--town')
+    expect(screen.getByText('Host role: Jester').closest('li')).toHaveClass(
+      'host-role-card--neutral',
+    )
     expect(container.innerHTML).not.toMatch(
       /private-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
     )
@@ -489,6 +508,12 @@ describe('day discussion responsive ownership', () => {
     expect(css).toContain('@media (max-width: 20rem)')
     expect(css).toContain('min-height: 2.75rem')
     expect(css).toContain('min-width: 0')
+    expect(css).toContain('.host-role-card--mafia')
+    expect(css).toContain('background: var(--faction-mafia-soft)')
+    expect(css).toContain('.host-role-card--town')
+    expect(css).toContain('background: var(--faction-town-soft)')
+    expect(css).toContain('.host-role-card--neutral')
+    expect(css).toContain('background: var(--faction-neutral-soft)')
     expect(css).toMatch(
       /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*14rem\),\s*1fr\)\)/,
     )

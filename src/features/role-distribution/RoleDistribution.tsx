@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 
 import {
-  getRoleDistributionProgress,
   selectRoleDistributionRows,
   type ConfirmedRoleDistributionWorkflow,
   type DistributingRolesWorkflow,
-  type PlayerId,
   type RoleDistributionError,
 } from '@/application/role-assignment/index.ts'
 
@@ -19,38 +17,32 @@ type RoleDistributionProps = Readonly<{
   workflow: ActiveRoleDistributionWorkflow
   error: RoleDistributionError | null
   beginNightErrorMessage: string | null
-  onCardDeliveryChange: (playerId: PlayerId, delivered: boolean) => void
-  onMarkAllCardsDelivered: () => void
-  onConfirmDistribution: () => void
+  onConfirmAllRoleCardsDelivered: () => void
   onReassignRoles: () => void
   onBeginFirstNight: () => void
 }>
-
-type Confirmation = 'none' | 'reassign'
 
 export function RoleDistribution({
   workflow,
   error,
   beginNightErrorMessage,
-  onCardDeliveryChange,
-  onMarkAllCardsDelivered,
-  onConfirmDistribution,
+  onConfirmAllRoleCardsDelivered,
   onReassignRoles,
   onBeginFirstNight,
 }: RoleDistributionProps) {
-  const [confirmation, setConfirmation] = useState<Confirmation>('none')
+  const [reassignConfirmationOpen, setReassignConfirmationOpen] = useState(false)
   const confirmationButtonRef = useRef<HTMLButtonElement>(null)
   const reassignButtonRef = useRef<HTMLButtonElement>(null)
 
   if (workflow.status === 'confirmed') {
     return (
       <section className="distribution-complete" aria-labelledby="distribution-complete-heading">
-        <p className="distribution-complete__eyebrow">Restored confirmed distribution</p>
-        <h2 id="distribution-complete-heading">Role distribution complete</h2>
+        <p className="distribution-complete__eyebrow">Restored completed delivery</p>
+        <h2 id="distribution-complete-heading">Role-card delivery complete</h2>
         <p className="distribution-complete__lead">Ready to begin the first night</p>
         <p>
-          Continue once to assign any required Executioner targets and enter the correct private
-          first-night stage. Existing targets will never be rerolled.
+          This legacy save already recorded every role card as delivered. Continue once to assign
+          any required Executioner targets without reassigning roles.
         </p>
 
         {error === null ? null : <DistributionError error={error} />}
@@ -70,44 +62,25 @@ export function RoleDistribution({
   }
 
   const rows = selectRoleDistributionRows(workflow)
-  const progress = getRoleDistributionProgress(workflow)
   const duplicateNames = getDuplicateNames(rows.map((row) => row.playerName))
+  const roleCardsAvailable = rows.length > 0 && rows.length === workflow.game.players.length
 
   return (
     <section className="role-distribution" aria-labelledby="role-distribution-heading">
       <div className="role-distribution__heading">
         <div>
-          <p className="role-distribution__eyebrow">Private host view · Phase 3</p>
+          <p className="role-distribution__eyebrow">Private host view</p>
           <h2 id="role-distribution-heading">Distribute physical role cards</h2>
           <p>
-            Hand each participating player the card shown beside their name, then mark it delivered.
+            Privately hand every participating player the card shown beside their name. Confirm only
+            after every card has been delivered.
           </p>
-        </div>
-        <div className="delivery-progress" aria-live="polite">
-          <strong>
-            {progress.deliveredCount} of {progress.totalCount}
-          </strong>
-          <span>cards delivered</span>
         </div>
       </div>
 
-      <div
-        className="delivery-progress-bar"
-        role="progressbar"
-        aria-label="Physical role cards delivered"
-        aria-valuemin={0}
-        aria-valuemax={progress.totalCount}
-        aria-valuenow={progress.deliveredCount}
-      >
-        <span
-          style={{
-            width:
-              progress.totalCount === 0
-                ? '0%'
-                : `${String((progress.deliveredCount / progress.totalCount) * 100)}%`,
-          }}
-        />
-      </div>
+      <p className="role-distribution__privacy-warning">
+        <strong>HOST-ONLY VIEW</strong> — keep role assignments hidden from players.
+      </p>
 
       {error === null ? null : <DistributionError error={error} />}
       {beginNightErrorMessage === null ? null : (
@@ -116,104 +89,66 @@ export function RoleDistribution({
         </p>
       )}
 
-      <div className="role-distribution__bulk-delivery">
-        <button
-          type="button"
-          className="button button--secondary"
-          disabled={progress.isComplete || confirmation !== 'none'}
-          onClick={onMarkAllCardsDelivered}
-        >
-          {progress.isComplete
-            ? 'All participating players have received their cards.'
-            : 'Mark all cards delivered'}
-        </button>
-      </div>
-
       <ul className="assignment-list" aria-label="Private role assignments">
-        {rows.map((row) => {
-          const playerLabel = duplicateNames.has(row.playerName)
-            ? `${row.playerName} (${row.playerId})`
-            : row.playerName
-
-          return (
-            <li
-              className={`assignment-card assignment-card--${row.faction}${row.delivered ? ' assignment-card--delivered' : ''}`}
-              key={row.playerId}
-            >
-              <div className="assignment-card__player">
-                <span>Player</span>
-                <h3>{row.playerName}</h3>
-                {duplicateNames.has(row.playerName) ? <small>ID {row.playerId}</small> : null}
-              </div>
-              <div className="assignment-card__role">
-                <span className="assignment-card__faction">{formatFaction(row.faction)}</span>
-                <strong>{row.roleDisplayName}</strong>
-                <p>{row.description}</p>
-              </div>
-              <label className="card-delivery-control">
-                <input
-                  type="checkbox"
-                  checked={row.delivered}
-                  disabled={confirmation !== 'none'}
-                  aria-label={`Card delivered to ${playerLabel}`}
-                  onChange={(event) => {
-                    onCardDeliveryChange(row.playerId, event.currentTarget.checked)
-                  }}
-                />
-                <span aria-hidden="true" />
-                <strong>{row.delivered ? 'Card delivered' : 'Mark card delivered'}</strong>
-              </label>
-            </li>
-          )
-        })}
+        {rows.map((row) => (
+          <li className={`assignment-card assignment-card--${row.faction}`} key={row.playerId}>
+            <div className="assignment-card__player">
+              <span>Player</span>
+              <h3>{row.playerName}</h3>
+              {duplicateNames.has(row.playerName) ? (
+                <small>
+                  Player{' '}
+                  {String(
+                    workflow.game.players.findIndex((player) => player.playerId === row.playerId) +
+                      1,
+                  )}
+                </small>
+              ) : null}
+            </div>
+            <div className="assignment-card__role">
+              <span className="assignment-card__faction">{formatFaction(row.faction)}</span>
+              <strong>{row.roleDisplayName}</strong>
+              <p>{row.description}</p>
+            </div>
+          </li>
+        ))}
       </ul>
 
       <div className="role-distribution__actions">
-        <div>
-          <button
-            ref={reassignButtonRef}
-            type="button"
-            className="button button--secondary"
-            disabled={confirmation !== 'none'}
-            onClick={() => {
-              if (progress.deliveredCount === 0) {
-                onReassignRoles()
-              } else {
-                setConfirmation('reassign')
-              }
-            }}
-          >
-            Reassign Roles
-          </button>
-        </div>
+        <button
+          ref={reassignButtonRef}
+          type="button"
+          className="button button--secondary"
+          disabled={reassignConfirmationOpen}
+          onClick={() => {
+            setReassignConfirmationOpen(true)
+          }}
+        >
+          Reassign Roles
+        </button>
         <button
           type="button"
           className="button button--prepare"
-          disabled={!progress.isComplete || confirmation !== 'none'}
-          onClick={onConfirmDistribution}
+          disabled={!roleCardsAvailable || reassignConfirmationOpen}
+          onClick={onConfirmAllRoleCardsDelivered}
         >
-          Confirm Distribution and Continue
+          Confirm all role cards delivered
         </button>
       </div>
 
-      {confirmation === 'reassign' ? (
+      {reassignConfirmationOpen ? (
         <ConfirmationDialog
-          key="reassign"
           actionButtonRef={confirmationButtonRef}
           returnFocusRef={reassignButtonRef}
           title="Generate a new assignment?"
-          description={
-            progress.deliveredCount > 0
-              ? `${String(progress.deliveredCount)} card ${progress.deliveredCount === 1 ? 'delivery' : 'deliveries'} will be cleared and every role will be reassigned.`
-              : 'Every role will receive a fresh role-instance identity and be assigned again.'
-          }
+          description="Every role will receive a fresh role-instance identity and be assigned again. Any cards already handed out must be replaced."
           actionLabel="Yes, reassign roles"
           onConfirm={() => {
-            setConfirmation('none')
+            setReassignConfirmationOpen(false)
             onReassignRoles()
           }}
           onCancel={() => {
-            setConfirmation('none')
+            setReassignConfirmationOpen(false)
           }}
         />
       ) : null}
@@ -277,7 +212,6 @@ function ConfirmationDialog({
             if (actionHandledRef.current) {
               return
             }
-
             actionHandledRef.current = true
             onConfirm()
           }}
@@ -303,15 +237,12 @@ function DistributionError({ error }: Readonly<{ error: RoleDistributionError }>
 function getDuplicateNames(names: readonly string[]): ReadonlySet<string> {
   const seenNames = new Set<string>()
   const duplicateNames = new Set<string>()
-
   for (const name of names) {
     if (seenNames.has(name)) {
       duplicateNames.add(name)
     }
-
     seenNames.add(name)
   }
-
   return duplicateNames
 }
 

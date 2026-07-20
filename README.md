@@ -6,8 +6,10 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7F adds public trial guidance, alignment-aware private host views, remembered player names,
-and deterministic Godfather succession to the repeated Phase 7E night/Dawn/day loop. Phase 7C.1
+Phase 7F.2 adds the opposing killing-role final-two draw. Phase 7F.1 adds a complete reusable
+next-game setup, one-click role-card delivery, and full
+alignment-coloured private host cards to Phase 7F's trial guidance and deterministic Godfather
+succession. Phase 7C.1
 still supplies the streamlined host workflow and
 corrected Phase 7D remains the post-day victory gate.
 After verbal nominations, trials, and voting, the host records
@@ -26,8 +28,9 @@ abstentions, guilty/innocent votes, and trial history remain verbal and are not 
 Day discussion also has a temporary **Show host-only roles** control. Roles are absent from the
 public day model and DOM until requested, and visibility is React-only, hidden by default, never
 autosaved, and hidden again after refresh, recovery, or entry into a new day. The separate
-sanitized host view groups current active roles under Mafia, Town, and Neutral with red, green, and
-grey treatments plus textual alignment labels. A converted Executioner appears as Jester with
+sanitized host view groups current active roles under Mafia, Town, and Neutral. Every player card
+uses a full light red, light green, or light grey background plus a textual alignment label. A
+converted Executioner appears as Jester with
 Executioner as the immutable original assignment; a promoted Mafia member appears as Godfather
 with the original assignment retained. Executioner targets, personal wins, and pending revenge are
 never included.
@@ -47,10 +50,24 @@ revenge, the app evaluates the finalized R-009, R-011, and R-012 predicates once
 state stops in public-safe post-day waiting. **Begin Night N** rebuilds the canonical sequence from
 living active roles, increments the night counter once, and retains multi-day deaths, day outcomes,
 Doctor target history, targets, conversions, wins, and pending revenge. Town, Mafia, Serial Killer,
-and the documented no-survivors draw enter an immutable `game-over` session.
+the no-survivors draw, and both opposing-killer final-two draw branches enter an immutable
+`game-over` session.
 
-Game over publicly shows only the winning faction or draw, alive/dead roster state, and roles that
-were already legitimately public. Hidden roles are not automatically revealed. Executioner
+When the only two living players are an active Godfather and Serial Killer, the draw rule takes
+precedence over Mafia parity and Serial Killer victory. If the configured mutual attack rule makes
+both attacks nonlethal, the game ends immediately with both finalists alive and no extra night. If
+both attacks are lethal, one atomic terminal showdown records linked simultaneous deaths for both
+players and then ends in a draw. Promoted Godfathers use their active role; two same-faction Mafia
+killers and multiple Serial Killers do not use this special rule. Existing personal wins remain
+authoritative and private under the existing disclosure policy.
+
+If succession creates the pair while a later Night is starting, the private promotion briefing is
+shown first. Its acknowledgement resolves the draw before the wake sequence or either final target
+becomes available; a failed save retries the same terminal payload.
+
+Game over publicly shows only the winning faction or draw, a short public-safe explanation for
+each draw reason, alive/dead roster state, and roles that were already legitimately public. Hidden
+roles are not automatically revealed. Executioner
 targets, conversions, pending revenge, and personal-win records remain private, and no raw IDs are
 displayed.
 
@@ -67,10 +84,24 @@ and makes that player act only as Godfather for the same night. A private briefi
 acknowledged before actions. Save retry and refresh preserve the same selection without rerolling;
 a later replacement may be chosen after a promoted Godfather dies.
 
-The most recently completed setup roster is also stored as a separate names-only local preference.
-It prefills an editable fresh setup only when there is no active save. **Clear remembered names**
-affects future prefill without changing the current fields or active-game save. This preference
-contains no roles, IDs, settings, deaths, or prior game state and is not synchronized to the cloud.
+The most recently started valid setup is also stored as a separate browser-local next-game
+template. It contains the full ordered roster with each name and Playing/Not playing choice,
+selected role quantities, and all game settings. It contains no game/player/role-instance IDs,
+assignments, targets, counters, phases,
+deaths, outcomes, private results, or other match progress. A fresh launch, completed-game
+**Start next game**, or confirmed abandon opens an editable setup from that template while active
+recovery always takes precedence. Setup-row identities are local to the editable draft; successful
+assignment creates a fresh game identity, fresh match-player identities derived from it, fresh
+role-instance identities, and a fresh randomized assignment. **Clear saved setup** affects only
+future prefill and leaves the visible form and active-game save unchanged. Names-only Phase 7F data
+is migrated with canonical zero-role/default-setting values and is not synchronized to the cloud.
+
+Role-card distribution now shows every private card and one
+**Confirm all role cards delivered** action. The host remains responsible for privately handing
+out every physical card before pressing it. That one guarded action immediately assigns any
+Executioner targets and enters the Executioner briefing, or enters Night 1 when no briefing is
+required. New saves contain no per-player delivery flags; exact older all-delivered lists restore
+as complete, while zero or partial lists restore as one pending bulk boundary.
 
 The first night is now one sealed canonical sequence: Mafia overview, Consorts, Framers,
 Godfathers, Serial Killers, Doctors, Sheriffs, Investigators, Consiglieres, and Detectives. Duplicate
@@ -134,8 +165,10 @@ authority while selectors derive converted Jester behavior. Corrected Phase 7D e
 victory only when pending revenge is absent and adds safe waiting and game-over presentation.
 Phase 7E resolves ordinary deaths before one due random Jester revenge, converts shared-target
 Executioners after the revenge death, and reevaluates victory before public Dawn or game over.
-Phase 7F leaves those rules unchanged while deriving active Godfather succession before later-night
-wake order is created.
+Phase 7F derives active Godfather succession before later-night wake order is created. Phase 7F.2
+uses that same active-role and ordinary-attack authority to settle the final two without creating a
+generic combat engine or an additional playable night, including when succession first creates the
+eligible pair.
 
 Still not implemented: automated trials/votes, vote entry or trial history, undo/history correction,
 cloud name synchronization, backend/cloud synchronization, online multiplayer, or multi-tab
@@ -179,9 +212,23 @@ false`. Dialogs, temporary selections, focus, guards, labels, and summary prose 
 persisted. A selected revenge victim is durable mid-workflow so refresh and save retry never
 reroll it; the recovery summary exposes only the broad `Dawn resolution` stage.
 
-Remembered player names use `mafia-host:remembered-player-names:v1`, not the active-session key or
-schema. Malformed preference data safely produces an empty prefill. Loading, saving, or clearing
-that preference can fail without invalidating setup or a successfully assigned game.
+Phase 7F.2 retains schema V2 and neutral-state sub-version `4`. The existing terminal-result union
+now stores the exact `opposing-killers-stalemate` or
+`opposing-killers-mutual-elimination` reason. Mutual elimination also stores exactly two linked
+`final-killing-role-showdown` deaths at one post-day or post-Dawn boundary. Restoration validates
+the branch from the saved setting, active roles, survivor state, and death evidence; it never
+reruns attacks or reapplies deaths. Exact earlier V2 saves remain compatible. Pre-7F.2
+neutral-state sub-version `2`, `3`, and `4` saves that stopped at the exact eligible post-day or
+post-Dawn final two are upgraded to the deterministic terminal draw. The narrow migration derives
+the branch from saved settings and active roles, then writes the canonical game-over envelope back
+before recovery succeeds. If that write fails, the original save remains available for retry.
+
+The setup template uses `mafia-host:next-game-setup-template:v1`, not the active-session key or
+schema. Its exact payload contains only setup-only `roster` entries (`name` and `playing`),
+`roleCounts`, and `settings`. The legacy
+`mafia-host:remembered-player-names:v1` key is read only for deterministic migration. Malformed
+template or legacy data safely produces canonical fresh setup. Loading, saving, migrating, or
+clearing the template can fail without invalidating setup or a successfully assigned game.
 
 Phase 7C.1 new V2 saves persist no non-informational private outcome and no acknowledged-screen
 state. Earlier V2 `Action recorded` states are replayed through validation and canonicalized to the
@@ -331,6 +378,20 @@ waiting, ordinary waiting, and game-over sessions. Faction results use stable ID
 roster ordering while public selectors expose only display labels and existing reveal authority.
 The result is stored once in the terminal session; no generic winner framework, revenge workflow,
 later-night state, backend, or networking layer is introduced.
+
+Phase 7F.2 adds one focused final-two evaluator ahead of the ordinary faction predicates. It
+classifies only the current active ordinary killing roles, reuses the existing attack outcome
+authority, and applies linked terminal deaths through one immutable domain operation when required.
+The application and feature layers coordinate the resulting terminal session and public-safe draw
+explanation without receiving a generic combat or role-scripting abstraction.
+
+Phase 7F.1 keeps setup preferences outside the application session and active-session envelope.
+`application/game-setup` owns exact template validation and conversion to a fresh editable draft;
+the browser adapter alone owns the new and legacy preference keys. Role distribution now owns only
+pending or complete bulk delivery authority. The one live confirmation atomically creates the
+correct first-night session, while restoration narrowly canonicalizes legacy per-player evidence
+without rerunning assignment or randomness. Alignment colours remain feature CSS derived from the
+application selector's canonical active alignment and are never persisted.
 
 ## Project authorities
 

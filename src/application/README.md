@@ -6,9 +6,9 @@ operations through focused use cases and external-adapter contracts.
 `game-setup` owns the immutable roster, role counts, settings, structured validation, and
 editing/ready workflow. `role-assignment` expands and shuffles role instances, assigns stable
 ordinals, and owns unassigned/distributing/confirmed card delivery. Reassignment creates fresh
-identities. Phase 7A.1 adds one pure, idempotent bulk-delivery operation that marks only
-participating cards, retains individual undo, consumes no randomness, and does not finalize
-distribution.
+identities. Phase 7F.1 removes per-player delivery authority. One pure bulk confirmation validates
+that every private card is available, marks the complete physical-delivery boundary, and
+immediately enters Executioner briefing or Night 1 through the active-session coordinator.
 
 `executioner-briefing` owns the Phase 7A private workflow. It rebuilds minimal briefing records from
 canonical Executioner target relationships, orders duplicate Executioners by ordinal and roster
@@ -124,7 +124,8 @@ or next-night workflow occurs.
 
 `application/game-over` validates the authoritative game/result pair and builds the sole public
 game-over view. It exposes duplicate-safe names, alive/dead state, and existing public role reveals
-only. It excludes stable IDs, hidden assignments, targets, conversions, pending revenge, and
+only. Phase 7F.2 adds a short public-safe explanation for each exact draw reason. It excludes
+stable IDs, hidden assignments, targets, conversions, pending revenge, and
 personal wins. Schema V2 adds exact waiting and terminal session variants while retaining existing
 V1 migration and existing Phase 7C/7C.1 V2 compatibility.
 
@@ -149,7 +150,38 @@ rejects partial/forged version-4 histories, and summarizes the briefing only as 
 actions. Exact Phase 7E sub-version 3 saves receive empty promotion history with enforcement
 starting on their next future night, so migration never fabricates a past random choice.
 
-`game-setup/remembered-player-names` is a separate application contract and use-case boundary. It
-strictly accepts arrays of nonblank strings, applies setup-equivalent trimming, reports structured
-load/save/clear errors, and never imports browser storage. These names never enter
-`ActiveAppSession` or schema V2. Fresh setup receives them only when no active save is recovered.
+Phase 7F.1 `game-setup/next-game-setup-template` is a separate application contract and use-case
+boundary. It strictly accepts an exact object containing an ordered setup-only `roster` with
+nonblank string names and boolean participation choices, one canonical `roleCounts` entry per
+supported role, and exact boolean `settings`. Roster entries contain no player IDs. Unknown fields,
+invalid distributions, invalid settings, and match authority fail closed. The last successfully
+assigned setup is saved separately; failed or incomplete setup never replaces it.
+
+The same boundary deterministically migrates the former names-only value with canonical zero-role
+counts and default settings. Templates never enter `ActiveAppSession`, schema V2, or recovery
+metadata. Fresh setup receives one only when no active save is recovered; game-over and abandon
+flows create a new editable setup from it without reusing assignments or match IDs. Successful
+assignment derives fresh match-player IDs from the fresh game ID before creating the authoritative
+game, so setup-row IDs also never become cross-game authority.
+
+Role-distribution persistence stays at schema V2 and emits only `roleCardsDeliveryStatus:
+"pending" | "complete"` at that stage. Restoration narrowly accepts legacy per-player evidence:
+all canonical participants means complete, zero/partial means pending, and duplicate/unknown/mixed
+authority is rejected. Restore consumes no randomness and never rerolls assignments or targets.
+
+Phase 7F.2 keeps schema V2 and neutral-state sub-version `4`. The terminal result stores either
+opposing-killer draw reason, and mutual elimination stores exactly two linked showdown death
+records. Live post-day and post-Dawn coordination receives the domain's already-resolved canonical
+game/result pair, enters game over, and creates no next-night workflow. Persistence restoration
+validates the exact branch from saved authority and returns a structured incompatibility for
+partial, malformed, same-faction, or result-conflicting showdown data; it never reruns attacks or
+reapplies deaths. Save retry transports the same frozen game-over session. Exact pre-7F.2
+neutral-state sub-version `2`, `3`, and `4` saves at an eligible post-day or post-Dawn final two
+receive a narrow upgrade to that terminal session. Restoration returns the canonical envelope for
+browser write-back; recovery succeeds only after that write, while a failed write preserves the
+original save for retry.
+
+When a private succession briefing creates the eligible final two, acknowledgement runs the
+narrow post-promotion terminal evaluator before returning a sequential-Night session. A save
+failure retains that exact evaluated session for retry, so linked deaths are neither reapplied nor
+reevaluated.

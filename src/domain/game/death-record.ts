@@ -21,6 +21,13 @@ export type DeathCause =
       obligationId: PendingJesterRevengeId
       resolutionId: JesterRevengeResolutionId
     }>
+  | Readonly<{
+      kind: 'final-killing-role-showdown'
+      boundary:
+        | Readonly<{ kind: 'post-day'; dayNumber: number }>
+        | Readonly<{ kind: 'post-dawn'; nightNumber: number }>
+      opponentPlayerId: PlayerId
+    }>
 
 export type DeathRecord = Readonly<{
   gameId: GameId

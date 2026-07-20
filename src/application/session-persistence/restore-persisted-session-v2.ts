@@ -36,13 +36,17 @@ import {
 } from '@/domain/resolution/dawn-announcement.ts'
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import { resolveNight } from '@/domain/resolution/night-resolution.ts'
+import type { FactionResult } from '@/domain/win-conditions/faction-result.ts'
 import {
+  evaluateAndFinalizeFactionVictory,
   evaluateFactionVictory,
   validateFactionVictoryEvaluationGate,
+  type EvaluatedFactionVictory,
 } from '@/domain/win-conditions/faction-victory.ts'
 
 import { validateDayDiscussionState, type DayDiscussionState } from '../day-discussion/index.ts'
 import { validateDayOutcomeState, type DayOutcomeState } from '../day-outcome/index.ts'
+import { createTrustedGameOverStateFromEvaluation } from '../game-over/game-over.ts'
 import { validateGameOverState } from '../game-over/index.ts'
 import {
   acknowledgeExecutionerBriefing,
@@ -69,8 +73,7 @@ import {
 } from '../night-actions/index.ts'
 import { beginFinalNightResolution } from '../night-completion/index.ts'
 import {
-  confirmRoleDistribution,
-  setCardDelivered,
+  confirmAllRoleCardsDelivered,
   type RoleDistributionWorkflow,
 } from '../role-assignment/index.ts'
 import type {
@@ -118,6 +121,7 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-game'
         | 'setup-game-mismatch'
         | 'invalid-delivery-evidence'
+        | 'legacy-duplicate-or-unknown-delivery-record'
         | 'contains-private-night-data'
     }>
   | Readonly<{
@@ -211,6 +215,7 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-participants'
         | 'invalid-result'
         | 'game-over-result-mismatch'
+        | 'final-two-showdown-incompatible'
         | 'contains-stale-day-data'
     }>
   | Readonly<{
@@ -277,11 +282,22 @@ function restoreEnvelope(
   if (!sessionResult.ok) {
     return sessionResult
   }
+  const writeBackEnvelope =
+    !options.allowLegacyGameShape &&
+    isUnknownRecord(candidate.session) &&
+    candidate.session.stage !== sessionResult.value.stage
+      ? deepFreeze({
+          schemaVersion: PERSISTED_SESSION_SCHEMA_VERSION,
+          savedAt: candidate.savedAt,
+          session: toPersistedAppSessionV2(sessionResult.value),
+        })
+      : null
   return succeed(
     deepFreeze({
       schemaVersion: PERSISTED_SESSION_SCHEMA_VERSION,
       savedAt: candidate.savedAt,
       session: sessionResult.value,
+      ...(writeBackEnvelope === null ? {} : { writeBackEnvelope }),
     }),
   )
 }
@@ -422,15 +438,33 @@ function restoreRoleDistributionSession(
   candidate: Readonly<Record<string, unknown>>,
   options: RestoreOptions,
 ): DomainResult<RoleDistributionAppSession, RestorePersistedSessionV2Error> {
-  const distributing = candidate.workflowStatus === 'distributing'
-  const expectedKeys = distributing
-    ? ['stage', 'workflowStatus', 'setup', 'game', 'deliveredPlayerIds']
-    : ['stage', 'workflowStatus', 'setup', 'game']
-  if (
-    (candidate.workflowStatus !== 'distributing' && candidate.workflowStatus !== 'confirmed') ||
-    !hasExactKeys(candidate, expectedKeys) ||
-    (distributing && !Array.isArray(candidate.deliveredPlayerIds))
-  ) {
+  const currentShape =
+    (candidate.workflowStatus === 'distributing' &&
+      candidate.roleCardsDeliveryStatus === 'pending' &&
+      hasExactKeys(candidate, [
+        'stage',
+        'workflowStatus',
+        'setup',
+        'game',
+        'roleCardsDeliveryStatus',
+      ])) ||
+    (candidate.workflowStatus === 'confirmed' &&
+      candidate.roleCardsDeliveryStatus === 'complete' &&
+      hasExactKeys(candidate, [
+        'stage',
+        'workflowStatus',
+        'setup',
+        'game',
+        'roleCardsDeliveryStatus',
+      ]))
+  const legacyDistributingShape =
+    candidate.workflowStatus === 'distributing' &&
+    Array.isArray(candidate.deliveredPlayerIds) &&
+    hasExactKeys(candidate, ['stage', 'workflowStatus', 'setup', 'game', 'deliveredPlayerIds'])
+  const legacyConfirmedShape =
+    candidate.workflowStatus === 'confirmed' &&
+    hasExactKeys(candidate, ['stage', 'workflowStatus', 'setup', 'game'])
+  if (!currentShape && !legacyDistributingShape && !legacyConfirmedShape) {
     return invalidDistribution('invalid-shape')
   }
   const setupResult = restoreValidatedSetup(candidate.setup)
@@ -456,36 +490,42 @@ function restoreRoleDistributionSession(
     status: 'distributing',
     setup: setupResult.value,
     game: gameResult.value,
-    deliveredPlayerIds: [],
   })
-  const evidence =
-    candidate.workflowStatus === 'confirmed'
-      ? gameResult.value.players.map((player) => player.playerId)
-      : candidate.deliveredPlayerIds
-  if (!Array.isArray(evidence)) {
-    return invalidDistribution('invalid-delivery-evidence')
-  }
-  const seen = new Set<string>()
-  for (const idCandidate of evidence) {
-    if (typeof idCandidate !== 'string' || seen.has(idCandidate)) {
+
+  let deliveryComplete =
+    candidate.workflowStatus === 'confirmed' || candidate.roleCardsDeliveryStatus === 'complete'
+  if (legacyDistributingShape) {
+    const evidence = candidate.deliveredPlayerIds
+    if (!Array.isArray(evidence)) {
       return invalidDistribution('invalid-delivery-evidence')
     }
-    seen.add(idCandidate)
-    const result = setCardDelivered(workflow, playerId(idCandidate), true)
-    if (!result.ok) {
-      return invalidDistribution('invalid-delivery-evidence')
+    const participantIds = new Set(gameResult.value.players.map((player) => player.playerId))
+    const seen = new Set<string>()
+    for (const idCandidate of evidence) {
+      if (
+        typeof idCandidate !== 'string' ||
+        seen.has(idCandidate) ||
+        !participantIds.has(playerId(idCandidate))
+      ) {
+        return invalidDistribution('legacy-duplicate-or-unknown-delivery-record')
+      }
+      seen.add(idCandidate)
     }
-    workflow = result.value
+    deliveryComplete =
+      seen.size === participantIds.size &&
+      gameResult.value.players.every((player) => seen.has(player.playerId))
   }
-  if (candidate.workflowStatus === 'confirmed') {
-    const result = confirmRoleDistribution(workflow)
+
+  if (deliveryComplete) {
+    const result = confirmAllRoleCardsDelivered(workflow)
     if (!result.ok) {
       return invalidDistribution('invalid-delivery-evidence')
     }
     workflow = result.value
   }
   const session = deepFreeze({ stage: 'role-distribution' as const, workflow })
-  return !options.allowLegacyGameShape &&
+  return currentShape &&
+    !options.allowLegacyGameShape &&
     !hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? invalidDistribution('invalid-shape')
     : succeed(session)
@@ -1250,7 +1290,7 @@ function restoreNightResolutionSession(
 function restoreDawnSession(
   candidate: Readonly<Record<string, unknown>>,
   options: RestoreOptions,
-): DomainResult<DawnAppSession, RestorePersistedSessionV2Error> {
+): DomainResult<DawnAppSession | GameOverAppSession, RestorePersistedSessionV2Error> {
   if (
     !hasExactKeys(candidate, [
       'stage',
@@ -1280,13 +1320,30 @@ function restoreDawnSession(
   if (gameResult.value.nightNumber !== gameResult.value.dayNumber + 1) {
     return invalidDawn('invalid-counters')
   }
-  if (isCurrentNeutralStateGame(candidate.game) || isPhase7ENeutralStateGame(candidate.game)) {
-    const evaluation = evaluateFactionVictory({
+  let legacyFinalTwoEvaluation: Extract<
+    EvaluatedFactionVictory,
+    Readonly<{ status: 'game-over' }>
+  > | null = null
+  if (
+    isCurrentNeutralStateGame(candidate.game) ||
+    isPhase7ENeutralStateGame(candidate.game) ||
+    isPhase7DNeutralStateGame(candidate.game)
+  ) {
+    const evaluation = evaluateAndFinalizeFactionVictory({
       ...gameResult.value,
       phase: 'dawn-resolution',
     })
-    if (!evaluation.ok || evaluation.value.kind !== 'none') {
+    if (!evaluation.ok) {
       return invalidDawn('invalid-game')
+    }
+    if (evaluation.value.status === 'game-over') {
+      if (
+        !isFinalTwoWaitingMigrationGame(candidate.game) ||
+        !isOpposingKillerDrawEvaluation(evaluation.value)
+      ) {
+        return invalidDawn('invalid-game')
+      }
+      legacyFinalTwoEvaluation = evaluation.value
     }
   }
   const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
@@ -1296,6 +1353,22 @@ function restoreDawnSession(
   const announcementResult = restoreDawnAnnouncement(candidate.dawnAnnouncement, gameResult.value)
   if (!announcementResult.ok) {
     return announcementResult
+  }
+  if (legacyFinalTwoEvaluation !== null) {
+    const gameOverResult = createTrustedGameOverStateFromEvaluation(
+      legacyFinalTwoEvaluation,
+      participantsResult.value,
+    )
+    return gameOverResult.ok
+      ? succeed(
+          deepFreeze({
+            stage: 'game-over' as const,
+            game: gameOverResult.value.game,
+            participants: gameOverResult.value.participants,
+            result: gameOverResult.value.result,
+          }),
+        )
+      : invalidDawn('invalid-game')
   }
   const session = deepFreeze({
     stage: 'dawn' as const,
@@ -1566,7 +1639,7 @@ function restorePostDayWaitingSession(
   candidate: Readonly<Record<string, unknown>>,
   stage: PostDayWaitingAppSession['stage'] | PendingRevengeWaitingAppSession['stage'],
 ): DomainResult<
-  PostDayWaitingAppSession | PendingRevengeWaitingAppSession,
+  PostDayWaitingAppSession | PendingRevengeWaitingAppSession | GameOverAppSession,
   RestorePersistedSessionV2Error
 > {
   if (containsStalePostDayData(candidate)) {
@@ -1613,7 +1686,31 @@ function restorePostDayWaitingSession(
   }
   const evaluationResult = evaluateFactionVictory(dayResult.value.game)
   if (!evaluationResult.ok || evaluationResult.value.kind !== 'none') {
-    return invalidPostDayWaiting('waiting-stage-result-mismatch')
+    if (
+      !evaluationResult.ok ||
+      !isFinalTwoWaitingMigrationGame(candidate.game) ||
+      !isOpposingKillerDrawResult(evaluationResult.value)
+    ) {
+      return invalidPostDayWaiting('waiting-stage-result-mismatch')
+    }
+    const finalizedResult = evaluateAndFinalizeFactionVictory(dayResult.value.game)
+    if (!finalizedResult.ok || finalizedResult.value.status !== 'game-over') {
+      return invalidPostDayWaiting('waiting-stage-result-mismatch')
+    }
+    const gameOverResult = createTrustedGameOverStateFromEvaluation(
+      finalizedResult.value,
+      dayResult.value.participants,
+    )
+    return gameOverResult.ok
+      ? succeed(
+          deepFreeze({
+            stage: 'game-over' as const,
+            game: gameOverResult.value.game,
+            participants: gameOverResult.value.participants,
+            result: gameOverResult.value.result,
+          }),
+        )
+      : invalidPostDayWaiting('waiting-stage-result-mismatch')
   }
   const session = deepFreeze({
     stage,
@@ -1640,7 +1737,11 @@ function restoreGameOverSession(
   }
   const gameResult = restoreGame(candidate.game, DEFAULT_OPTIONS)
   if (!gameResult.ok) {
-    return invalidGameOver('invalid-game')
+    return invalidGameOver(
+      persistedGameContainsFinalShowdownEvidence(candidate.game)
+        ? 'final-two-showdown-incompatible'
+        : 'invalid-game',
+    )
   }
   if (gameResult.value.phase !== 'game-over') {
     return fail({ type: 'STAGE_PHASE_MISMATCH', stage: 'game-over', phase: gameResult.value.phase })
@@ -1655,6 +1756,14 @@ function restoreGameOverSession(
     result: candidate.result,
   })
   if (!stateResult.ok) {
+    if (
+      persistedGameContainsFinalShowdownEvidence(candidate.game) ||
+      persistedResultClaimsFinalTwoDraw(candidate.result) ||
+      (stateResult.error.type === 'INVALID_GAME_OVER_RESULT' &&
+        stateResult.error.error.type === 'FACTION_RESULT_CONFLICTS_WITH_FINAL_TWO_DRAW')
+    ) {
+      return invalidGameOver('final-two-showdown-incompatible')
+    }
     return invalidGameOver(
       stateResult.error.type === 'INVALID_GAME_OVER_RESULT' &&
         stateResult.error.error.type === 'GAME_OVER_RESULT_MISMATCH'
@@ -1726,11 +1835,36 @@ function restoreValidatedSetup(
   return result.ok ? succeed(result.value) : invalidDistribution('invalid-setup')
 }
 
+function persistedGameContainsFinalShowdownEvidence(candidate: unknown): boolean {
+  return (
+    isUnknownRecord(candidate) &&
+    Array.isArray(candidate.deathRecords) &&
+    candidate.deathRecords.some(
+      (record) =>
+        isUnknownRecord(record) &&
+        isUnknownRecord(record.cause) &&
+        record.cause.kind === 'final-killing-role-showdown',
+    )
+  )
+}
+
+function persistedResultClaimsFinalTwoDraw(candidate: unknown): boolean {
+  return (
+    isUnknownRecord(candidate) &&
+    candidate.kind === 'draw' &&
+    (candidate.reason === 'opposing-killers-stalemate' ||
+      candidate.reason === 'opposing-killers-mutual-elimination')
+  )
+}
+
 function restoreGame(
   candidate: unknown,
   options: RestoreOptions,
 ): DomainResult<GameState, RestorePersistedSessionV2Error> {
   if (!isUnknownRecord(candidate)) {
+    return invalidDistribution('invalid-game')
+  }
+  if (candidate.phase !== 'game-over' && persistedGameContainsFinalShowdownEvidence(candidate)) {
     return invalidDistribution('invalid-game')
   }
   const priorNeutralKeys = [
@@ -2227,6 +2361,26 @@ function isCurrentNeutralStateGame(
   candidate: unknown,
 ): candidate is Readonly<Record<string, unknown>> {
   return isUnknownRecord(candidate) && candidate.neutralStateVersion === 4
+}
+
+function isFinalTwoWaitingMigrationGame(
+  candidate: unknown,
+): candidate is Readonly<Record<string, unknown>> {
+  return isSupportedNeutralStateGame(candidate)
+}
+
+function isOpposingKillerDrawResult(result: FactionResult): boolean {
+  return (
+    result.kind === 'draw' &&
+    (result.reason === 'opposing-killers-stalemate' ||
+      result.reason === 'opposing-killers-mutual-elimination')
+  )
+}
+
+function isOpposingKillerDrawEvaluation(
+  evaluation: Extract<EvaluatedFactionVictory, Readonly<{ status: 'game-over' }>>,
+): boolean {
+  return isOpposingKillerDrawResult(evaluation.result)
 }
 
 function isSupportedNeutralStateGame(

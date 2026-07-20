@@ -13,12 +13,9 @@ export type { RoleAssignmentIdentitySource } from './identity-source.ts'
 export type { RoleAssignmentError, RoleDistributionError } from './role-assignment-errors.ts'
 export {
   assignRoleDistribution,
-  confirmRoleDistribution,
+  confirmAllRoleCardsDelivered,
   createRoleDistributionWorkflow,
-  getRoleDistributionProgress,
-  markAllParticipatingCardsDelivered,
   reassignRoleDistribution,
-  setCardDelivered,
 } from './role-distribution-workflow.ts'
 export type {
   ConfirmedRoleDistributionWorkflow,

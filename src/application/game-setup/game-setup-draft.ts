@@ -49,7 +49,7 @@ export type RosterEditError = EmptyPlayerNameError | PlayerNotFoundError
 export type RoleCountEditError = RoleNotFoundError | InvalidRoleCountError
 export type GameSetupEditError = RosterEditError | RoleCountEditError
 
-const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
+export const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
   godfatherAndSerialCanKillEachOther: false,
   godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
@@ -58,13 +58,11 @@ const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
   allowFirstNightKills: false,
 })
 
-export function createInitialGameSetupDraft(
-  rememberedPlayerNames: readonly string[] = [],
-): GameSetupDraft {
-  const roster = rememberedPlayerNames.map((submittedName, index) => {
+export function createInitialGameSetupDraft(playerNames: readonly string[] = []): GameSetupDraft {
+  const roster = playerNames.map((submittedName, index) => {
     const name = submittedName.trim()
     if (name.length === 0) {
-      throw new RangeError('A remembered player name cannot be blank.')
+      throw new RangeError('A saved setup player name cannot be blank.')
     }
     return Object.freeze({
       id: playerId(`player-${String(index + 1)}`),

@@ -59,6 +59,10 @@ const RESTORED_V2: RestoredSessionEnvelopeV2 = Object.freeze({
     }),
   }),
 })
+const RESTORED_WITH_CANONICAL_WRITE_BACK: RestoredSessionEnvelopeV2 = Object.freeze({
+  ...RESTORED_V2,
+  writeBackEnvelope: PERSISTED_V2,
+})
 
 const restoreV2: PersistedSessionRestorerV2 = () => ({ ok: true, value: RESTORED_V2 })
 const migrateV1: PersistedSessionMigratorV1 = () => ({ ok: true, value: PERSISTED_V2 })
@@ -82,6 +86,46 @@ class MemoryStorage implements StorageLike {
 }
 
 describe('browser game session store V2 authority', () => {
+  it('writes a restored canonical upgrade once so the next refresh reads terminal authority', () => {
+    const storage = new MemoryStorage()
+    storage.values.set(SESSION_STORAGE_KEY, '{"preRuleWaiting":true}')
+    const restoreUpgrade = vi.fn<PersistedSessionRestorerV2>((candidate) =>
+      JSON.stringify(candidate) === JSON.stringify(PERSISTED_V2)
+        ? { ok: true, value: RESTORED_V2 }
+        : { ok: true, value: RESTORED_WITH_CANONICAL_WRITE_BACK },
+    )
+    const store = new BrowserGameSessionStore(storage, restoreUpgrade, migrateV1)
+
+    expect(store.load()).toEqual({ ok: true, value: RESTORED_WITH_CANONICAL_WRITE_BACK })
+    expect(JSON.parse(storage.values.get(SESSION_STORAGE_KEY) ?? 'null')).toEqual(PERSISTED_V2)
+    expect(store.load()).toEqual({ ok: true, value: RESTORED_V2 })
+    expect(storage.setItem).toHaveBeenCalledTimes(1)
+    expect(restoreUpgrade).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves the pre-upgrade V2 save when canonical write-back fails', () => {
+    const storage = new MemoryStorage()
+    const originalText = '{"preRuleWaiting":true}'
+    storage.values.set(SESSION_STORAGE_KEY, originalText)
+    storage.setItem.mockImplementation(() => {
+      throw Object.assign(new Error('write failed'), { name: 'WriteError' })
+    })
+    const restoreUpgrade: PersistedSessionRestorerV2 = () => ({
+      ok: true,
+      value: RESTORED_WITH_CANONICAL_WRITE_BACK,
+    })
+    const store = new BrowserGameSessionStore(storage, restoreUpgrade, migrateV1)
+
+    expect(store.load()).toEqual({
+      ok: false,
+      error: {
+        type: 'V2_WRITE_FAILURE_AFTER_CANONICAL_UPGRADE',
+        errorName: 'WriteError',
+      },
+    })
+    expect(storage.values.get(SESSION_STORAGE_KEY)).toBe(originalText)
+  })
+
   it('uses V2 as the sole authority when both keys exist', () => {
     const storage = new MemoryStorage()
     storage.values.set(SESSION_STORAGE_KEY, JSON.stringify(PERSISTED_V2))

@@ -7,7 +7,7 @@ const ALLOWED_PHASE_TRANSITIONS: Readonly<Record<GamePhase, readonly GamePhase[]
   setup: ['role-distribution'],
   'role-distribution': ['executioner-briefing', 'night-action-collection'],
   'executioner-briefing': ['night-action-collection'],
-  'night-action-collection': ['night-resolution'],
+  'night-action-collection': ['night-resolution', 'game-over'],
   'night-resolution': ['dawn-resolution'],
   'dawn-resolution': ['dawn-announcement', 'game-over'],
   'dawn-announcement': ['day-discussion'],

@@ -38,7 +38,7 @@ export function resolveAttacks(
           attackerRoleId: action.actorRoleId,
           attackerRoleInstanceId: action.actorRoleInstanceId,
           targetPlayerId: action.targetPlayerId,
-          outcome: determineAttackOutcome(
+          outcome: determineOrdinaryAttackOutcome(
             action.actorRoleId,
             selectActiveRoleId(game, target.playerId) ?? target.role.roleId,
             game.settings.godfatherAndSerialCanKillEachOther,
@@ -82,7 +82,7 @@ export function determineProvisionalDeaths(
   )
 }
 
-function determineAttackOutcome(
+export function determineOrdinaryAttackOutcome(
   attackerRoleId: RoleId,
   targetRoleId: GameState['players'][number]['role']['roleId'],
   mutualKillingEnabled: boolean,
