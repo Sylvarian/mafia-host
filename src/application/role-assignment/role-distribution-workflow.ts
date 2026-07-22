@@ -5,6 +5,10 @@ import type { GameState } from '@/domain/game/game-state.ts'
 import type { ValidatedGameSetup } from '../game-setup/game-setup-validation.ts'
 import { assignRolesToValidatedSetup, type RoleAssignmentDependencies } from './assign-roles.ts'
 import type { RoleDistributionError } from './role-assignment-errors.ts'
+import {
+  createRoleCardDistributionOrder,
+  validateRoleCardDistributionOrder,
+} from './role-card-distribution-order.ts'
 
 export type RoleDistributionWorkflow =
   | Readonly<{
@@ -15,11 +19,13 @@ export type RoleDistributionWorkflow =
       status: 'distributing'
       setup: ValidatedGameSetup
       game: GameState
+      roleCardDistributionPlayerIds: readonly GameState['players'][number]['playerId'][]
     }>
   | Readonly<{
       status: 'confirmed'
       setup: ValidatedGameSetup
       game: GameState
+      roleCardDistributionPlayerIds: readonly GameState['players'][number]['playerId'][]
     }>
 
 export type DistributingRolesWorkflow = Extract<
@@ -52,13 +58,21 @@ export function assignRoleDistribution(
 
   const assignmentResult = assignRolesToValidatedSetup(workflow.setup, dependencies)
 
-  return assignmentResult.ok
+  if (!assignmentResult.ok) {
+    return assignmentResult
+  }
+  const orderResult = createRoleCardDistributionOrder(
+    assignmentResult.value.players.map((player) => player.playerId),
+    dependencies.randomSource,
+  )
+  return orderResult.ok
     ? succeed({
         status: 'distributing',
         setup: createAssignedSetup(workflow.setup, assignmentResult.value),
         game: assignmentResult.value,
+        roleCardDistributionPlayerIds: orderResult.value,
       })
-    : assignmentResult
+    : orderResult
 }
 
 export function confirmAllRoleCardsDelivered(
@@ -88,11 +102,19 @@ export function confirmAllRoleCardsDelivered(
   ) {
     return fail({ type: 'ROLE_CARDS_UNAVAILABLE' })
   }
+  const orderResult = validateRoleCardDistributionOrder(
+    workflow.roleCardDistributionPlayerIds,
+    gameResult.value.players.map((player) => player.playerId),
+  )
+  if (!orderResult.ok) {
+    return orderResult
+  }
 
   return succeed({
     status: 'confirmed',
     setup: workflow.setup,
     game: workflow.game,
+    roleCardDistributionPlayerIds: orderResult.value,
   })
 }
 
@@ -118,13 +140,21 @@ export function reassignRoleDistribution(
     roleInstanceIds: workflow.game.players.map((player) => player.role.instanceId),
   })
 
-  return assignmentResult.ok
+  if (!assignmentResult.ok) {
+    return assignmentResult
+  }
+  const orderResult = createRoleCardDistributionOrder(
+    assignmentResult.value.players.map((player) => player.playerId),
+    dependencies.randomSource,
+  )
+  return orderResult.ok
     ? succeed({
         status: 'distributing',
         setup: createAssignedSetup(workflow.setup, assignmentResult.value),
         game: assignmentResult.value,
+        roleCardDistributionPlayerIds: orderResult.value,
       })
-    : assignmentResult
+    : orderResult
 }
 
 function createAssignedSetup(setup: ValidatedGameSetup, game: GameState): ValidatedGameSetup {

@@ -12,23 +12,15 @@ import type { PlayerId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
-import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
-import type { Faction } from '@/domain/roles/faction.ts'
 
 import {
   validateDayDiscussionState,
   type DayDiscussionState,
   type InvalidDayDiscussionStateError,
 } from '../day-discussion/index.ts'
+import { selectHostPlayerRoleViews, type HostPlayerRoleView } from '../player-roles/index.ts'
 
-export type DayExecutionCandidateView = Readonly<{
-  playerId: PlayerId
-  playerDisplayLabel: string
-  activeRoleDisplayName: string
-  originallyAssignedRoleDisplayName: string | null
-  alignment: Faction
-  alignmentDisplayName: 'Mafia' | 'Town' | 'Neutral'
-}>
+export type DayExecutionCandidateView = Omit<HostPlayerRoleView, 'status'>
 
 export type DayOutcomeState = Readonly<{
   game: GameState
@@ -77,41 +69,29 @@ export function selectDayExecutionCandidates(
   if (!stateResult.ok) {
     throw new Error(`Invalid day discussion state: ${stateResult.error.type}.`)
   }
+  const rowsResult = selectHostPlayerRoleViews(
+    stateResult.value.game,
+    stateResult.value.participants,
+  )
+  if (!rowsResult.ok) {
+    throw new Error('Living execution candidates have invalid active role metadata.')
+  }
   return Object.freeze(
-    stateResult.value.game.players.flatMap((player) =>
-      player.alive ? [selectExecutionCandidate(stateResult.value, player.playerId)] : [],
+    rowsResult.value.flatMap((player) =>
+      player.status === 'dead'
+        ? []
+        : [
+            Object.freeze({
+              playerId: player.playerId,
+              playerDisplayLabel: player.playerDisplayLabel,
+              activeRoleDisplayName: player.activeRoleDisplayName,
+              originallyAssignedRoleDisplayName: player.originallyAssignedRoleDisplayName,
+              alignment: player.alignment,
+              alignmentDisplayName: player.alignmentDisplayName,
+            }),
+          ],
     ),
   )
-}
-
-function selectExecutionCandidate(
-  state: DayDiscussionState,
-  selectedPlayerId: PlayerId,
-): DayExecutionCandidateView {
-  const player = state.game.players.find((candidate) => candidate.playerId === selectedPlayerId)
-  if (player === undefined) {
-    throw new Error('A living execution candidate is absent from the active game.')
-  }
-  const activeRoleId = selectActiveRoleId(state.game, player.playerId)
-  const activeRole = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
-  const originalRole = findRoleDefinition(player.role.roleId)
-  if (activeRole === undefined || originalRole === undefined) {
-    throw new Error('A living execution candidate has invalid active role metadata.')
-  }
-  return Object.freeze({
-    playerId: player.playerId,
-    playerDisplayLabel: selectPlayerDisplayLabel(state.participants, player.playerId),
-    activeRoleDisplayName:
-      activeRoleId === player.role.roleId
-        ? getRoleInstanceDisplayName(player.role, activeRole)
-        : activeRole.name,
-    originallyAssignedRoleDisplayName:
-      activeRoleId === player.role.roleId
-        ? null
-        : getRoleInstanceDisplayName(player.role, originalRole),
-    alignment: activeRole.faction,
-    alignmentDisplayName: formatAlignment(activeRole.faction),
-  })
 }
 
 export function executePlayerAndCompleteDay(
@@ -294,15 +274,4 @@ function selectPlayerDisplayLabel(
     (candidate, candidateIndex) => candidateIndex !== index && candidate.name === participant.name,
   )
   return duplicateName ? `${participant.name} (Player ${String(index + 1)})` : participant.name
-}
-
-function formatAlignment(faction: Faction): 'Mafia' | 'Town' | 'Neutral' {
-  switch (faction) {
-    case 'mafia':
-      return 'Mafia'
-    case 'town':
-      return 'Town'
-    case 'neutral':
-      return 'Neutral'
-  }
 }

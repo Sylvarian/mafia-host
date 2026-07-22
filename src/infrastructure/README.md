@@ -7,8 +7,9 @@ The Web Crypto `RandomSource` and role-assignment identity source remain the onl
 randomness/identity adapters. Random values satisfy the domain `[0, 1)` contract. Game and
 role-instance IDs combine a browser session UUID with monotonic sequences; new match-player IDs
 derive from the fresh game ID and roster position. Phase 7A reuses the
-injected random source exactly once per Executioner target; Phase 7A.1 bulk delivery, target
-selection, sequential outcomes, restoration, and migration consume no randomness.
+injected random source exactly once per Executioner target; Phase 7F.4 additionally consumes the
+same injected source for the independent physical-card recipient shuffle. Target selection,
+sequential outcomes, restoration, and migration consume no randomness.
 
 `BrowserGameSessionStore` and the browser clock implement the Phase 6.5 transport contracts.
 `mafia-host:active-session:v2` remains the only current authority; Phase 7C adds explicit
@@ -71,7 +72,12 @@ Unavailable/read/write/migration/clear failures are structured and never logged.
 browser/profile-local convenience data with no cloud or multi-tab behavior. It contains no match
 progress and is never included in active recovery metadata.
 
-Phase 7F.1 keeps the active V2 transport key unchanged. New role-distribution envelopes contain
-only stage-local pending/complete bulk delivery status. Legacy per-player delivery arrays are
+Phase 7F.1 kept the active V2 transport key unchanged. Its role-distribution envelopes introduced
+stage-local pending/complete bulk delivery status. Legacy per-player delivery arrays are
 interpreted and canonicalized by the application restorer; the adapter does not inspect players,
 rerun assignment, select targets, or consume randomness.
+
+Phase 7F.4 keeps that key and schema. The adapter transports the exact stage-local physical-card
+recipient ID sequence but does not generate, validate, reorder, or reroll it. The application owns
+deterministic roster fallback for compatible earlier distribution saves and exact former-wake-order
+recovery; successful canonicalization uses the existing write-back path.

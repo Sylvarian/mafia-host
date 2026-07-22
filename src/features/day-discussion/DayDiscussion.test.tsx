@@ -63,6 +63,56 @@ const candidates: readonly MayorRevealCandidateView[] = [
   },
 ]
 
+function defaultHostView(): HostRoleDayView {
+  return {
+    groups: [
+      { alignment: 'mafia', alignmentDisplayName: 'Mafia', players: [] },
+      {
+        alignment: 'town',
+        alignmentDisplayName: 'Town',
+        players: [
+          {
+            playerId: hiddenMayorId,
+            playerDisplayLabel: 'Alex (Player 1)',
+            status: 'alive',
+            activeRoleDisplayName: 'Mayor 1',
+            alignment: 'town',
+            alignmentDisplayName: 'Town',
+            originallyAssignedRoleDisplayName: null,
+            publicRole: null,
+          },
+          {
+            playerId: revealedMayorId,
+            playerDisplayLabel: 'Alex (Player 2)',
+            status: 'alive',
+            activeRoleDisplayName: 'Mayor 2',
+            alignment: 'town',
+            alignmentDisplayName: 'Town',
+            originallyAssignedRoleDisplayName: null,
+            publicRole: { displayName: 'Mayor 2', status: 'publicly-revealed-mayor' },
+          },
+        ],
+      },
+      {
+        alignment: 'neutral',
+        alignmentDisplayName: 'Neutral',
+        players: [
+          {
+            playerId: deadPlayerId,
+            playerDisplayLabel: 'Taylor',
+            status: 'dead',
+            activeRoleDisplayName: 'Jester',
+            alignment: 'neutral',
+            alignmentDisplayName: 'Neutral',
+            originallyAssignedRoleDisplayName: null,
+            publicRole: { displayName: 'Jester', status: 'revealed-on-death' },
+          },
+        ],
+      },
+    ],
+  }
+}
+
 function executionCandidate(
   playerId: typeof hiddenMayorId,
   playerDisplayLabel: string,
@@ -84,8 +134,8 @@ function executionCandidate(
   }
 }
 
-describe('public day discussion UI', () => {
-  it('focuses the day heading and renders semantic living/dead public-safe rosters', () => {
+describe('host day discussion UI', () => {
+  it('focuses the day heading and renders one alignment-grouped living/dead card region', () => {
     const { container } = render(
       <DayDiscussion
         view={publicView()}
@@ -94,18 +144,25 @@ describe('public day discussion UI', () => {
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
         onPrivatePresentationChange={() => undefined}
+        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
       />,
     )
 
     expect(screen.getByRole('heading', { name: 'Day discussion' })).toHaveFocus()
-    const living = screen.getByRole('heading', { name: 'Living players' }).closest('section')
-    const dead = screen.getByRole('heading', { name: 'Dead players' }).closest('section')
-    expect(living).not.toBeNull()
-    expect(dead).not.toBeNull()
-    expect(living).toHaveTextContent('Alex (Player 1)AliveRole hidden')
-    expect(living).toHaveTextContent('Mayor 2 — publicly revealed')
-    expect(living).toHaveTextContent('Mayor revealed — this player counts as 3 votes.')
-    expect(dead).toHaveTextContent('TaylorDeadRole not revealed')
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Town' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Neutral' })).toBeVisible()
+    expect(screen.getAllByRole('heading', { name: 'Living' })).toHaveLength(2)
+    expect(screen.getAllByRole('heading', { name: 'Dead' })).toHaveLength(2)
+    expect(screen.getByText('Alex (Player 1)').closest('li')).toHaveTextContent(
+      'Alex (Player 1)LivingRole hidden',
+    )
+    expect(screen.getByText('Alex (Player 2)').closest('li')).toHaveTextContent(
+      'Mayor 2Mayor revealedThis player counts as 3 votes.',
+    )
+    expect(screen.getByText('Taylor').closest('li')).toHaveTextContent('TaylorDeadJester')
+    expect(container.querySelectorAll('.host-role-card')).toHaveLength(3)
+    expect(container).not.toHaveTextContent('Alignment:')
     expect(screen.getByText(/Votes to put someone on trial:/)).toHaveTextContent('2')
     expect(screen.getByText('Guilty votes must exceed innocent votes.')).toBeVisible()
     expect(screen.getByText('A tie results in innocent.')).toBeVisible()
@@ -127,6 +184,7 @@ describe('public day discussion UI', () => {
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
         onPrivatePresentationChange={() => undefined}
+        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
       />,
     )
 
@@ -134,7 +192,13 @@ describe('public day discussion UI', () => {
     expect(screen.queryByText(/no Mayor|every Mayor|already revealed/i)).toBeNull()
   })
 
-  it('renders a zero-living-player roster safely', () => {
+  it('renders empty living groups safely', () => {
+    const noLivingView: HostRoleDayView = {
+      groups: defaultHostView().groups.map((group) => ({
+        ...group,
+        players: group.players.map((player) => ({ ...player, status: 'dead' as const })),
+      })),
+    }
     render(
       <DayDiscussion
         view={publicView({
@@ -146,17 +210,41 @@ describe('public day discussion UI', () => {
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
         onPrivatePresentationChange={() => undefined}
+        getHostRoleView={() => ({ ok: true, value: noLivingView })}
       />,
     )
 
-    expect(screen.getByText('No players remain alive.')).toBeVisible()
+    expect(screen.getAllByText('None')).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'Mayor reveal unavailable' })).toBeDisabled()
     expect(screen.queryByText(/winner|victory/i)).toBeNull()
+  })
+
+  it('keeps public Mayor and death-revealed roles visible in both toggle states', () => {
+    render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        revealError={null}
+        onConfirmMayorReveal={() => true}
+        onClearRevealError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
+      />,
+    )
+
+    expect(screen.getByText('Mayor 2')).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
+    expect(screen.getByText('Mayor 2')).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
+    expect(screen.getByText('Mayor 2')).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
   })
 })
 
 describe('temporary host role view', () => {
-  it('constructs alignment-grouped roles only when requested and removes them when hidden', () => {
+  it('changes role text in place without replacing or reordering alignment cards', () => {
     const hostView: HostRoleDayView = {
       groups: [
         {
@@ -164,6 +252,7 @@ describe('temporary host role view', () => {
           alignmentDisplayName: 'Mafia',
           players: [
             {
+              playerId: hiddenMayorId,
               playerDisplayLabel: 'Morgan',
               status: 'alive',
               activeRoleDisplayName: 'Godfather',
@@ -179,6 +268,7 @@ describe('temporary host role view', () => {
           alignmentDisplayName: 'Town',
           players: [
             {
+              playerId: revealedMayorId,
               playerDisplayLabel: 'Taylor',
               status: 'dead',
               activeRoleDisplayName: 'Doctor',
@@ -194,6 +284,7 @@ describe('temporary host role view', () => {
           alignmentDisplayName: 'Neutral',
           players: [
             {
+              playerId: deadPlayerId,
               playerDisplayLabel: 'Alex (Player 1)',
               status: 'alive',
               activeRoleDisplayName: 'Jester',
@@ -219,31 +310,29 @@ describe('temporary host role view', () => {
       />,
     )
 
-    expect(getHostRoleView).not.toHaveBeenCalled()
-    expect(container).not.toHaveTextContent('Host role: Jester')
-    expect(container).not.toHaveTextContent('Originally assigned: Executioner')
-    expect(container).not.toHaveTextContent('HOST-ONLY VIEW')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
-
-    expect(getHostRoleView).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    expect(getHostRoleView).toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Town' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Neutral' })).toBeVisible()
-    expect(screen.getByText('Host role: Jester')).toBeVisible()
-    expect(screen.getByText('Originally assigned: Executioner')).toBeVisible()
-    expect(screen.getByText('Host role: Doctor')).toBeVisible()
-    expect(screen.getByText('Public role: Doctor')).toBeVisible()
-    expect(screen.getByText('Host role: Godfather')).toBeVisible()
-    expect(screen.getByText('Originally assigned: Framer')).toBeVisible()
-    expect(screen.getByText('Host role: Godfather').closest('li')).toHaveClass(
-      'host-role-card--mafia',
-    )
-    expect(screen.getByText('Host role: Doctor').closest('li')).toHaveClass('host-role-card--town')
-    expect(screen.getByText('Host role: Jester').closest('li')).toHaveClass(
-      'host-role-card--neutral',
-    )
+    expect(screen.getAllByText('Role hidden')).toHaveLength(2)
+    expect(screen.getByText('Doctor')).toBeVisible()
+    expect(container).not.toHaveTextContent('Jester')
+    expect(container).not.toHaveTextContent('Executioner')
+    const cardsBefore = [...container.querySelectorAll('.host-role-card')]
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
+
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
+    expect(screen.getByText('Originally: Executioner')).toBeVisible()
+    expect(screen.getByText('Doctor')).toBeVisible()
+    expect(screen.getByText('Godfather')).toBeVisible()
+    expect(screen.getByText('Originally: Framer')).toBeVisible()
+    expect(screen.getByText('Godfather').closest('li')).toHaveClass('host-role-card--mafia')
+    expect(screen.getByText('Doctor').closest('li')).toHaveClass('host-role-card--town')
+    expect(screen.getByText('Jester').closest('li')).toHaveClass('host-role-card--neutral')
+    expect([...container.querySelectorAll('.host-role-card')]).toEqual(cardsBefore)
+    expect(container).not.toHaveTextContent('Alignment:')
     expect(container.innerHTML).not.toMatch(
       /private-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
     )
@@ -251,9 +340,40 @@ describe('temporary host role view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
 
     expect(screen.getByRole('button', { name: 'Show roles' })).toBeVisible()
-    expect(container).not.toHaveTextContent('Host role: Jester')
-    expect(container).not.toHaveTextContent('Originally assigned: Executioner')
-    expect(container).not.toHaveTextContent('HOST-ONLY VIEW')
+    expect(screen.getAllByText('Role hidden')).toHaveLength(2)
+    expect(screen.getByText('Doctor')).toBeVisible()
+    expect(container).not.toHaveTextContent('Jester')
+    expect(container).not.toHaveTextContent('Executioner')
+    expect([...container.querySelectorAll('.host-role-card')]).toEqual(cardsBefore)
+  })
+
+  it('uses stable player identity when display labels collide without rendering raw IDs', () => {
+    const collidingView: HostRoleDayView = {
+      groups: defaultHostView().groups.map((group) => ({
+        ...group,
+        players: group.players.map((player) => ({
+          ...player,
+          playerDisplayLabel: 'Colliding label',
+        })),
+      })),
+    }
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { container } = render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        revealError={null}
+        onConfirmMayorReveal={() => true}
+        onClearRevealError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+        getHostRoleView={() => ({ ok: true, value: collidingView })}
+      />,
+    )
+
+    expect(screen.getAllByText('Colliding label')).toHaveLength(3)
+    expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/same key|unique.*key/i)
+    expect(container.innerHTML).not.toMatch(/private-player/)
+    consoleError.mockRestore()
   })
 })
 
@@ -424,18 +544,22 @@ describe('private final-day boundaries', () => {
     const mafiaGroup = within(dialog).getByRole('group', { name: 'MAFIA' })
     const townGroup = within(dialog).getByRole('group', { name: 'TOWN' })
     const neutralGroup = within(dialog).getByRole('group', { name: 'NEUTRAL' })
-    expect(mafiaGroup).toHaveTextContent('Alex (Player 1)Godfather · Mafia')
-    expect(townGroup).toHaveTextContent('Alex (Player 2)Citizen · Town')
-    expect(neutralGroup).toHaveTextContent('TaylorJester · Neutral')
+    expect(mafiaGroup).toHaveTextContent('Alex (Player 1)Godfather')
+    expect(townGroup).toHaveTextContent('Alex (Player 2)Citizen')
+    expect(neutralGroup).toHaveTextContent('TaylorJester')
     expect(mafiaGroup).toHaveClass('execution-candidate-group--mafia')
     expect(townGroup).toHaveClass('execution-candidate-group--town')
     expect(neutralGroup).toHaveClass('execution-candidate-group--neutral')
+    expect(dialog).toHaveClass('mayor-reveal--execution')
+    expect(dialog).not.toHaveTextContent('Alignment:')
     expect(dialog).not.toHaveTextContent(/role instance|target|revenge|personal win/i)
 
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Alex \(Player 2\)Citizen · Town/ }))
+    const cardsBefore = [...dialog.querySelectorAll('.mayor-reveal__candidate')]
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Alex \(Player 2\)Citizen/ }))
     expect(dialog).toHaveTextContent('Execute Alex (Player 2)?')
     expect(dialog).toHaveTextContent('Role: Citizen')
-    expect(dialog).toHaveTextContent('Alignment: Town')
+    expect(dialog).not.toHaveTextContent('Alignment:')
+    expect([...dialog.querySelectorAll('.mayor-reveal__candidate')]).toEqual(cardsBefore)
     expect(dialog).toHaveTextContent(
       'This permanently records Alex (Player 2) as the player executed on Day 1. This action cannot be undone.',
     )
@@ -477,6 +601,32 @@ describe('private final-day boundaries', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(openButton).toHaveFocus()
     expect(onExecute).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unbroken selected-player label inside the narrow execution dialog', () => {
+    const longPlayerLabel = `Alex${'UnbrokenName'.repeat(18)}`
+    render(
+      <DayDiscussion
+        view={publicView()}
+        privateMayorCandidates={candidates}
+        privateExecutionCandidates={[executionCandidate(hiddenMayorId, longPlayerLabel)]}
+        revealError={null}
+        outcomeError={null}
+        onConfirmMayorReveal={() => true}
+        onExecutePlayer={() => true}
+        onEndDayWithoutExecution={() => true}
+        onClearRevealError={() => undefined}
+        onClearOutcomeError={() => undefined}
+        onPrivatePresentationChange={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Execute a player' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Execute a player' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: new RegExp(longPlayerLabel) }))
+
+    expect(dialog).toHaveTextContent(`Execute ${longPlayerLabel}?`)
+    expect(within(dialog).getByRole('button', { name: `Execute ${longPlayerLabel}` })).toBeVisible()
   })
 
   it('confirms no execution once and persists no temporary selection in the component DOM', () => {
@@ -535,6 +685,17 @@ describe('day discussion responsive ownership', () => {
     expect(css).toContain('.execution-candidate-group--mafia')
     expect(css).toContain('.execution-candidate-group--town')
     expect(css).toContain('.execution-candidate-group--neutral')
+    expect(css).toMatch(
+      /\.host-role-view__groups\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
+    )
+    expect(css).toMatch(
+      /\.execution-candidate-groups\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
+    )
+    expect(css).toMatch(
+      /\.execution-candidate-group label > span,[\s\S]*?\.execution-candidate-group label > small\s*\{[\s\S]*?overflow-wrap:\s*anywhere/,
+    )
+    expect(css).toContain('width: calc(100vw - 2rem)')
+    expect(css).toMatch(/\.mayor-reveal--execution\s*\{[\s\S]*?overflow-wrap:\s*anywhere/)
     expect(css).toMatch(
       /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*14rem\),\s*1fr\)\)/,
     )

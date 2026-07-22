@@ -374,7 +374,7 @@ describe('host-only day role selector', () => {
     )
   })
 
-  it('derives every active role without exposing neutral mechanics or raw IDs', () => {
+  it('derives every active role with stable identity without exposing neutral mechanics', () => {
     const state = createDayState([
       { roleId: ROLE_IDS.executioner, name: 'Alex' },
       { roleId: ROLE_IDS.citizen, name: 'Taylor', alive: false },
@@ -390,7 +390,12 @@ describe('host-only day role selector', () => {
       'Town',
       'Neutral',
     ])
-    expect(result.value.groups.flatMap((group) => group.players)).toEqual([
+    const rows = result.value.groups.flatMap((group) => group.players)
+    const roleDetails = rows.map(({ playerId, ...details }) => {
+      expect(playerId).toBeDefined()
+      return details
+    })
+    expect(roleDetails).toEqual([
       {
         playerDisplayLabel: 'Alex (Player 3)',
         status: 'alive',
@@ -428,7 +433,10 @@ describe('host-only day role selector', () => {
         publicRole: null,
       },
     ])
-    expect(JSON.stringify(result.value)).not.toMatch(
+    expect(new Set(rows.map((row) => row.playerId))).toEqual(
+      new Set(state.game.players.map((player) => player.playerId)),
+    )
+    expect(JSON.stringify(roleDetails)).not.toMatch(
       /player-|role-instance|gameId|targetPlayerId|personalWin|pendingJester|revenge|conversion/i,
     )
   })

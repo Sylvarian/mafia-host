@@ -206,10 +206,20 @@ export function createNightFixture(
       distribution = { status: 'unassigned', setup }
       break
     case 'distributing':
-      distribution = { status: 'distributing', setup, game }
+      distribution = {
+        status: 'distributing',
+        setup,
+        game,
+        roleCardDistributionPlayerIds: game.players.map((player) => player.playerId),
+      }
       break
     case 'confirmed':
-      distribution = { status: 'confirmed', setup, game }
+      distribution = {
+        status: 'confirmed',
+        setup,
+        game,
+        roleCardDistributionPlayerIds: game.players.map((player) => player.playerId),
+      }
       break
   }
 

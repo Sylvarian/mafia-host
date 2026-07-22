@@ -15,7 +15,11 @@ export type RoleDistributionRow = Readonly<{
 export function selectRoleDistributionRows(
   workflow: DistributingRolesWorkflow,
 ): readonly RoleDistributionRow[] {
-  return workflow.game.players.map((gamePlayer) => {
+  return workflow.roleCardDistributionPlayerIds.map((playerId) => {
+    const gamePlayer = workflow.game.players.find((candidate) => candidate.playerId === playerId)
+    if (gamePlayer === undefined) {
+      throw new Error(`Distribution player ${playerId} is absent from the active game.`)
+    }
     const player = workflow.setup.participatingPlayers.find(
       (participant) => participant.id === gamePlayer.playerId,
     )

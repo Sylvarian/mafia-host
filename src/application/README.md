@@ -9,6 +9,9 @@ ordinals, and owns unassigned/distributing/confirmed card delivery. Reassignment
 identities. Phase 7F.1 removes per-player delivery authority. One pure bulk confirmation validates
 that every private card is available, marks the complete physical-delivery boundary, and
 immediately enters Executioner briefing or Night 1 through the active-session coordinator.
+Phase 7F.4 creates a second independent Fisher–Yates shuffle for the physical recipient sequence,
+stores the exact player-ID order in distributing/confirmed workflow authority, and validates exact
+participant coverage before confirmation.
 
 `executioner-briefing` owns the Phase 7A private workflow. It rebuilds minimal briefing records from
 canonical Executioner target relationships, orders duplicate Executioners by ordinal and roster
@@ -17,9 +20,9 @@ output; target roles and display prose are not authority. Phase 7F.3 derives rea
 the complete stable-ID acknowledgement set. The final acknowledgement atomically enters Night 1;
 there is no current `ready` workflow, completion action, or second confirmation.
 
-`night-actions` owns the Phase 7A.1 sequential-night authority. Its canonical order is Mafia
-overview, Consorts, Framers, Godfathers, Serial Killers, Doctors, Sheriffs, Investigators,
-Consiglieres, and Detectives. Duplicate copies use role-instance ordinal and roster order.
+`night-actions` owns the Phase 7A.1 sequential-night authority. Its canonical physical order is
+Mafia overview, Consorts, Framers, Godfathers, Consiglieres, Serial Killers, Doctors, Sheriffs,
+Investigators, and Detectives. Duplicate copies use role-instance ordinal and roster order.
 On disabled Night 1, active Doctors, Godfathers, and Serial Killers have no step. Enabled Night 1
 and Night 2+ retain them.
 
@@ -35,9 +38,11 @@ actors cannot be edited. Final advancement constructs one domain-validated
 The same shared domain functions resolve frames, Sheriff policy, investigation groups, blocks,
 visits, and Detective tracking for immediate and final results. Detective actions never enter the
 trackable visit ledger. Selectors provide sanitized actor, target, and immediate-outcome views;
-actor/result views derive the canonical active role and alignment. Ordinary target rows contain
-only the duplicate-safe display label, alive/availability state, and structured disabled reason;
-they contain no target role, faction, alignment group, colour class, or hidden alignment metadata.
+actor/result views derive the canonical active role and alignment. Phase 7F.4's shared
+`player-roles` selector derives duplicate-safe label, alive/dead state, active role/alignment, and
+changed original assignment once for Night targets, Day cards, and execution candidates. Night
+target selectors attach the unchanged structured legality result and fixed Mafia/Town/Neutral
+groups; presentation metadata never becomes action or game authority.
 
 `night-resolution` remains the narrow deterministic operation over a complete workflow.
 `night-completion` replaces the removed end-of-night private-result presentation slice. It enters
@@ -64,8 +69,7 @@ guidance and has no fixed displayed threshold. It
 contains no hidden role IDs, factions, Executioner targets, or night data. The private candidate
 selector contains only player IDs and stable labels for living unrevealed Mayors, ordered by
 role-instance ordinal then roster position. It is consumed only inside the deliberate host privacy
-boundary. A distinct host-role selector is constructed only when the React feature requests it.
-It returns canonical Mafia/Town/Neutral groups, duplicate-safe labels, alive/dead status, active
+boundary. A distinct host-role selector builds canonical Mafia/Town/Neutral groups, duplicate-safe labels, alive/dead status, active
 role/alignment labels, immutable original-role labels when different, and separate legitimate
 public-role status. It reuses canonical active-role derivation so converted Executioners show
 Jester/original Executioner and promoted Mafia show Godfather/original assignment. It cannot return
@@ -99,6 +103,13 @@ current progress without the Doctor, and returns a canonical write-back when fie
 fully acknowledged obsolete Executioner `ready` stage enters Night 1 directly; incomplete or
 unknown evidence fails closed. These paths consume no randomness, reroll no target, and replay no
 acknowledged private screen.
+
+Phase 7F.4 retains the same schema and sub-version. Distribution persistence includes the exact
+stage-local `roleCardDistributionPlayerIds`; earlier exact distribution shapes use game-roster
+order and return canonical write-back, while invalid coverage fails closed. Sequential restoration
+also isolates the former physical wake order and replays only provable progress into the current
+order. It rejects later actions that would require skipping an unacted moved Consigliere and never
+consumes randomness or redisplays an acknowledged result.
 
 Phase 7C.1 deliberately accepts earlier V2 sequential shapes only through exact evidence. An old
 non-informational `Action recorded` record is validated through the canonical action operation and
@@ -176,8 +187,9 @@ flows create a new editable setup from it without reusing assignments or match I
 assignment derives fresh match-player IDs from the fresh game ID before creating the authoritative
 game, so setup-row IDs also never become cross-game authority.
 
-Role-distribution persistence stays at schema V2 and emits only `roleCardsDeliveryStatus:
-"pending" | "complete"` at that stage. Restoration narrowly accepts legacy per-player evidence:
+Role-distribution persistence stays at schema V2 and emits `roleCardsDeliveryStatus:
+"pending" | "complete"` plus the exact physical recipient order at that stage. Restoration
+narrowly accepts legacy per-player evidence:
 all canonical participants means complete, zero/partial means pending, and duplicate/unknown/mixed
 authority is rejected. Restore consumes no randomness and never rerolls assignments or targets.
 

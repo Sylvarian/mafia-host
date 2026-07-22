@@ -3,6 +3,12 @@ import type { Faction } from '@/domain/roles/faction.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
 import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
+import {
+  groupHostPlayersByActiveAlignment,
+  selectHostPlayerRoleViews,
+  type HostPlayerAlignmentGroup,
+  type HostPlayerRoleView,
+} from '../player-roles/index.ts'
 
 import {
   validateCurrentNightActionTarget,
@@ -24,13 +30,14 @@ export type MafiaOverviewMember = Readonly<{
   roleDisplayName: string
 }>
 
-export type NightTargetOption = Readonly<{
-  playerId: PlayerId
-  playerDisplayLabel: string
-  alive: boolean
-  enabled: boolean
-  disabledReason: NightActionCollectionError | null
-}>
+export type NightTargetOption = HostPlayerRoleView &
+  Readonly<{
+    alive: boolean
+    enabled: boolean
+    disabledReason: NightActionCollectionError | null
+  }>
+
+export type NightTargetGroup = HostPlayerAlignmentGroup<NightTargetOption>
 
 export type CurrentNightStepView =
   | (NightStepViewBase &
@@ -47,6 +54,7 @@ export type CurrentNightStepView =
         hostPrompt: string
         confirmationMode: 'advance-directly' | 'show-private-result'
         targetOptions: readonly NightTargetOption[]
+        targetGroups: readonly NightTargetGroup[]
       }>)
 
 type ImmediateNightOutcomeViewBase = Readonly<{
@@ -119,6 +127,23 @@ export function selectCurrentNightStepView(
     throw new Error(`Night actor ${step.actorPlayerId} has no collection metadata.`)
   }
 
+  const hostRowsResult = selectHostPlayerRoleViews(workflow.game, workflow.participants)
+  if (!hostRowsResult.ok) {
+    throw new Error('Night targets could not derive canonical active role metadata.')
+  }
+  const targetOptions = Object.freeze(
+    hostRowsResult.value.map((target) => {
+      const confirmationResult = validateCurrentNightActionTarget(workflow, target.playerId)
+
+      return Object.freeze({
+        ...target,
+        alive: target.status === 'alive',
+        enabled: confirmationResult.ok,
+        disabledReason: confirmationResult.ok ? null : confirmationResult.error,
+      })
+    }),
+  )
+
   return Object.freeze({
     ...base,
     type: 'actor-action',
@@ -137,19 +162,8 @@ export function selectCurrentNightStepView(
       role.id === ROLE_IDS.detective
         ? 'show-private-result'
         : 'advance-directly',
-    targetOptions: Object.freeze(
-      workflow.game.players.map((target) => {
-        const confirmationResult = validateCurrentNightActionTarget(workflow, target.playerId)
-
-        return Object.freeze({
-          playerId: target.playerId,
-          playerDisplayLabel: selectPlayerDisplayLabel(workflow.participants, target.playerId),
-          alive: target.alive,
-          enabled: confirmationResult.ok,
-          disabledReason: confirmationResult.ok ? null : confirmationResult.error,
-        })
-      }),
-    ),
+    targetOptions,
+    targetGroups: groupHostPlayersByActiveAlignment(targetOptions),
   })
 }
 

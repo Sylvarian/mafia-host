@@ -9,6 +9,7 @@ export type NightActionMetadata =
       actionKind: NightActionKind
       collectionGroup: 'mafia' | 'individual'
       collectionOrder: number
+      wakeOrder: number
       hostPrompt: string
     }>
 

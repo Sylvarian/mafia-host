@@ -19,10 +19,16 @@ describe('role distribution bulk delivery UI', () => {
     if (fixture.distribution.status !== 'distributing') {
       throw new Error('Expected distribution.')
     }
+    const reversedWorkflow = {
+      ...fixture.distribution,
+      roleCardDistributionPlayerIds: [
+        ...fixture.distribution.roleCardDistributionPlayerIds,
+      ].reverse(),
+    }
     const confirmAll = vi.fn()
     render(
       <RoleDistribution
-        workflow={fixture.distribution}
+        workflow={reversedWorkflow}
         error={null}
         beginNightErrorMessage={null}
         onConfirmAllRoleCardsDelivered={confirmAll}
@@ -35,15 +41,19 @@ describe('role distribution bulk delivery UI', () => {
     expect(screen.queryByText(/HOST-ONLY VIEW/)).toBeNull()
     expect(screen.getByText('Godfather')).toBeVisible()
     expect(screen.getByText('Citizen')).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Mafia' }).closest('section')).toHaveClass(
-      'assignment-group--mafia',
-    )
-    expect(screen.getByRole('heading', { name: 'Town' }).closest('section')).toHaveClass(
-      'assignment-group--town',
-    )
-    expect(screen.getByRole('heading', { name: 'Neutral' }).closest('section')).toHaveClass(
-      'assignment-group--neutral',
-    )
+    expect(screen.queryByRole('heading', { name: 'Mafia' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Town' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Neutral' })).toBeNull()
+    expect(
+      screen
+        .getByRole('list', { name: 'Private role assignments in delivery order' })
+        .querySelectorAll('h4'),
+    ).toHaveLength(2)
+    expect([...screen.getAllByRole('listitem')].map((card) => card.textContent)).toEqual([
+      '1PlayerAlexPlayer 2Citizen',
+      '2PlayerAlexPlayer 1Godfather',
+    ])
+    expect(document.body).not.toHaveTextContent('Alignment:')
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByRole('button', { name: /mark.*delivered/i })).toBeNull()
     const button = screen.getByRole('button', {
@@ -91,7 +101,7 @@ describe('role distribution bulk delivery UI', () => {
     )
 
     expect(css).toContain('@media (max-width: 42rem)')
-    expect(css).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(css).toContain('grid-template-columns: 2.25rem minmax(0, 1fr)')
     expect(css).toContain('background: var(--faction-mafia-soft)')
     expect(css).toContain('background: var(--faction-town-soft)')
     expect(css).toContain('background: var(--faction-neutral-soft)')

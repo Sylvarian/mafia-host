@@ -31,7 +31,9 @@ describe('role-distribution workflow', () => {
   it('assigns once and exposes no per-player delivery authority', () => {
     const setup = createSetup()
     const unassigned = createRoleDistributionWorkflow(setup)
-    const assigned = expectSuccess(assignRoleDistribution(unassigned, dependencies([0.5, 0.5])))
+    const assigned = expectSuccess(
+      assignRoleDistribution(unassigned, dependencies([0.5, 0.5, 0, 0])),
+    )
 
     expect(unassigned).toEqual({ status: 'unassigned', setup })
     expect(assigned).toMatchObject({ status: 'distributing' })
@@ -44,6 +46,11 @@ describe('role-distribution workflow', () => {
       assigned.game.players.map((player) => player.playerId),
     )
     expect(assigned.game.phase).toBe('role-distribution')
+    expect(assigned.roleCardDistributionPlayerIds).toEqual([
+      assigned.game.players[1]?.playerId,
+      assigned.game.players[2]?.playerId,
+      assigned.game.players[0]?.playerId,
+    ])
     expect(assigned).not.toHaveProperty('deliveredPlayerIds')
   })
 
@@ -56,6 +63,7 @@ describe('role-distribution workflow', () => {
       status: 'confirmed',
       setup: assigned.setup,
       game: assigned.game,
+      roleCardDistributionPlayerIds: assigned.roleCardDistributionPlayerIds,
     })
     expect(confirmed.game.phase).toBe('role-distribution')
     expect(JSON.stringify(assigned)).toBe(snapshot)
@@ -98,10 +106,24 @@ describe('role-distribution workflow', () => {
       ok: false,
       error: { type: 'ROLE_CARDS_UNAVAILABLE' },
     })
+
+    expect(
+      confirmAllRoleCardsDelivered({
+        ...assigned,
+        roleCardDistributionPlayerIds: [
+          assigned.game.players[0]?.playerId ?? playerId('missing'),
+          assigned.game.players[0]?.playerId ?? playerId('missing'),
+          assigned.game.players[2]?.playerId ?? playerId('missing'),
+        ],
+      }),
+    ).toEqual({
+      ok: false,
+      error: { type: 'INVALID_ROLE_CARD_DISTRIBUTION_ORDER', reason: 'duplicate-player' },
+    })
   })
 
   it('reassigns immutably with fresh game and role-instance identities', () => {
-    const deps = dependencies([0, 0, 0.999, 0.999])
+    const deps = dependencies([0, 0, 0.5, 0.5, 0.999, 0.999, 0, 0])
     const assigned = createDistributingWorkflow(deps)
     const snapshot = JSON.stringify(assigned)
     const reassigned = expectSuccess(reassignRoleDistribution(assigned, deps))
@@ -120,6 +142,9 @@ describe('role-distribution workflow', () => {
     expect(reassigned.game.settings).toEqual(assigned.game.settings)
     expect(reassigned.game.players.map((player) => player.role.roleId)).not.toEqual(
       assigned.game.players.map((player) => player.role.roleId),
+    )
+    expect(reassigned.roleCardDistributionPlayerIds).not.toEqual(
+      assigned.roleCardDistributionPlayerIds,
     )
     const priorRoleInstanceIds = new Set(
       assigned.game.players.map((player) => player.role.instanceId),
@@ -172,7 +197,7 @@ describe('role-distribution workflow', () => {
       })(),
     }
     const deps: RoleAssignmentDependencies = {
-      randomSource: new DeterministicRandomSource([0.5, 0.5, 0.5, 0.5]),
+      randomSource: new DeterministicRandomSource([0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
       identitySource,
     }
     const assigned = expectSuccess(
@@ -197,7 +222,7 @@ describe('role-distribution workflow', () => {
       nextRoleInstanceId: () => roleInstanceId(`reused-role-${String((nextRoleNumber++ % 3) + 1)}`),
     }
     const deps: RoleAssignmentDependencies = {
-      randomSource: new DeterministicRandomSource([0.5, 0.5]),
+      randomSource: new DeterministicRandomSource([0.5, 0.5, 0.5, 0.5]),
       identitySource,
     }
     const assigned = createDistributingWorkflow(deps)
@@ -268,7 +293,7 @@ function dependencies(values: readonly number[]): RoleAssignmentDependencies {
 }
 
 function createDistributingWorkflow(
-  deps: RoleAssignmentDependencies = dependencies([0.5, 0.5]),
+  deps: RoleAssignmentDependencies = dependencies([0.5, 0.5, 0.5, 0.5]),
 ): DistributingRolesWorkflow {
   return expectSuccess(assignRoleDistribution(createRoleDistributionWorkflow(createSetup()), deps))
 }

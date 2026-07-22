@@ -123,50 +123,73 @@ function CollectionStep({
         <div className="actor-action">
           <p className="actor-action__prompt">{step.hostPrompt}</p>
           <div
-            className="target-grid"
+            className="target-columns"
             role="group"
             aria-label={`Targets for ${step.roleDisplayName}`}
           >
-            {step.targetOptions.map((target) => {
-              const selected = target.playerId === selectedTargetId
-              const reasonId = `target-reason-${target.playerId}`
-              const reason =
-                target.disabledReason === null
-                  ? null
-                  : getNightActionCollectionErrorMessage(target.disabledReason)
+            {step.targetGroups.map((group, groupIndex) => (
+              <section
+                className={`target-column target-column--${group.alignment}`}
+                aria-labelledby={`target-column-${group.alignment}-heading`}
+                key={group.alignment}
+              >
+                <h3 id={`target-column-${group.alignment}-heading`}>
+                  {group.alignmentDisplayName}
+                </h3>
+                {group.players.length === 0 ? (
+                  <p className="target-column__empty">No players.</p>
+                ) : (
+                  <div className="target-grid">
+                    {group.players.map((target, targetIndex) => {
+                      const selected = target.playerId === selectedTargetId
+                      const reasonId = `target-reason-${String(groupIndex)}-${String(targetIndex)}`
+                      const reason =
+                        target.disabledReason === null
+                          ? null
+                          : getNightActionCollectionErrorMessage(target.disabledReason)
 
-              return (
-                <div className="target-option" key={target.playerId}>
-                  <button
-                    type="button"
-                    className={`target-button${selected ? ' is-selected' : ''}`}
-                    disabled={!target.enabled}
-                    aria-pressed={selected}
-                    aria-describedby={reason === null ? undefined : reasonId}
-                    aria-label={`${target.playerDisplayLabel}, ${target.alive ? 'alive' : 'dead'}, ${selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}`}
-                    onClick={() => {
-                      setSelectedTargetId(target.playerId)
-                    }}
-                  >
-                    <strong>{target.playerDisplayLabel}</strong>
-                    <span>
-                      {selected
-                        ? 'Selected'
-                        : target.enabled
-                          ? 'Available'
-                          : target.alive
-                            ? 'Unavailable'
-                            : 'Dead'}
-                    </span>
-                  </button>
-                  {reason === null ? null : (
-                    <small className="target-option__reason" id={reasonId}>
-                      {reason}
-                    </small>
-                  )}
-                </div>
-              )
-            })}
+                      return (
+                        <div className="target-option" key={target.playerId}>
+                          <button
+                            type="button"
+                            className={`target-button${selected ? ' is-selected' : ''}`}
+                            disabled={!target.enabled}
+                            aria-pressed={selected}
+                            aria-describedby={reason === null ? undefined : reasonId}
+                            aria-label={`${target.playerDisplayLabel}, ${target.activeRoleDisplayName}, ${target.alive ? 'alive' : 'dead'}, ${selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}`}
+                            onClick={() => {
+                              setSelectedTargetId(target.playerId)
+                            }}
+                          >
+                            <strong>{target.playerDisplayLabel}</strong>
+                            <span className="target-button__role">
+                              {target.activeRoleDisplayName}
+                            </span>
+                            {target.originallyAssignedRoleDisplayName === null ? null : (
+                              <small>Originally: {target.originallyAssignedRoleDisplayName}</small>
+                            )}
+                            <span>
+                              {selected
+                                ? 'Selected'
+                                : target.enabled
+                                  ? 'Available'
+                                  : target.alive
+                                    ? 'Unavailable'
+                                    : 'Dead'}
+                            </span>
+                          </button>
+                          {reason === null ? null : (
+                            <small className="target-option__reason" id={reasonId}>
+                              {reason}
+                            </small>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            ))}
           </div>
         </div>
       )}

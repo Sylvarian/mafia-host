@@ -38,6 +38,7 @@ export type {
   CurrentNightStepView,
   ImmediateNightOutcomeView,
   MafiaOverviewMember,
+  NightTargetGroup,
   NightTargetOption,
 } from './night-action-selectors.ts'
 export { buildNightActionSequence } from './night-sequence.ts'

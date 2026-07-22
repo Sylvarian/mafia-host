@@ -52,3 +52,7 @@ export type RoleDistributionError =
   | Readonly<{ type: 'ROLE_CARDS_UNAVAILABLE' }>
   | Readonly<{ type: 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE' }>
   | Readonly<{ type: 'REASSIGNMENT_AFTER_CONFIRMATION' }>
+  | Readonly<{
+      type: 'INVALID_ROLE_CARD_DISTRIBUTION_ORDER'
+      reason: 'participant-coverage' | 'unknown-player' | 'duplicate-player'
+    }>

@@ -1185,6 +1185,7 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'ROLE_CARDS_UNAVAILABLE':
     case 'ROLE_CARD_DELIVERY_ALREADY_COMPLETE':
     case 'REASSIGNMENT_AFTER_CONFIRMATION':
+    case 'INVALID_ROLE_CARD_DISTRIBUTION_ORDER':
       return getRoleDistributionErrorMessage(error)
     case 'ACTIVE_GAME_REJECTED':
       return 'The active game failed domain validation, so the first-night transition was not applied.'

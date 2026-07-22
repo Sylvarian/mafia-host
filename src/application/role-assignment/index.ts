@@ -12,6 +12,10 @@ export { expandRoleCounts } from './expand-role-counts.ts'
 export type { RoleAssignmentIdentitySource } from './identity-source.ts'
 export type { RoleAssignmentError, RoleDistributionError } from './role-assignment-errors.ts'
 export {
+  createRoleCardDistributionOrder,
+  validateRoleCardDistributionOrder,
+} from './role-card-distribution-order.ts'
+export {
   assignRoleDistribution,
   confirmAllRoleCardsDelivered,
   createRoleDistributionWorkflow,

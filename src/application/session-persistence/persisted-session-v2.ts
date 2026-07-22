@@ -356,6 +356,7 @@ export type PersistedAppSessionV2 =
       setup: PersistedValidatedSetupV2
       game: PersistedGameV2
       roleCardsDeliveryStatus: 'pending'
+      roleCardDistributionPlayerIds: readonly string[]
     }>
   | Readonly<{
       stage: 'role-distribution'
@@ -363,6 +364,7 @@ export type PersistedAppSessionV2 =
       setup: PersistedValidatedSetupV2
       game: PersistedGameV2
       roleCardsDeliveryStatus: 'complete'
+      roleCardDistributionPlayerIds: readonly string[]
     }>
   | Readonly<{
       stage: 'executioner-briefing'
@@ -514,6 +516,7 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
           settings: copySettings(session.workflow.setup.settings),
         },
         game: copyGame(session.workflow.game),
+        roleCardDistributionPlayerIds: [...session.workflow.roleCardDistributionPlayerIds],
       }
       return session.workflow.status === 'distributing'
         ? deepFreeze({

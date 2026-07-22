@@ -33,56 +33,56 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     'Godfather',
     'mafia',
     'Leads the Mafia and selects a player to attack at night.',
-    nightAction('attack', 'mafia', 30, 'Who do you want to kill?'),
+    nightAction('attack', 'mafia', 30, 30, 'Who do you want to kill?'),
   ),
   roleEntry(
     ROLE_IDS.framer,
     'Framer',
     'mafia',
     'Frames a player for the current night so investigations see misleading information.',
-    nightAction('frame', 'mafia', 20, 'Who do you want to frame?'),
+    nightAction('frame', 'mafia', 20, 20, 'Who do you want to frame?'),
   ),
   roleEntry(
     ROLE_IDS.consort,
     'Consort',
     'mafia',
     'Selects a player to role-block before later actors wake.',
-    nightAction('role-block', 'mafia', 10, 'Who do you want to roleblock?'),
+    nightAction('role-block', 'mafia', 10, 10, 'Who do you want to roleblock?'),
   ),
   roleEntry(
     ROLE_IDS.consigliere,
     'Consigliere',
     'mafia',
     'Investigates a player using the permanent investigation groups.',
-    nightAction('investigate', 'mafia', 80, 'Who do you want to investigate?'),
+    nightAction('investigate', 'mafia', 80, 40, 'Who do you want to investigate?'),
   ),
   roleEntry(
     ROLE_IDS.sheriff,
     'Sheriff',
     'town',
     'Checks whether a player appears suspicious during the night.',
-    nightAction('investigate', 'individual', 60, 'Who do you want to investigate?'),
+    nightAction('investigate', 'individual', 60, 70, 'Who do you want to investigate?'),
   ),
   roleEntry(
     ROLE_IDS.detective,
     'Detective',
     'town',
     'Tracks whom a selected player successfully visited that night.',
-    nightAction('track', 'individual', 90, 'Who do you want to track?'),
+    nightAction('track', 'individual', 90, 90, 'Who do you want to track?'),
   ),
   roleEntry(
     ROLE_IDS.investigator,
     'Investigator',
     'town',
     'Investigates a player using a permanent three-or-four-role result group.',
-    nightAction('investigate', 'individual', 70, 'Who do you want to investigate?'),
+    nightAction('investigate', 'individual', 70, 80, 'Who do you want to investigate?'),
   ),
   roleEntry(
     ROLE_IDS.doctor,
     'Doctor',
     'town',
     'Protects one player from applicable night attacks.',
-    nightAction('protect', 'individual', 50, 'Who do you want to protect?'),
+    nightAction('protect', 'individual', 50, 60, 'Who do you want to protect?'),
   ),
   roleEntry(
     ROLE_IDS.mayor,
@@ -117,7 +117,7 @@ export const ROLE_REGISTRY: readonly RoleRegistryEntry[] = Object.freeze([
     'Serial Killer',
     'neutral',
     'A Neutral killing role that attacks one living player at night.',
-    nightAction('attack', 'individual', 40, 'Who do you want to kill?'),
+    nightAction('attack', 'individual', 40, 50, 'Who do you want to kill?'),
   ),
 ])
 
@@ -153,6 +153,7 @@ function nightAction(
     Readonly<{ hasNightAction: true }>
   >['collectionGroup'],
   collectionOrder: number,
+  wakeOrder: number,
   hostPrompt: string,
 ): NightActionMetadata {
   return Object.freeze({
@@ -160,6 +161,7 @@ function nightAction(
     actionKind,
     collectionGroup,
     collectionOrder,
+    wakeOrder,
     hostPrompt,
   })
 }

@@ -90,7 +90,7 @@ function actorWorkflow(
 }
 
 describe('sequential Night Runner UI', () => {
-  it('keeps active-role context prominent while ordinary targets remain names-only', () => {
+  it('shows active roles in simultaneous alignment columns while preserving roster order', () => {
     const workflow = actorWorkflow(
       startedWorkflow([
         { roleId: ROLE_IDS.doctor, name: 'Host Doctor' },
@@ -111,13 +111,13 @@ describe('sequential Night Runner UI', () => {
 
     const group = screen.getByRole('group', { name: 'Targets for Doctor' })
     const mafia = within(group).getByRole('button', {
-      name: 'Alex (Player 2), alive, available',
+      name: 'Alex (Player 2), Godfather, alive, available',
     })
     const town = within(group).getByRole('button', {
-      name: 'Alex (Player 3), alive, available',
+      name: 'Alex (Player 3), Citizen, alive, available',
     })
     const neutral = within(group).getByRole('button', {
-      name: 'Neutral target, alive, available',
+      name: 'Neutral target, Serial Killer, alive, available',
     })
 
     expect(screen.getByRole('heading', { name: 'Doctor' })).toHaveFocus()
@@ -125,12 +125,13 @@ describe('sequential Night Runner UI', () => {
     expect(screen.getByText('4 of 4')).toBeVisible()
     expect(screen.getByText('Who do you want to protect?')).toBeVisible()
     expect(document.querySelector('.night-runner')).toHaveClass('turn-surface--town')
-    expect(group).not.toHaveTextContent('Godfather')
-    expect(group).not.toHaveTextContent('Citizen')
-    expect(group).not.toHaveTextContent('Serial Killer')
-    expect(group).not.toHaveTextContent('Mafia')
-    expect(group).not.toHaveTextContent('Town')
-    expect(within(group).queryByText('Neutral')).toBeNull()
+    expect(within(group).getByRole('heading', { name: 'Mafia' })).toBeVisible()
+    expect(within(group).getByRole('heading', { name: 'Town' })).toBeVisible()
+    expect(within(group).getByRole('heading', { name: 'Neutral' })).toBeVisible()
+    expect(group).toHaveTextContent('Godfather')
+    expect(group).toHaveTextContent('Citizen')
+    expect(group).toHaveTextContent('Serial Killer')
+    expect(group).not.toHaveTextContent('Alignment:')
     expect([mafia, town, neutral].every((target) => target.className === 'target-button')).toBe(
       true,
     )
@@ -139,10 +140,10 @@ describe('sequential Night Runner UI', () => {
         .getAllByRole('button')
         .map((target) => target.textContent),
     ).toEqual([
-      'Host DoctorAvailable',
-      'Alex (Player 2)Available',
-      'Alex (Player 3)Available',
-      'Neutral targetAvailable',
+      'Alex (Player 2)GodfatherAvailable',
+      'Host DoctorDoctorAvailable',
+      'Alex (Player 3)CitizenAvailable',
+      'Neutral targetSerial KillerAvailable',
     ])
     expect(screen.queryByText(/role-instance-|night-fixture-game/)).toBeNull()
 
@@ -158,6 +159,9 @@ describe('sequential Night Runner UI', () => {
     expect(css).toMatch(
       /\.target-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*12rem\),\s*1fr\)\)/,
     )
+    expect(css).toMatch(
+      /\.target-columns\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
+    )
     expect(css).toMatch(/\.target-button\s*\{[\s\S]*?min-height:\s*4\.75rem;/)
     expect(4.75 * 16).toBeGreaterThanOrEqual(44)
     expect(css).toMatch(/@media \(max-width:\s*24\.5rem\)/)
@@ -165,7 +169,7 @@ describe('sequential Night Runner UI', () => {
     expect(390).toBeLessThanOrEqual(24.5 * 16)
   })
 
-  it('keeps unavailable targets visible without exposing their role or alignment', () => {
+  it('keeps unavailable targets visible with their active role in the correct column', () => {
     const workflow = actorWorkflow(
       startedWorkflow([
         { roleId: ROLE_IDS.doctor, name: 'Doctor' },
@@ -184,13 +188,13 @@ describe('sequential Night Runner UI', () => {
     )
 
     const unavailable = screen.getByRole('button', {
-      name: 'Dead target, dead, unavailable',
+      name: 'Dead target, Citizen 1, dead, unavailable',
     })
     expect(unavailable).toBeDisabled()
     expect(unavailable).toHaveClass('target-button')
     expect(unavailable).not.toHaveClass('target-button--town')
     expect(within(unavailable).getByText('Dead')).toBeVisible()
-    expect(unavailable).not.toHaveTextContent('Citizen')
+    expect(unavailable).toHaveTextContent('Citizen 1')
     expect(unavailable).not.toHaveTextContent('Town')
   })
 
@@ -212,7 +216,7 @@ describe('sequential Night Runner UI', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, Citizen, alive, available' }))
     expect(onConfirmTarget).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(onConfirmTarget).toHaveBeenCalledTimes(1)
@@ -230,7 +234,7 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, Citizen, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target and continue' }))
 
     expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
@@ -249,7 +253,7 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Target, alive, available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target, Jester, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
     const resultHeading = screen.getByRole('heading', { name: 'Sheriff' })
@@ -276,7 +280,7 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Target, alive, available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target, Jester, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
     expect(screen.getByRole('heading', { name: 'Investigator' })).toHaveFocus()

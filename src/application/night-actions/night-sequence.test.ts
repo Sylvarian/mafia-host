@@ -44,11 +44,11 @@ describe('sequential night wake order', () => {
       ROLE_IDS.consort,
       ROLE_IDS.framer,
       ROLE_IDS.godfather,
+      ROLE_IDS.consigliere,
       ROLE_IDS.serialKiller,
       ROLE_IDS.doctor,
       ROLE_IDS.sheriff,
       ROLE_IDS.investigator,
-      ROLE_IDS.consigliere,
       ROLE_IDS.detective,
     ])
   })
@@ -80,7 +80,12 @@ describe('sequential night wake order', () => {
         { roleId: ROLE_IDS.godfather },
         { roleId: ROLE_IDS.serialKiller },
         { roleId: ROLE_IDS.doctor },
+        { roleId: ROLE_IDS.consigliere },
         { roleId: ROLE_IDS.sheriff },
+        { roleId: ROLE_IDS.framer },
+        { roleId: ROLE_IDS.investigator },
+        { roleId: ROLE_IDS.detective },
+        { roleId: ROLE_IDS.consort },
       ],
       {
         phase: 'night-action-collection',
@@ -95,11 +100,11 @@ describe('sequential night wake order', () => {
 
     expect(result.value[0]).toEqual({
       type: 'mafia-overview',
-      mafiaPlayerIds: ['player-1'],
+      mafiaPlayerIds: ['player-1', 'player-4', 'player-6', 'player-9'],
     })
     expect(
       result.value.flatMap((step) => (step.type === 'actor-action' ? [step.actorPlayerId] : [])),
-    ).toEqual(['player-4'])
+    ).toEqual(['player-9', 'player-6', 'player-4', 'player-5', 'player-7', 'player-8'])
   })
 
   it.each([

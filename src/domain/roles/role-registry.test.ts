@@ -45,54 +45,63 @@ describe('role registry', () => {
         actionKind: 'attack',
         collectionGroup: 'mafia',
         collectionOrder: 30,
+        wakeOrder: 30,
       },
       framer: {
         hasNightAction: true,
         actionKind: 'frame',
         collectionGroup: 'mafia',
         collectionOrder: 20,
+        wakeOrder: 20,
       },
       consort: {
         hasNightAction: true,
         actionKind: 'role-block',
         collectionGroup: 'mafia',
         collectionOrder: 10,
+        wakeOrder: 10,
       },
       consigliere: {
         hasNightAction: true,
         actionKind: 'investigate',
         collectionGroup: 'mafia',
         collectionOrder: 80,
+        wakeOrder: 40,
       },
       'serial-killer': {
         hasNightAction: true,
         actionKind: 'attack',
         collectionGroup: 'individual',
         collectionOrder: 40,
+        wakeOrder: 50,
       },
       doctor: {
         hasNightAction: true,
         actionKind: 'protect',
         collectionGroup: 'individual',
         collectionOrder: 50,
+        wakeOrder: 60,
       },
       sheriff: {
         hasNightAction: true,
         actionKind: 'investigate',
         collectionGroup: 'individual',
         collectionOrder: 60,
+        wakeOrder: 70,
       },
       investigator: {
         hasNightAction: true,
         actionKind: 'investigate',
         collectionGroup: 'individual',
         collectionOrder: 70,
+        wakeOrder: 80,
       },
       detective: {
         hasNightAction: true,
         actionKind: 'track',
         collectionGroup: 'individual',
         collectionOrder: 90,
+        wakeOrder: 90,
       },
       mayor: { hasNightAction: false },
       citizen: { hasNightAction: false },
@@ -103,10 +112,14 @@ describe('role registry', () => {
     const actingRoles = ROLE_REGISTRY.filter(
       (
         role,
-      ): role is typeof role & { nightAction: { hasNightAction: true; collectionOrder: number } } =>
-        role.nightAction.hasNightAction,
+      ): role is typeof role & {
+        nightAction: { hasNightAction: true; collectionOrder: number; wakeOrder: number }
+      } => role.nightAction.hasNightAction,
     )
     expect(new Set(actingRoles.map((role) => role.nightAction.collectionOrder)).size).toBe(
+      actingRoles.length,
+    )
+    expect(new Set(actingRoles.map((role) => role.nightAction.wakeOrder)).size).toBe(
       actingRoles.length,
     )
     for (const role of ROLE_REGISTRY) {

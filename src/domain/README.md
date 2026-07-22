@@ -14,8 +14,8 @@ roster order.
 
 Phase 4 adds immutable night-action kinds, submitted action identity, per-role-instance structural
 target validation, complete-batch validation, and frozen collected batches. The role registry now
-contains immutable collection metadata and explicit physical order, but no executable callbacks or
-effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Doctor,
+contains separate immutable resolution/collection and physical-wake ranks, but no executable
+callbacks or effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Doctor,
 Godfather, and Serial Killer actors are excluded from collection requirements. Mutual Godfather/Serial targets and
 Consort-on-Consort targets remain structurally valid on nights when those actors act.
 
@@ -170,3 +170,9 @@ step, index, placeholder, action, visit, protection, or attack on Night 1. Activ
 duplicate ordering, and stable role-instance identity remain canonical. Enabled Night 1 and every
 Night 2+ use the unchanged rules. Presentation colours, prompts, and list grouping remain outside
 domain state.
+
+Phase 7F.4 moves Consigliere into the Mafia portion of physical wake order while retaining the
+existing collection rank used to canonicalize resolution input. This keeps physical presentation
+and deterministic resolution ordering explicit and independently testable. Target intelligence,
+card-recipient randomization, alignment grouping, and Day layout remain outside domain state; no
+target-validity or resolution mechanic changes.

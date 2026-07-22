@@ -39,6 +39,8 @@ export function getRoleDistributionErrorMessage(error: RoleDistributionError): s
       return 'Role-card delivery is already complete and cannot be confirmed again.'
     case 'REASSIGNMENT_AFTER_CONFIRMATION':
       return 'Roles cannot be reassigned after distribution is finalised. Abandon this game to restart from setup.'
+    case 'INVALID_ROLE_CARD_DISTRIBUTION_ORDER':
+      return 'The physical role-card delivery order is invalid, so delivery cannot be confirmed.'
   }
 }
 

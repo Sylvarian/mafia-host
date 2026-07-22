@@ -6,7 +6,6 @@ import type {
   HostRoleDayViewError,
   MayorRevealCandidateView,
   PublicDayDiscussionView,
-  PublicDayPlayerView,
 } from '@/application/day-discussion/index.ts'
 import type {
   CompleteDayOutcomeWorkflowError,
@@ -119,7 +118,7 @@ export function DayDiscussion({
   }
 
   const privateDialogOpen = dialog !== null
-  const hostRoleResult = showHostRoles && getHostRoleView !== undefined ? getHostRoleView() : null
+  const hostRoleResult = getHostRoleView === undefined ? null : getHostRoleView()
 
   return (
     <section className="day-discussion" aria-labelledby="day-discussion-heading">
@@ -128,7 +127,7 @@ export function DayDiscussion({
         aria-hidden={privateDialogOpen || undefined}
         inert={privateDialogOpen ? true : undefined}
       >
-        <p className="day-discussion__eyebrow">{view.dayLabel} · Public-safe display</p>
+        <p className="day-discussion__eyebrow">{view.dayLabel} · Host display</p>
         <h2 id="day-discussion-heading" ref={headingRef} tabIndex={-1}>
           Day discussion
         </h2>
@@ -139,28 +138,14 @@ export function DayDiscussion({
             className="button button--secondary"
             disabled={privateDialogOpen}
             aria-expanded={showHostRoles}
-            aria-controls="host-role-view"
+            aria-controls="day-player-cards"
             onClick={() => {
               setShowHostRoles((visible) => !visible)
             }}
           >
             {showHostRoles ? 'Hide roles' : 'Show roles'}
           </button>
-          {showHostRoles ? (
-            <div id="host-role-view" className="host-role-view">
-              {hostRoleResult === null ? (
-                <p className="host-role-view__error" role="alert">
-                  Host roles are unavailable.
-                </p>
-              ) : hostRoleResult.ok ? (
-                <HostRoleRows view={hostRoleResult.value} />
-              ) : (
-                <p className="host-role-view__error" role="alert">
-                  {getHostRoleViewErrorMessage(hostRoleResult.error)}
-                </p>
-              )}
-            </div>
-          ) : null}
+          <span>Roles change in place on the player cards below.</span>
         </aside>
 
         <section className="day-discussion__guidance" aria-labelledby="voting-requirements-heading">
@@ -179,19 +164,18 @@ export function DayDiscussion({
           </p>
         </section>
 
-        <div className="day-discussion__rosters">
-          <PlayerSection
-            heading="Living players"
-            headingId="living-players-heading"
-            rows={view.livingPlayers}
-            emptyMessage="No players remain alive."
-          />
-          <PlayerSection
-            heading="Dead players"
-            headingId="dead-players-heading"
-            rows={view.deadPlayers}
-            emptyMessage="No players are dead."
-          />
+        <div id="day-player-cards" className="host-role-view">
+          {hostRoleResult === null ? (
+            <p className="host-role-view__error" role="alert">
+              Player cards are unavailable.
+            </p>
+          ) : hostRoleResult.ok ? (
+            <UnifiedDayPlayerCards view={hostRoleResult.value} showRoles={showHostRoles} />
+          ) : (
+            <p className="host-role-view__error" role="alert">
+              {getHostRoleViewErrorMessage(hostRoleResult.error)}
+            </p>
+          )}
         </div>
 
         <aside className="day-discussion__mayor-control" aria-label="Private host controls">
@@ -248,7 +232,7 @@ export function DayDiscussion({
         <div className="mayor-reveal__backdrop" role="presentation">
           <section
             ref={dialogRef}
-            className="mayor-reveal"
+            className={`mayor-reveal${dialog === 'execution' ? ' mayor-reveal--execution' : ''}`}
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="private-day-dialog-heading"
@@ -330,8 +314,6 @@ export function DayDiscussion({
                     <strong>Execute {selectedExecution.playerDisplayLabel}?</strong>
                     <br />
                     Role: {selectedExecution.activeRoleDisplayName}
-                    <br />
-                    Alignment: {selectedExecution.alignmentDisplayName}
                     {selectedExecution.originallyAssignedRoleDisplayName === null ? null : (
                       <>
                         <br />
@@ -393,7 +375,10 @@ export function DayDiscussion({
   )
 }
 
-function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
+function UnifiedDayPlayerCards({
+  view,
+  showRoles,
+}: Readonly<{ view: HostRoleDayView; showRoles: boolean }>) {
   return (
     <div className="host-role-view__groups">
       {view.groups.map((group) => (
@@ -406,34 +391,59 @@ function HostRoleRows({ view }: Readonly<{ view: HostRoleDayView }>) {
           {group.players.length === 0 ? (
             <p className="host-role-group__empty">No assigned players.</p>
           ) : (
-            <ul className="host-role-view__players">
-              {group.players.map((player, playerIndex) => (
-                <li
-                  className={getHostRoleCardClass(player.alignment)}
-                  key={`${group.alignment}-${String(playerIndex)}`}
-                >
-                  <div>
-                    <strong>{player.playerDisplayLabel}</strong>
-                    <span>{player.status === 'alive' ? 'Alive' : 'Dead'}</span>
-                  </div>
-                  <div>
-                    <strong>Host role: {player.activeRoleDisplayName}</strong>
-                    <span>Alignment: {player.alignmentDisplayName}</span>
-                    {player.originallyAssignedRoleDisplayName === null ? null : (
-                      <span>Originally assigned: {player.originallyAssignedRoleDisplayName}</span>
+            <div className="host-role-group__states">
+              {(['alive', 'dead'] as const).map((status) => {
+                const players = group.players.filter((player) => player.status === status)
+                return (
+                  <section
+                    className="host-role-state"
+                    aria-labelledby={`host-role-${group.alignment}-${status}-heading`}
+                    key={status}
+                  >
+                    <h4 id={`host-role-${group.alignment}-${status}-heading`}>
+                      {status === 'alive' ? 'Living' : 'Dead'}
+                    </h4>
+                    {players.length === 0 ? (
+                      <p className="host-role-state__empty">None</p>
+                    ) : (
+                      <ul className="host-role-view__players">
+                        {players.map((player) => (
+                          <li
+                            className={`${getHostRoleCardClass(player.alignment)} host-role-card--${player.status}`}
+                            key={player.playerId}
+                          >
+                            <div>
+                              <strong>{player.playerDisplayLabel}</strong>
+                              <span>{player.status === 'alive' ? 'Living' : 'Dead'}</span>
+                            </div>
+                            <div>
+                              <strong>
+                                {showRoles
+                                  ? player.activeRoleDisplayName
+                                  : (player.publicRole?.displayName ?? 'Role hidden')}
+                              </strong>
+                              {!showRoles ||
+                              player.originallyAssignedRoleDisplayName === null ? null : (
+                                <span>Originally: {player.originallyAssignedRoleDisplayName}</span>
+                              )}
+                              {player.publicRole?.status === 'publicly-revealed-mayor' ? (
+                                <span>Mayor revealed</span>
+                              ) : null}
+                              {player.publicRole?.status === 'publicly-revealed-mayor' &&
+                              player.status === 'alive' ? (
+                                <span className="day-player__mayor-reminder">
+                                  This player counts as 3 votes.
+                                </span>
+                              ) : null}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                    {player.publicRole === null ? null : (
-                      <span>
-                        Public role: {player.publicRole.displayName}
-                        {player.publicRole.status === 'publicly-revealed-mayor'
-                          ? ' — publicly revealed'
-                          : ''}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </section>
+                )
+              })}
+            </div>
           )}
         </section>
       ))}
@@ -586,10 +596,10 @@ function ExecutionCandidateGroups({
                 />
                 <span>{candidate.playerDisplayLabel}</span>
                 <small>
-                  {candidate.activeRoleDisplayName} · {candidate.alignmentDisplayName}
+                  {candidate.activeRoleDisplayName}
                   {candidate.originallyAssignedRoleDisplayName === null
                     ? ''
-                    : ` · Originally assigned: ${candidate.originallyAssignedRoleDisplayName}`}
+                    : ` · Originally: ${candidate.originallyAssignedRoleDisplayName}`}
                 </small>
               </label>
             ))
@@ -629,48 +639,5 @@ function DialogActions({
         {confirmLabel}
       </button>
     </div>
-  )
-}
-
-type PlayerSectionProps = Readonly<{
-  heading: string
-  headingId: string
-  rows: readonly PublicDayPlayerView[]
-  emptyMessage: string
-}>
-
-function PlayerSection({ heading, headingId, rows, emptyMessage }: PlayerSectionProps) {
-  return (
-    <section className="day-roster" aria-labelledby={headingId}>
-      <h3 id={headingId}>{heading}</h3>
-      {rows.length === 0 ? (
-        <p className="day-roster__empty">{emptyMessage}</p>
-      ) : (
-        <ul>
-          {rows.map((row) => (
-            <li key={row.playerId} className={`day-player day-player--${row.status}`}>
-              <div className="day-player__identity">
-                <strong>{row.playerDisplayLabel}</strong>
-                <span>{row.status === 'alive' ? 'Alive' : 'Dead'}</span>
-              </div>
-              <div className="day-player__role">
-                {row.publicRoleDisplayName === null ? (
-                  <span>{row.status === 'alive' ? 'Role hidden' : 'Role not revealed'}</span>
-                ) : row.publiclyRevealedMayor ? (
-                  <strong>{row.publicRoleDisplayName} — publicly revealed</strong>
-                ) : (
-                  <strong>{row.publicRoleDisplayName}</strong>
-                )}
-                {row.hasThreeVoteReminder ? (
-                  <span className="day-player__mayor-reminder">
-                    Mayor revealed — this player counts as 3 votes.
-                  </span>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }

@@ -50,7 +50,7 @@ export function buildNightActionSequence(
     actors.push({
       actorPlayerId: player.playerId,
       actorRoleInstanceId: player.role.instanceId,
-      collectionOrder: role.nightAction.collectionOrder,
+      wakeOrder: role.nightAction.wakeOrder,
       ordinal: player.role.ordinal,
       rosterIndex,
     })
@@ -72,14 +72,14 @@ export function buildNightActionSequence(
 type ActorSequenceEntry = Readonly<{
   actorPlayerId: PlayerId
   actorRoleInstanceId: RoleInstanceId
-  collectionOrder: number
+  wakeOrder: number
   ordinal: number | null
   rosterIndex: number
 }>
 
 function compareActorSequenceEntries(left: ActorSequenceEntry, right: ActorSequenceEntry): number {
   return (
-    left.collectionOrder - right.collectionOrder ||
+    left.wakeOrder - right.wakeOrder ||
     (left.ordinal ?? 0) - (right.ordinal ?? 0) ||
     left.rosterIndex - right.rosterIndex
   )

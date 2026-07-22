@@ -6,12 +6,11 @@ slice here. Slice internals remain private; cross-slice APIs are exposed only th
 
 `game-setup` renders the application setup workflow. `role-distribution` is the private assignment
 and physical-card screen. Phase 7F.1 shows every private role card with exactly one
-**Confirm all role cards delivered** action and no per-player delivery controls. The host remains
+**Confirm all role cards delivered** action and no per-player delivery controls. Phase 7F.4 shows
+one numbered stable randomized recipient sequence rather than alignment-grouping the cards. The host remains
 responsible for privately handing out every card before pressing it; that one guarded action
 immediately enters the correct Executioner or Night 1 stage. Components do not shuffle roles,
-construct game state, or assign Executioner targets themselves. Because the private card list is
-already authorized to reveal roles, Phase 7F.3 groups it under Mafia, Town, and Neutral while
-preserving roster order inside each group.
+construct game state, choose recipient order, or assign Executioner targets themselves.
 
 `executioner-briefing` renders exactly one Phase 7A private briefing at a time. It exposes the
 Executioner identity and target player name but not the target role. Focus and confirmation state
@@ -27,9 +26,10 @@ Detective show exactly one private result with one **Continue** action. Target s
 temporary React state and is discarded unless confirmed. Phase 7F.3 makes the active role the
 largest heading, shows the concise registry-owned host question next, and uses a dominant light
 red Mafia, light green Town, or light grey Neutral surface derived from the active-role selector.
-Target rows show only the stable player label and availability state. Duplicate names use roster
-positions, never raw technical IDs; role/alignment is absent from text, ARIA, grouping, ordering,
-classes, hidden DOM, and disabled-control metadata.
+Phase 7F.4 target screens use fixed simultaneous Mafia, Town, and Neutral columns. Cards show the
+stable duplicate-safe player label, canonical active role, changed original assignment, alive/dead
+state, and availability. Raw technical IDs remain absent, and the application-provided legality
+result still solely determines whether a target can be chosen.
 When first-night kills are disabled, Doctor, Godfather, and Serial Killer are absent from the
 application workflow, so the feature renders no skipped/disabled card or placeholder for them.
 
@@ -47,23 +47,23 @@ public Dawn screen tells the host when players may open their eyes. The public v
 data beyond the announcement. The deliberate **Continue to Day N** transition enters the current
 numbered day.
 
-`day-discussion` renders a public-safe numbered-day display with semantic living/dead sections, only
+`day-discussion` renders a numbered host display with a unified full-width three-column player-card area, only
 authoritative public role reveals, the living-player strict-majority trial threshold, separate
 guilty-greater-than-innocent execution guidance, and textual three-vote reminders for
 each living revealed Mayor. Phase 7C adds only **Execute a player** and **End day without
 execution** as final controls; it still contains no nomination, vote, winner, revenge-resolution,
 or next-night controls.
 
-Phase 7F.3 exposes **Show roles** / **Hide roles** only to editable day discussion. The list is
-absent by default. The component requests the separate
-sanitized host-role selector only while visible, and toggle state never autosaves or enters the
-application session. Rows are grouped under accessible Mafia, Town, and Neutral headings. Each
-entire player card uses a light red, green, or grey background derived from active alignment while
-retaining textual alignment. They show duplicate-safe labels, alive/dead state, current
-role/alignment, optional original assignment, and separate legitimate public-role status.
+Phase 7F.4 retains **Show roles** / **Hide roles** only for editable day discussion. Roles are
+hidden by default and toggle state never autosaves or enters the application session. Cards remain
+in the same DOM positions while their role text changes in place. Rows are grouped under
+accessible Mafia, Town, and Neutral headings, with living/dead subsections. Each entire player
+card uses a light red, green, or grey background derived from active alignment, using the column
+heading as the textual alignment cue. They show duplicate-safe labels, alive/dead state, current
+role, optional original assignment, and separate legitimate public-role status.
 Converted Executioners appear as active Jester/original Executioner and promoted Mafia as active
 Godfather/original assignment; targets, wins, pending revenge, and raw IDs never enter props or
-DOM. Hiding, refresh, recovery, and new-day entry all return to the public-safe view. Controls retain
+DOM. Hiding, refresh, recovery, and new-day entry all return to role-hidden cards. Controls retain
 44px minimum targets, and the owned grid avoids horizontal overflow at 320px and 390px.
 
 Opening **Confirm Mayor reveal** makes the public background inert and enters a focused dialog.
@@ -72,9 +72,10 @@ labels, never a game, role map, faction, or Executioner target. Radio selection,
 focus, and operation guards are temporary React state. Escape and Cancel restore focus; rapid
 confirmation is guarded.
 
-The execution control opens an alert dialog grouped under Mafia, Town, and Neutral because that
+The execution control opens a full-width alert dialog grouped under Mafia, Town, and Neutral because that
 list is already authorized to contain living duplicate-safe player labels, current active roles,
-textual alignments, and an optional changed original assignment. Canonical roster order is retained
+and an optional changed original assignment. Alignment is carried by the column rather than
+repeated on every card. Canonical roster order is retained
 inside each group. It
 never shows Executioner targets, personal wins, pending revenge, or predicted neutral effects. The
 no-execution control has its own irreversible confirmation. Both make the background inert,

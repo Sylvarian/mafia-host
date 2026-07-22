@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.3 first-night wake rule; implementation complete through Phase 7F.3<br>
+**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.4 host workflow; implementation complete through Phase 7F.4<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -37,11 +37,13 @@ The implemented product currently includes:
 - Repeated day discussion with a public-safe living/dead roster.
 - Public strict-majority trial guidance with execution verdict guidance kept separate.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
-- Alignment-grouped host-only roles with full light alignment-coloured player cards, plus
-  role/alignment detail inside the private execution flow.
+- Unified alignment-grouped host player cards and a full-width private execution flow, both using
+  canonical active role/alignment without repeated per-card alignment text.
+- Three simultaneous Mafia/Town/Neutral target columns with active-role, changed-original-role,
+  and alive/dead intelligence while preserving existing target legality.
 - A browser-local next-game setup template containing the full ordered roster, participation
   choices, role quantities, and settings but no match progress.
-- One-click confirmation after the host privately delivers every physical role card.
+- One stable randomized physical-card recipient order with one-click delivery confirmation.
 - Deterministic Godfather succession at the start of Night 2 or later, with a private briefing.
 - One final execution or no-execution record per day and a public-safe post-day summary.
 - Explicit death causes, permanent neutral personal wins, pending Jester revenge creation, and
@@ -170,6 +172,14 @@ changes. An obsolete Executioner `ready` save is accepted only when every canoni
 acknowledged; it enters Night 1 directly and is written back as the canonical next stage. Missing,
 duplicate, unknown, or partially acknowledged evidence fails closed. Neither migration consumes
 randomness, rerolls targets, nor replays private information.
+
+Phase 7F.4 keeps the same schema and neutral-state sub-version. New role-distribution saves persist
+the exact stable randomized player-ID delivery sequence. Earlier exact role-distribution saves
+without that field receive deterministic roster order and canonical write-back; malformed,
+duplicate, unknown, or incomplete sequences fail closed. Exact sequential saves in the former
+Consigliere-after-Investigator wake order are replayed into the current order only when every
+completed actor/result and the current position are unambiguous. Unsafe or ambiguous progress is
+rejected. These compatibility paths consume no randomness and do not replay private information.
 
 The separate `mafia-host:next-game-setup-template:v1` payload contains exactly ordered setup-only
 `roster` entries with string `name` and boolean `playing`, canonical `roleCounts`, and exact
@@ -616,8 +626,9 @@ When the host prepares, distributes, and confirms a game:
 5. Assign ordinals to duplicate roles.
 6. Initialise alive status.
 7. Initialise night-history fields such as each Doctor's previous target.
-8. Display the private assignment list to the host.
-9. The host physically distributes the corresponding role cards.
+8. Independently randomize a stable physical-card recipient order with the injected random
+   source, then display one numbered private assignment sequence without alignment grouping.
+9. The host physically distributes the corresponding role cards in that sequence.
 10. The host selects **Confirm all role cards delivered** once after every private card is
     physically delivered. There are no per-player delivery controls or intermediate
     acknowledgement screen.
@@ -626,13 +637,18 @@ When the host prepares, distributes, and confirms a game:
     the final target immediately enters Night 1 with no ready screen or second confirmation.
 13. If no Executioner exists, enter Night 1 action collection immediately.
 
-Role assignments must use a testable injected random source rather than calling `Math.random()` throughout the domain.
+Role assignment and recipient-order randomization must use the testable injected random source
+rather than calling `Math.random()` throughout the domain. The physical order is separate from
+role assignment: it is created once per assignment/reassignment, persisted exactly, and never
+rerolled during render, confirmation, refresh, or restoration.
 
 Steps 11 and 12 are implemented in Phase 7A. No target exists before final distribution
 confirmation. Phase 7F.1 makes the one bulk delivery action atomically perform that confirmation
 and enter Executioner briefing or Night 1. Assignment and the stage transition use the injected
 random source once per Executioner and never rerun during render, refresh, navigation, save retry,
 or restoration. A malformed later-phase game without every required target remains invalid.
+Compatible saved distribution stages that predate the recipient-order field use canonical roster
+order as a deterministic fallback and are written back in the current shape.
 
 ---
 
@@ -700,11 +716,11 @@ The authoritative physical order is:
 2. Consort copies
 3. Framer copies
 4. Godfather copies
-5. Serial Killer copies
-6. Doctor copies
-7. Sheriff copies
-8. Investigator copies
-9. Consigliere copies
+5. Consigliere copies
+6. Serial Killer copies
+7. Doctor copies
+8. Sheriff copies
+9. Investigator copies
 10. Detective copies
 11. Final night completion
 
@@ -727,10 +743,13 @@ dominant turn surface uses the active alignment: light red Mafia, light green To
 Neutral, with textual alignment context so colour is not the only cue. Promoted Godfathers and
 converted roles use the canonical active role/alignment.
 
-Ordinary target rows contain only stable human-readable player labels and availability state.
-Duplicate names use roster positions such as `Alex (Player 1)` and never display raw technical
-IDs. They never expose or encode target role/alignment through text, grouping, DOM order, CSS
-classes, ARIA, hidden attributes, or disabled controls.
+Every target screen presents fixed Mafia, Town, and Neutral columns simultaneously. Candidate
+cards show a stable human-readable player label, canonical active role, immutable original role
+when the active role changed, alive/dead state, and availability. Duplicate names use roster
+positions such as `Alex (Player 1)` and raw technical IDs are never displayed. Promoted
+Godfathers and converted Jesters are grouped by their active alignment. These additions are
+host-only intelligence: the existing domain target validator still solely determines legality,
+and column grouping does not add or remove candidates.
 
 Target selection is temporary React state. It does not commit, resolve, autosave, consume
 randomness, or affect later actors. For Consort, Framer, Godfather, Serial Killer, and Doctor,
@@ -921,7 +940,7 @@ roster order without revealing either cause. Persisted Dawn authority is current
 
 Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.1.
 
-During day discussion, the public-safe screen shows every player with:
+During day discussion, one host display shows every player with:
 
 - Name
 - Alive/dead state
@@ -934,7 +953,7 @@ During day discussion, the public-safe screen shows every player with:
 Available controls:
 
 - Deliberately confirm a Mayor's verbal public reveal.
-- Show or hide a temporary role-bearing host list.
+- Show or hide roles in place on the unified player cards.
 - Execute a living participating player.
 - End the day without execution.
 
@@ -943,25 +962,28 @@ unrevealed Mayor players. The public view never receives hidden assignments, fac
 targets, or night state. Multiple Mayor copies reveal independently. The existing
 `publiclyRevealedRoleId` field is the only Mayor-reveal authority.
 
-The host-role control is hidden by default and is React-only: it never changes or autosaves the
+The role control is hidden by default and is React-only: it never changes or autosaves the
 game/session and returns hidden on refresh, recovery, and new-day entry. The public day selector
-remains role-free. A separate sanitized selector is invoked only while the host-only list is
-visible and returns canonical Mafia, Town, and Neutral groups with duplicate-safe player labels,
-alive/dead status, current active role/alignment, immutable original assignment where different,
-and legitimate public-role status. Converted Executioners display active Jester/original
+remains role-free. A canonical sanitized host selector always supplies one fixed three-column
+Mafia/Town/Neutral card area with duplicate-safe player labels, visibly distinct living/dead
+states, current active role/alignment, immutable original assignment where different, and
+legitimate public-role status. Toggling changes role content in each existing card without moving
+or replacing the card. Converted Executioners display active Jester/original
 Executioner; promoted Mafia display active Godfather/original assignment. Executioner targets, personal wins, pending
 revenge, raw IDs, and other private neutral mechanics are excluded. Each full player-card surface
-uses the current active alignment's light background: Mafia red, Town green, or Neutral grey. Textual
-alignment, alive/dead status, active role, and changed original assignment remain visible, so color
-is never the sole cue. These colors are feature-only and non-persistent.
+uses the current active alignment's light background: Mafia red, Town green, or Neutral grey.
+Column headings provide the textual alignment cue; individual cards do not repeat `Alignment:`
+lines. Alive/dead status, active role, and changed original assignment remain textual. These
+colors are feature-only and non-persistent.
 
 Both final controls use deliberate private confirmations. The execution candidate list is already
-authorized to show role/alignment, so it groups living candidates under Mafia, Town, and Neutral
+authorized to show role/alignment, so its full-width layout groups living candidates under Mafia, Town, and Neutral
 without changing canonical roster order inside each group. It contains duplicate-safe player
-labels, current active role/alignment, and an original assignment only when changed. It excludes
+labels, current active role, and an original assignment only when changed. Column headings carry
+alignment, so cards do not repeat alignment lines. It excludes
 targets, personal wins, pending revenge, and night data. Dialog state and temporary selection are
-not persisted. This grouping never applies to ordinary private target lists, which remain
-names-only and do not encode hidden alignment.
+not persisted. The same canonical role-view source supplies target, Day, and execution grouping;
+those views do not become persisted authority.
 
 ---
 
@@ -1377,7 +1399,8 @@ permanent Jester and Executioner personal wins, pending-revenge creation, and pr
 non-execution-death conversions. Corrected Phase 7D implements faction victory only when pending
 revenge is absent, plus safe waiting and game over. Phase 7E implements next-Dawn revenge
 resolution and repeated later-night/day gameplay. Phase 7F.2 implements the opposing killing-role
-final-two draw with precedence over ordinary faction predicates.
+final-two draw with precedence over ordinary faction predicates. Phase 7F.4 changes physical host
+ordering and information presentation without changing target legality or resolution mechanics.
 
 ### R-001 — Mutual killing disabled
 

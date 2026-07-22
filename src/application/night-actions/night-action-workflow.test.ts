@@ -203,9 +203,9 @@ describe('sequential night workflow', () => {
     })
 
     const expectedOutcomes = [
+      { roleId: ROLE_IDS.consigliere, kind: 'investigation-result' },
       { roleId: ROLE_IDS.sheriff, kind: 'sheriff-result' },
       { roleId: ROLE_IDS.investigator, kind: 'investigation-result' },
-      { roleId: ROLE_IDS.consigliere, kind: 'investigation-result' },
     ] as const
 
     for (const expected of expectedOutcomes) {

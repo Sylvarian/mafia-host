@@ -2,8 +2,9 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7F.3 retains schema V2 with
-neutral-state sub-version 4, plus a separate complete next-game setup template<br>
+**Persistence:** One versioned local active-session save; Phase 7F.4 retains schema V2 with
+neutral-state sub-version 4 and adds stage-local card-distribution order, plus a separate complete
+next-game setup template<br>
 **Backend:** None
 
 ---
@@ -536,7 +537,7 @@ Only current-night deaths are announced. No generic migration framework exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7F.3 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7F.4 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -1048,7 +1049,8 @@ evaluateGameOutcome(gameState): GameOutcome
   Mafia light red, Town light green, Neutral light grey.
 - Remove repetitive host-only, browser-storage, and private-screen essays from operational UI while
   retaining actual selector, recovery, focus, and hidden-DOM privacy boundaries.
-- Keep ordinary targets names-only. Group only already-authorized role-bearing host lists under
+- At the Phase 7F.3 boundary, keep ordinary targets names-only (superseded by Phase 7F.4 target
+  intelligence). Group only already-authorized role-bearing host lists under
   Mafia, Town, and Neutral, retaining active role, transformed original role, status, duplicate-safe
   labels, and canonical roster order.
 
@@ -1060,7 +1062,8 @@ evaluateGameOutcome(gameState): GameOutcome
   Mode, rapid operation, failed-save retry, and obsolete-ready migration.
 - Role-first headings/prompts/results, promoted/converted active alignment, 44px controls, 320px,
   390px, and tablet layouts.
-- Names-only target DOM/ARIA/classes/order, alignment-grouped authorized lists, generic recovery,
+- Phase 7F.3 names-only target DOM/ARIA/classes/order (superseded by Phase 7F.4),
+  alignment-grouped authorized lists, generic recovery,
   stale-copy searches, architecture boundaries, and randomness enforcement.
 
 #### Acceptance criteria
@@ -1070,6 +1073,58 @@ evaluateGameOutcome(gameState): GameOutcome
 - The last Executioner target delivery is the only final click before Night 1 and creates it once.
 - The host can identify the current role, prompt, legal targets, result, and continuation at a
   glance without target-alignment leakage or persisted presentation data.
+
+---
+
+### Phase 7F.4 — Target intelligence, distribution order, and unified host views
+
+**Status: Implemented.**
+
+#### Work
+
+- Add one canonical application selector for duplicate-safe player label, alive/dead state,
+  current active role, changed original assignment, and active alignment. Reuse it for Night
+  targets, Day cards, and execution candidates without persisting derived display data.
+- Present every target screen as simultaneous Mafia, Town, and Neutral columns. Preserve the
+  existing target validator as the sole legality authority while showing active role, changed
+  original role, and state on each candidate card.
+- Generate a second independent Fisher–Yates shuffle for physical-card recipients through the
+  injected `RandomSource`. Persist the exact player-ID sequence, keep it stable through delivery
+  and recovery, reject invalid coverage, and deterministically fall back to roster order for
+  compatible older distribution saves.
+- Change physical wake order to Mafia overview, Consort, Framer, Godfather, Consigliere, Serial
+  Killer, Doctor, Sheriff, Investigator, Detective. Keep the separate ordinary resolution order
+  unchanged. Migrate only exact former-order progress that can be replayed without duplicating,
+  skipping, or redisplaying a private outcome; fail closed otherwise.
+- Replace the separate Day roster/role panels with one full-width fixed three-column host card
+  area. Keep living/dead distinction and toggle role text in place without moving cards. Give the
+  execution dialog the same full-width three-column organization. Use alignment headings and
+  card surfaces without repetitive per-card alignment lines.
+- Preserve the Phase 7F.3 disabled-first-night omissions, active-role conversions/promotions,
+  duplicate ordering, persistence schema/key, privacy boundaries, and all game mechanics.
+
+#### Tests
+
+- Seeded/injected recipient shuffle determinism, changed orders, exact persisted round trip,
+  legacy roster fallback/write-back, and malformed/duplicate/unknown/incomplete rejection.
+- Exact Mafia-first wake order with duplicates, first-night omissions, enabled Night 1 and Night
+  2+, independent resolution order, and safe/unsafe former-order recovery positions.
+- Canonical role-view promotion/conversion/original-role cases, duplicate player labels, group
+  order, target legality preservation, and exclusion of targets/wins/revenge authority.
+- Fixed target, Day, and execution columns; role content and card identity across the Day toggle;
+  living/dead treatment; absent `Alignment:` rows; full-width/320px/390px layout contracts; and
+  generic recovery privacy.
+
+#### Acceptance criteria
+
+- The host can identify every candidate's active role and state at a glance in stable alignment
+  columns without changing who can legally be targeted.
+- Physical cards have a persisted randomized delivery sequence that never rerolls on refresh, and
+  older exact saves remain deterministic.
+- Consigliere wakes with the Mafia before Neutral/Town actors while final resolution behavior is
+  unchanged, and unsafe old progress is rejected rather than guessed.
+- Day role visibility changes existing cards in place, and execution candidates need no scrolling
+  side channel or repeated alignment text.
 
 ---
 

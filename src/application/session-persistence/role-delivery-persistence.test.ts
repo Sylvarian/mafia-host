@@ -8,7 +8,7 @@ import {
 } from './persisted-session-v2.ts'
 import { restorePersistedSessionEnvelopeV2 } from './restore-persisted-session-v2.ts'
 
-describe('Phase 7F.1 role-delivery persistence compatibility', () => {
+describe('role-delivery and distribution-order persistence compatibility', () => {
   it('writes pending bulk status with no per-player delivery records', () => {
     const session = distributingSession()
     const persisted = toPersistedAppSessionV2(session)
@@ -20,6 +20,68 @@ describe('Phase 7F.1 role-delivery persistence compatibility', () => {
     })
     expect(persisted).not.toHaveProperty('deliveredPlayerIds')
     expect(JSON.stringify(persisted)).not.toContain('deliveredPlayerIds')
+    expect(persisted).toMatchObject({
+      roleCardDistributionPlayerIds: session.workflow.roleCardDistributionPlayerIds,
+    })
+  })
+
+  it('round-trips the exact randomized player-ID order without reshuffling', () => {
+    const session = distributingSession()
+    const reversed = {
+      ...session,
+      workflow: {
+        ...session.workflow,
+        roleCardDistributionPlayerIds: [
+          ...session.workflow.roleCardDistributionPlayerIds,
+        ].reverse(),
+      },
+    }
+    const envelope = createPersistedSessionEnvelopeV2(reversed, '2026-07-22T10:00:00.000Z')
+    const restored = restorePersistedSessionEnvelopeV2(envelope)
+
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'role-distribution') {
+      throw new Error('Expected restored distribution.')
+    }
+    expect(restored.value.session.workflow.roleCardDistributionPlayerIds).toEqual(
+      reversed.workflow.roleCardDistributionPlayerIds,
+    )
+    expect(toPersistedAppSessionV2(restored.value.session)).toEqual(envelope.session)
+  })
+
+  it.each([
+    {
+      mutate: (ids: readonly string[]) => [ids[0], ids[0]],
+    },
+    {
+      mutate: (ids: readonly string[]) => [ids[0]],
+    },
+    {
+      mutate: (ids: readonly string[]) => [ids[0], 'unknown-player'],
+    },
+  ])('rejects malformed persisted distribution orders', ({ mutate }) => {
+    const envelope = createPersistedSessionEnvelopeV2(
+      distributingSession(),
+      '2026-07-22T10:00:00.000Z',
+    )
+    if (envelope.session.stage !== 'role-distribution') {
+      throw new Error('Expected persisted distribution.')
+    }
+    expect(
+      restorePersistedSessionEnvelopeV2({
+        ...envelope,
+        session: {
+          ...envelope.session,
+          roleCardDistributionPlayerIds: mutate(envelope.session.roleCardDistributionPlayerIds),
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_ROLE_DISTRIBUTION_SESSION',
+        reason: 'invalid-distribution-order',
+      },
+    })
   })
 
   it('canonicalizes a legacy all-delivered list to the completed boundary', () => {
@@ -78,6 +140,12 @@ describe('Phase 7F.1 role-delivery persistence compatibility', () => {
         throw new Error('Expected restored distribution.')
       }
       expect(restored.value.session.workflow.status).toBe('distributing')
+      expect(restored.value.session.workflow.roleCardDistributionPlayerIds).toEqual(
+        restored.value.session.workflow.game.players.map((player) => player.playerId),
+      )
+      expect(restored.value.writeBackEnvelope?.session).toHaveProperty(
+        'roleCardDistributionPlayerIds',
+      )
       expect(JSON.stringify(toPersistedAppSessionV2(restored.value.session))).not.toContain(
         'deliveredPlayerIds',
       )

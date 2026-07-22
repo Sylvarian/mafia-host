@@ -81,53 +81,31 @@ export function RoleDistribution({
         </p>
       )}
 
-      <div className="assignment-groups" aria-label="Private role assignments">
-        {(['mafia', 'town', 'neutral'] as const).map((faction) => {
-          const factionRows = rows.filter((row) => row.faction === faction)
-          return (
-            <section
-              className={`assignment-group assignment-group--${faction}`}
-              aria-labelledby={`assignment-${faction}-heading`}
-              key={faction}
-            >
-              <h3 id={`assignment-${faction}-heading`}>{formatFaction(faction)}</h3>
-              {factionRows.length === 0 ? (
-                <p className="assignment-group__empty">No assigned players.</p>
-              ) : (
-                <ul className="assignment-list">
-                  {factionRows.map((row) => (
-                    <li
-                      className={`assignment-card assignment-card--${row.faction}`}
-                      key={row.playerId}
-                    >
-                      <div className="assignment-card__player">
-                        <span>Player</span>
-                        <h4>{row.playerName}</h4>
-                        {duplicateNames.has(row.playerName) ? (
-                          <small>
-                            Player{' '}
-                            {String(
-                              workflow.game.players.findIndex(
-                                (player) => player.playerId === row.playerId,
-                              ) + 1,
-                            )}
-                          </small>
-                        ) : null}
-                      </div>
-                      <div className="assignment-card__role">
-                        <span className="assignment-card__faction">
-                          {formatFaction(row.faction)}
-                        </span>
-                        <strong>{row.roleDisplayName}</strong>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )
-        })}
-      </div>
+      <ol className="assignment-list" aria-label="Private role assignments in delivery order">
+        {rows.map((row, distributionIndex) => (
+          <li className={`assignment-card assignment-card--${row.faction}`} key={row.playerId}>
+            <span className="assignment-card__position" aria-hidden="true">
+              {String(distributionIndex + 1)}
+            </span>
+            <div className="assignment-card__player">
+              <span>Player</span>
+              <h4>{row.playerName}</h4>
+              {duplicateNames.has(row.playerName) ? (
+                <small>
+                  Player{' '}
+                  {String(
+                    workflow.game.players.findIndex((player) => player.playerId === row.playerId) +
+                      1,
+                  )}
+                </small>
+              ) : null}
+            </div>
+            <div className="assignment-card__role">
+              <strong>{row.roleDisplayName}</strong>
+            </div>
+          </li>
+        ))}
+      </ol>
 
       <div className="role-distribution__actions">
         <button
@@ -259,15 +237,4 @@ function getDuplicateNames(names: readonly string[]): ReadonlySet<string> {
     seenNames.add(name)
   }
   return duplicateNames
-}
-
-function formatFaction(faction: 'mafia' | 'town' | 'neutral'): string {
-  switch (faction) {
-    case 'mafia':
-      return 'Mafia'
-    case 'town':
-      return 'Town'
-    case 'neutral':
-      return 'Neutral'
-  }
 }

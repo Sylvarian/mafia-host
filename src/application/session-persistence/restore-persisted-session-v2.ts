@@ -77,10 +77,12 @@ import {
   selectDoctorPreviousTargetsForNight,
   type ActiveNightActionCollectionWorkflow,
   type ImmediateNightOutcome,
+  type SequentialNightStepRecord,
 } from '../night-actions/index.ts'
 import { beginFinalNightResolution } from '../night-completion/index.ts'
 import {
   confirmAllRoleCardsDelivered,
+  validateRoleCardDistributionOrder,
   type RoleDistributionWorkflow,
 } from '../role-assignment/index.ts'
 import type {
@@ -128,6 +130,7 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-game'
         | 'setup-game-mismatch'
         | 'invalid-delivery-evidence'
+        | 'invalid-distribution-order'
         | 'legacy-duplicate-or-unknown-delivery-record'
         | 'contains-private-night-data'
     }>
@@ -447,22 +450,32 @@ function restoreRoleDistributionSession(
   const currentShape =
     (candidate.workflowStatus === 'distributing' &&
       candidate.roleCardsDeliveryStatus === 'pending' &&
+      Array.isArray(candidate.roleCardDistributionPlayerIds) &&
       hasExactKeys(candidate, [
         'stage',
         'workflowStatus',
         'setup',
         'game',
         'roleCardsDeliveryStatus',
+        'roleCardDistributionPlayerIds',
       ])) ||
     (candidate.workflowStatus === 'confirmed' &&
       candidate.roleCardsDeliveryStatus === 'complete' &&
+      Array.isArray(candidate.roleCardDistributionPlayerIds) &&
       hasExactKeys(candidate, [
         'stage',
         'workflowStatus',
         'setup',
         'game',
         'roleCardsDeliveryStatus',
+        'roleCardDistributionPlayerIds',
       ]))
+  const legacyBulkShape =
+    ((candidate.workflowStatus === 'distributing' &&
+      candidate.roleCardsDeliveryStatus === 'pending') ||
+      (candidate.workflowStatus === 'confirmed' &&
+        candidate.roleCardsDeliveryStatus === 'complete')) &&
+    hasExactKeys(candidate, ['stage', 'workflowStatus', 'setup', 'game', 'roleCardsDeliveryStatus'])
   const legacyDistributingShape =
     candidate.workflowStatus === 'distributing' &&
     Array.isArray(candidate.deliveredPlayerIds) &&
@@ -470,7 +483,7 @@ function restoreRoleDistributionSession(
   const legacyConfirmedShape =
     candidate.workflowStatus === 'confirmed' &&
     hasExactKeys(candidate, ['stage', 'workflowStatus', 'setup', 'game'])
-  if (!currentShape && !legacyDistributingShape && !legacyConfirmedShape) {
+  if (!currentShape && !legacyBulkShape && !legacyDistributingShape && !legacyConfirmedShape) {
     return invalidDistribution('invalid-shape')
   }
   const setupResult = restoreValidatedSetup(candidate.setup)
@@ -492,10 +505,27 @@ function restoreRoleDistributionSession(
     return invalidDistribution('setup-game-mismatch')
   }
 
+  const orderCandidates = currentShape
+    ? candidate.roleCardDistributionPlayerIds
+    : gameResult.value.players.map((player) => player.playerId)
+  if (!Array.isArray(orderCandidates)) {
+    return invalidDistribution('invalid-distribution-order')
+  }
+  const orderResult = validateRoleCardDistributionOrder(
+    orderCandidates.flatMap((idCandidate) =>
+      typeof idCandidate === 'string' ? [playerId(idCandidate)] : [],
+    ),
+    gameResult.value.players.map((player) => player.playerId),
+  )
+  if (!orderResult.ok || orderCandidates.some((idCandidate) => typeof idCandidate !== 'string')) {
+    return invalidDistribution('invalid-distribution-order')
+  }
+
   let workflow: RoleDistributionWorkflow = deepFreeze({
     status: 'distributing',
     setup: setupResult.value,
     game: gameResult.value,
+    roleCardDistributionPlayerIds: orderResult.value,
   })
 
   let deliveryComplete =
@@ -725,8 +755,18 @@ function restoreSequentialNightSession(
             gameResult.value,
           )
 
-  if (currentResult.ok || !hasLegacyFirstNightDoctor(gameResult.value)) {
+  if (currentResult.ok) {
     return currentResult
+  }
+
+  const legacyWakeOrderResult = restoreLegacyWakeOrderSequentialSession(
+    candidate,
+    candidate.completedSteps,
+    initialResult.value,
+    gameResult.value,
+  )
+  if (legacyWakeOrderResult.ok || !hasLegacyFirstNightDoctor(gameResult.value)) {
+    return legacyWakeOrderResult
   }
 
   return restoreLegacyFirstNightDoctorSequentialSession(
@@ -735,6 +775,201 @@ function restoreSequentialNightSession(
     initialResult.value,
     gameResult.value,
   )
+}
+
+function restoreLegacyWakeOrderSequentialSession(
+  candidate: Readonly<Record<string, unknown>>,
+  completedSteps: readonly unknown[],
+  currentInitialWorkflow: ActiveNightActionCollectionWorkflow,
+  game: GameState,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
+  if (typeof candidate.currentStepIndex !== 'number') {
+    return invalidSequential('invalid-order')
+  }
+  const legacyInitialWorkflow = deepFreeze({
+    ...currentInitialWorkflow,
+    steps: orderStepsByLegacyWakeOrder(currentInitialWorkflow.steps, game),
+  })
+  if (
+    candidate.currentStepIndex < 0 ||
+    candidate.currentStepIndex >= legacyInitialWorkflow.steps.length
+  ) {
+    return invalidSequential('invalid-order')
+  }
+
+  const restoredLegacy = isLegacySequentialNightCandidate(candidate, completedSteps)
+    ? restoreLegacySequentialNightProgress(candidate, completedSteps, legacyInitialWorkflow, game)
+    : restoreCurrentSequentialNightProgress(candidate, completedSteps, legacyInitialWorkflow, game)
+  if (!restoredLegacy.ok) {
+    return restoredLegacy
+  }
+  if (restoredLegacy.value.stage === 'night-resolution') {
+    return restoredLegacy
+  }
+  return migrateLegacyWakeOrderProgress(restoredLegacy.value.workflow, currentInitialWorkflow)
+}
+
+function migrateLegacyWakeOrderProgress(
+  legacyWorkflow: SequentialNightAppSession['workflow'],
+  currentInitialWorkflow: ActiveNightActionCollectionWorkflow,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
+  let workflow = currentInitialWorkflow
+  if (legacyWorkflow.currentStepIndex === 0) {
+    return legacyWorkflow.status === 'collecting' &&
+      legacyWorkflow.completedSteps.length === 0 &&
+      workflow.status !== 'complete'
+      ? succeed(deepFreeze({ stage: 'sequential-night' as const, workflow }))
+      : invalidSequential('restore-position-mismatch')
+  }
+  if (legacyWorkflow.currentStepIndex > 0) {
+    const overviewAdvance = continueNightActionCollection(workflow)
+    if (!overviewAdvance.ok) {
+      return invalidSequential('restore-position-mismatch')
+    }
+    workflow = overviewAdvance.value
+  }
+
+  const restoredRoleInstanceIds = new Set<string>()
+  while (workflow.status !== 'complete') {
+    const currentStep = workflow.steps[workflow.currentStepIndex]
+    if (currentStep?.type !== 'actor-action') {
+      return invalidSequential('restore-position-mismatch')
+    }
+    const legacyRecord = legacyWorkflow.completedSteps.find(
+      (record) => record.actorRoleInstanceId === currentStep.actorRoleInstanceId,
+    )
+    if (legacyRecord === undefined) {
+      const unappliedRecords = legacyWorkflow.completedSteps.filter(
+        (record) => !restoredRoleInstanceIds.has(record.actorRoleInstanceId),
+      )
+      if (unappliedRecords.length > 0 || legacyWorkflow.status !== 'collecting') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      const legacyCurrentStep = legacyWorkflow.steps[legacyWorkflow.currentStepIndex]
+      if (legacyCurrentStep?.type !== 'actor-action') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      const positionsMatch =
+        legacyCurrentStep.actorRoleInstanceId === currentStep.actorRoleInstanceId
+      const currentRoleId = selectActiveRoleId(workflow.game, currentStep.actorPlayerId)
+      if (!positionsMatch && currentRoleId !== ROLE_IDS.consigliere) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      return succeed(deepFreeze({ stage: 'sequential-night' as const, workflow }))
+    }
+
+    if (legacyRecord.status === 'action-confirmed') {
+      if (workflow.status !== 'collecting') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      const confirmation = confirmNightActionTarget(workflow, legacyRecord.action.targetPlayerId)
+      if (!confirmation.ok) {
+        return invalidSequential('invalid-step')
+      }
+      workflow = confirmation.value
+    }
+
+    const canonicalRecord = workflow.completedSteps.at(-1)
+    if (
+      canonicalRecord === undefined ||
+      !hasEquivalentSequentialRecord(canonicalRecord, legacyRecord)
+    ) {
+      return invalidSequential('invalid-step')
+    }
+    restoredRoleInstanceIds.add(legacyRecord.actorRoleInstanceId)
+
+    if (workflow.status === 'awaiting-outcome-acknowledgement') {
+      const legacyCurrentStep = legacyWorkflow.steps[legacyWorkflow.currentStepIndex]
+      const isUnacknowledgedCurrentResult =
+        legacyWorkflow.status === 'awaiting-outcome-acknowledgement' &&
+        legacyCurrentStep?.type === 'actor-action' &&
+        legacyCurrentStep.actorRoleInstanceId === legacyRecord.actorRoleInstanceId
+      if (isUnacknowledgedCurrentResult) {
+        const hasUnappliedRecord = legacyWorkflow.completedSteps.some(
+          (record) => !restoredRoleInstanceIds.has(record.actorRoleInstanceId),
+        )
+        return hasUnappliedRecord
+          ? invalidSequential('restore-position-mismatch')
+          : succeed(deepFreeze({ stage: 'sequential-night' as const, workflow }))
+      }
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+  }
+
+  if (restoredRoleInstanceIds.size !== legacyWorkflow.completedSteps.length) {
+    return invalidSequential('restore-position-mismatch')
+  }
+  const resolution = beginFinalNightResolution(workflow)
+  return resolution.ok
+    ? succeed(deepFreeze({ stage: 'night-resolution' as const, workflow: resolution.value }))
+    : invalidSequential('restore-position-mismatch')
+}
+
+function hasEquivalentSequentialRecord(
+  current: SequentialNightStepRecord,
+  legacy: SequentialNightStepRecord,
+): boolean {
+  const currentWithoutIndex = { ...current, stepIndex: 0 }
+  const legacyWithoutIndex = { ...legacy, stepIndex: 0 }
+  return hasSameCanonicalContent(currentWithoutIndex, legacyWithoutIndex)
+}
+
+function orderStepsByLegacyWakeOrder(
+  steps: readonly ActiveNightActionCollectionWorkflow['steps'][number][],
+  game: GameState,
+): readonly ActiveNightActionCollectionWorkflow['steps'][number][] {
+  return Object.freeze(
+    steps
+      .map((step, index) => ({ step, index }))
+      .sort((left, right) => {
+        const orderDifference =
+          selectLegacyWakeOrder(left.step, game) - selectLegacyWakeOrder(right.step, game)
+        return orderDifference !== 0 ? orderDifference : left.index - right.index
+      })
+      .map(({ step }) => step),
+  )
+}
+
+function selectLegacyWakeOrder(
+  step: ActiveNightActionCollectionWorkflow['steps'][number],
+  game: GameState,
+): number {
+  if (step.type === 'mafia-overview') {
+    return 0
+  }
+  const activeRoleId = selectActiveRoleId(game, step.actorPlayerId)
+  switch (activeRoleId) {
+    case ROLE_IDS.consort:
+      return 10
+    case ROLE_IDS.framer:
+      return 20
+    case ROLE_IDS.godfather:
+      return 30
+    case ROLE_IDS.serialKiller:
+      return 40
+    case ROLE_IDS.doctor:
+      return 50
+    case ROLE_IDS.sheriff:
+      return 60
+    case ROLE_IDS.investigator:
+      return 70
+    case ROLE_IDS.consigliere:
+      return 80
+    case ROLE_IDS.detective:
+      return 90
+    default:
+      return Number.MAX_SAFE_INTEGER
+  }
 }
 
 function restoreLegacyFirstNightDoctorSequentialSession(
@@ -757,11 +992,14 @@ function restoreLegacyFirstNightDoctorSequentialSession(
   if (!sequenceResult.ok) {
     return invalidSequential('invalid-order')
   }
-  const legacySteps = sequenceResult.value.filter((step) => {
-    if (step.type !== 'actor-action') return true
-    const activeRoleId = selectActiveRoleId(game, step.actorPlayerId)
-    return activeRoleId !== ROLE_IDS.godfather && activeRoleId !== ROLE_IDS.serialKiller
-  })
+  const legacySteps = orderStepsByLegacyWakeOrder(
+    sequenceResult.value.filter((step) => {
+      if (step.type !== 'actor-action') return true
+      const activeRoleId = selectActiveRoleId(game, step.actorPlayerId)
+      return activeRoleId !== ROLE_IDS.godfather && activeRoleId !== ROLE_IDS.serialKiller
+    }),
+    game,
+  )
   const legacyInitialWorkflow = deepFreeze({
     ...currentInitialWorkflow,
     steps: legacySteps,
@@ -781,10 +1019,17 @@ function restoreLegacyFirstNightDoctorSequentialSession(
     return invalidSequential('invalid-step')
   }
 
-  return migrateLegacyFirstNightDoctorProgress(
+  const doctorMigration = migrateLegacyFirstNightDoctorProgress(
     restoredLegacy.value.workflow,
-    currentInitialWorkflow,
+    deepFreeze({
+      ...currentInitialWorkflow,
+      steps: orderStepsByLegacyWakeOrder(currentInitialWorkflow.steps, game),
+    }),
   )
+  if (!doctorMigration.ok || doctorMigration.value.stage === 'night-resolution') {
+    return doctorMigration
+  }
+  return migrateLegacyWakeOrderProgress(doctorMigration.value.workflow, currentInitialWorkflow)
 }
 
 function migrateLegacyFirstNightDoctorProgress(
