@@ -37,6 +37,12 @@ import {
   buildCurrentDawnAnnouncement,
   type DawnAnnouncement,
 } from '@/domain/resolution/dawn-announcement.ts'
+import {
+  captureImportantNightEventCanonicalSource,
+  rebuildImportantNightEventsFromCanonicalSource,
+  type ImportantNightEventCanonicalSource,
+  type ImportantNightEvents,
+} from '@/domain/resolution/important-night-events.ts'
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
 import {
   resolveLegacyFirstNightForRecovery,
@@ -45,6 +51,7 @@ import {
 import type { FactionResult } from '@/domain/win-conditions/faction-result.ts'
 import {
   evaluateAndFinalizeFactionVictory,
+  evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome,
   evaluateFactionVictory,
   validateFactionVictoryEvaluationGate,
   type EvaluatedFactionVictory,
@@ -92,7 +99,6 @@ import type {
   DawnAppSession,
   ExecutionerBriefingAppSession,
   GameOverAppSession,
-  GodfatherPromotionBriefingAppSession,
   NightResolutionAppSession,
   PendingRevengeWaitingAppSession,
   PostDayWaitingAppSession,
@@ -183,12 +189,18 @@ export type RestorePersistedSessionV2Error =
         | 'invalid-game'
         | 'invalid-participants'
         | 'invalid-announcement'
+        | 'invalid-important-night-events'
         | 'invalid-counters'
         | 'contains-private-night-data'
     }>
   | Readonly<{
       type: 'INVALID_REVENGE_RESOLUTION_SESSION'
-      reason: 'invalid-shape' | 'invalid-game' | 'invalid-participants' | 'invalid-selection'
+      reason:
+        | 'invalid-shape'
+        | 'invalid-game'
+        | 'invalid-participants'
+        | 'invalid-selection'
+        | 'invalid-important-night-events'
     }>
   | Readonly<{
       type: 'INVALID_DAY_DISCUSSION_SESSION'
@@ -1172,7 +1184,7 @@ function hasLegacyFirstNightDoctor(game: GameState): boolean {
 
 function restoreGodfatherPromotionBriefingSession(
   candidate: Readonly<Record<string, unknown>>,
-): DomainResult<GodfatherPromotionBriefingAppSession, RestorePersistedSessionV2Error> {
+): DomainResult<SequentialNightAppSession | GameOverAppSession, RestorePersistedSessionV2Error> {
   if (
     !hasExactKeys(candidate, [
       'stage',
@@ -1216,13 +1228,29 @@ function restoreGodfatherPromotionBriefingSession(
     return invalidGodfatherPromotionBriefing('missing-current-promotion')
   }
 
-  const session = deepFreeze({
-    stage: 'godfather-promotion-briefing' as const,
-    workflow: restored.value.workflow,
-  })
-  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
-    ? succeed(session)
-    : invalidGodfatherPromotionBriefing('invalid-shape')
+  const evaluation = evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome(
+    restored.value.workflow.game,
+  )
+  if (!evaluation.ok) {
+    return invalidGodfatherPromotionBriefing('invalid-game')
+  }
+  if (evaluation.value.status === 'non-terminal') {
+    return succeed(restored.value)
+  }
+  const gameOver = createTrustedGameOverStateFromEvaluation(
+    evaluation.value,
+    restored.value.workflow.participants,
+  )
+  return gameOver.ok
+    ? succeed(
+        deepFreeze({
+          stage: 'game-over' as const,
+          game: gameOver.value.game,
+          participants: gameOver.value.participants,
+          result: gameOver.value.result,
+        }),
+      )
+    : invalidGodfatherPromotionBriefing('invalid-game')
 }
 
 function restoreCurrentSequentialNightProgress(
@@ -1789,6 +1817,10 @@ function restoreNightResolutionSession(
       stage: 'night-resolution' as const,
       workflow: {
         status: 'ready-for-dawn' as const,
+        importantNightEventSource: captureImportantNightEventCanonicalSource(
+          actionGame,
+          migratedBatch.value,
+        ),
         game: migratedGame.value,
         participants: participantsResult.value,
         resolution: migratedResolution.value,
@@ -1832,6 +1864,10 @@ function restoreCanonicalNightResolutionSession(
     stage: 'night-resolution' as const,
     workflow: {
       status: 'ready-for-dawn' as const,
+      importantNightEventSource: captureImportantNightEventCanonicalSource(
+        actionGame,
+        batchResult.value,
+      ),
       game: begunGame.value,
       participants,
       resolution: resolutionResult.value,
@@ -1847,14 +1883,23 @@ function restoreDawnSession(
   candidate: Readonly<Record<string, unknown>>,
   options: RestoreOptions,
 ): DomainResult<DawnAppSession | GameOverAppSession, RestorePersistedSessionV2Error> {
+  const legacyEvidenceShape = hasExactKeys(candidate, [
+    'stage',
+    'workflowStatus',
+    'game',
+    'participants',
+    'dawnAnnouncement',
+  ])
   if (
-    !hasExactKeys(candidate, [
-      'stage',
-      'workflowStatus',
-      'game',
-      'participants',
-      'dawnAnnouncement',
-    ]) ||
+    (!legacyEvidenceShape &&
+      !hasExactKeys(candidate, [
+        'stage',
+        'workflowStatus',
+        'game',
+        'participants',
+        'dawnAnnouncement',
+        'importantNightEvents',
+      ])) ||
     candidate.workflowStatus !== 'dawn'
   ) {
     return invalidDawn('invalid-shape')
@@ -1910,6 +1955,13 @@ function restoreDawnSession(
   if (!announcementResult.ok) {
     return announcementResult
   }
+  const eventsResult = restoreImportantNightEvents(
+    legacyEvidenceShape ? undefined : candidate.importantNightEvents,
+    gameResult.value,
+  )
+  if (!eventsResult.ok) {
+    return invalidDawn('invalid-important-night-events')
+  }
   if (legacyFinalTwoEvaluation !== null) {
     const gameOverResult = createTrustedGameOverStateFromEvaluation(
       legacyFinalTwoEvaluation,
@@ -1933,9 +1985,11 @@ function restoreDawnSession(
       game: gameResult.value,
       participants: participantsResult.value,
       dawnAnnouncement: announcementResult.value,
+      importantNightEvents: eventsResult.value,
     },
   })
-  return !options.allowLegacyGameShape &&
+  return !legacyEvidenceShape &&
+    !options.allowLegacyGameShape &&
     !hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? invalidDawn('invalid-shape')
     : succeed(session)
@@ -1944,14 +1998,23 @@ function restoreDawnSession(
 function restoreRevengeResolutionSession(
   candidate: Readonly<Record<string, unknown>>,
 ): DomainResult<RevengeResolutionAppSession, RestorePersistedSessionV2Error> {
+  const legacyEvidenceShape = hasExactKeys(candidate, [
+    'stage',
+    'workflowStatus',
+    'game',
+    'participants',
+    'selectedRevenge',
+  ])
   if (
-    !hasExactKeys(candidate, [
-      'stage',
-      'workflowStatus',
-      'game',
-      'participants',
-      'selectedRevenge',
-    ]) ||
+    (!legacyEvidenceShape &&
+      !hasExactKeys(candidate, [
+        'stage',
+        'workflowStatus',
+        'game',
+        'participants',
+        'selectedRevenge',
+        'importantNightEvents',
+      ])) ||
     candidate.workflowStatus !== 'revenge-resolution' ||
     !isUnknownRecord(candidate.selectedRevenge) ||
     !hasExactKeys(candidate.selectedRevenge, [
@@ -1974,6 +2037,13 @@ function restoreRevengeResolutionSession(
   const participantsResult = restoreParticipants(candidate.participants, gameResult.value)
   if (!participantsResult.ok) {
     return invalidRevengeResolution('invalid-participants')
+  }
+  const eventsResult = restoreImportantNightEvents(
+    legacyEvidenceShape ? undefined : candidate.importantNightEvents,
+    gameResult.value,
+  )
+  if (!eventsResult.ok) {
+    return invalidRevengeResolution('invalid-important-night-events')
   }
   const selectedCandidate = candidate.selectedRevenge
   if (
@@ -2028,9 +2098,10 @@ function restoreRevengeResolutionSession(
       game: gameResult.value,
       participants: participantsResult.value,
       selectedRevenge: selection,
+      importantNightEvents: eventsResult.value,
     },
   })
-  return hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
+  return legacyEvidenceShape || hasSameCanonicalContent(toPersistedAppSessionV2(session), candidate)
     ? succeed(session)
     : invalidRevengeResolution('invalid-shape')
 }
@@ -2755,6 +2826,201 @@ function restoreDawnAnnouncement(
   return hasSameCanonicalContent(announcement, candidate)
     ? succeed(announcement)
     : invalidDawn('invalid-announcement')
+}
+
+function restoreImportantNightEvents(
+  candidate: unknown,
+  game: GameState,
+): DomainResult<ImportantNightEvents, RestorePersistedSessionV2Error> {
+  if (candidate === undefined) {
+    return succeed(
+      deepFreeze({
+        gameId: game.id,
+        nightNumber: game.nightNumber,
+        completeness: 'legacy-unavailable' as const,
+        canonicalSource: null,
+        events: [],
+      }),
+    )
+  }
+  if (
+    !isUnknownRecord(candidate) ||
+    !hasExactKeys(candidate, ['gameId', 'nightNumber', 'completeness', 'canonicalSource']) ||
+    typeof candidate.gameId !== 'string' ||
+    typeof candidate.nightNumber !== 'number' ||
+    !Number.isSafeInteger(candidate.nightNumber) ||
+    (candidate.completeness !== 'complete' && candidate.completeness !== 'legacy-unavailable')
+  ) {
+    return invalidDawn('invalid-important-night-events')
+  }
+
+  const sourceResult = restoreImportantNightEventCanonicalSource(
+    candidate.canonicalSource,
+    candidate.completeness,
+    game,
+  )
+  if (!sourceResult.ok) {
+    return sourceResult
+  }
+
+  if (candidate.completeness === 'legacy-unavailable') {
+    if (
+      sourceResult.value !== null ||
+      candidate.gameId !== game.id ||
+      candidate.nightNumber !== game.nightNumber
+    ) {
+      return invalidDawn('invalid-important-night-events')
+    }
+    return succeed(
+      deepFreeze({
+        gameId: game.id,
+        nightNumber: game.nightNumber,
+        completeness: candidate.completeness,
+        canonicalSource: null,
+        events: [],
+      }),
+    )
+  }
+  if (
+    sourceResult.value === null ||
+    candidate.gameId !== game.id ||
+    candidate.nightNumber !== game.nightNumber
+  ) {
+    return invalidDawn('invalid-important-night-events')
+  }
+  const evidenceResult = rebuildImportantNightEventsFromCanonicalSource(game, sourceResult.value)
+  return evidenceResult.ok
+    ? succeed(evidenceResult.value)
+    : invalidDawn('invalid-important-night-events')
+}
+
+function restoreImportantNightEventCanonicalSource(
+  candidate: unknown,
+  completeness: ImportantNightEvents['completeness'],
+  finalGame: GameState,
+): DomainResult<ImportantNightEventCanonicalSource | null, RestorePersistedSessionV2Error> {
+  if (completeness === 'legacy-unavailable') {
+    return candidate === null ? succeed(null) : invalidDawn('invalid-important-night-events')
+  }
+  if (
+    !isUnknownRecord(candidate) ||
+    !hasExactKeys(candidate, [
+      'gameId',
+      'nightNumber',
+      'collectedActions',
+      'playerStatuses',
+      'doctorPreviousTargets',
+      'deathRecords',
+      'executionerConversions',
+      'pendingJesterRevenges',
+      'jesterRevengeResolutions',
+    ]) ||
+    candidate.gameId !== finalGame.id ||
+    candidate.nightNumber !== finalGame.nightNumber ||
+    !Array.isArray(candidate.collectedActions) ||
+    !Array.isArray(candidate.playerStatuses) ||
+    !Array.isArray(candidate.doctorPreviousTargets) ||
+    !Array.isArray(candidate.deathRecords) ||
+    !Array.isArray(candidate.executionerConversions) ||
+    !Array.isArray(candidate.pendingJesterRevenges) ||
+    !Array.isArray(candidate.jesterRevengeResolutions)
+  ) {
+    return invalidDawn('invalid-important-night-events')
+  }
+
+  const statuses = new Map<string, Readonly<{ alive: boolean; revealedRoleId: string | null }>>()
+  for (const statusCandidate of candidate.playerStatuses) {
+    if (
+      !isUnknownRecord(statusCandidate) ||
+      !hasExactKeys(statusCandidate, ['playerId', 'alive', 'publiclyRevealedRoleId']) ||
+      typeof statusCandidate.playerId !== 'string' ||
+      typeof statusCandidate.alive !== 'boolean' ||
+      (statusCandidate.publiclyRevealedRoleId !== null &&
+        typeof statusCandidate.publiclyRevealedRoleId !== 'string') ||
+      statuses.has(statusCandidate.playerId)
+    ) {
+      return invalidDawn('invalid-important-night-events')
+    }
+    statuses.set(
+      statusCandidate.playerId,
+      Object.freeze({
+        alive: statusCandidate.alive,
+        revealedRoleId: statusCandidate.publiclyRevealedRoleId,
+      }),
+    )
+  }
+  if (statuses.size !== finalGame.players.length) {
+    return invalidDawn('invalid-important-night-events')
+  }
+
+  const sourcePlayers = finalGame.players.map((player) => {
+    const status = statuses.get(player.playerId)
+    return status === undefined
+      ? null
+      : {
+          playerId: player.playerId,
+          role: { ...player.role },
+          alive: status.alive,
+          publiclyRevealedRoleId: status.revealedRoleId,
+        }
+  })
+  if (sourcePlayers.some((player) => player === null)) {
+    return invalidDawn('invalid-important-night-events')
+  }
+
+  const sourceGameResult = restoreGame(
+    {
+      id: finalGame.id,
+      phase: 'night-action-collection',
+      players: sourcePlayers,
+      neutralStateVersion: 4,
+      executionerBriefingStatus: finalGame.executionerBriefingStatus,
+      executionerTargets: finalGame.executionerTargets,
+      settings: finalGame.settings,
+      nightNumber: finalGame.nightNumber,
+      dayNumber: finalGame.dayNumber,
+      doctorPreviousTargets: candidate.doctorPreviousTargets,
+      deathRecords: candidate.deathRecords,
+      personalWins: finalGame.personalWins,
+      executionerConversions: candidate.executionerConversions,
+      godfatherSuccessionStartNightNumber: finalGame.godfatherSuccessionStartNightNumber,
+      godfatherPromotions: finalGame.godfatherPromotions,
+      pendingJesterRevenges: candidate.pendingJesterRevenges,
+      jesterRevengeResolutions: candidate.jesterRevengeResolutions,
+      dayOutcomes: finalGame.dayOutcomes,
+    },
+    DEFAULT_OPTIONS,
+  )
+  if (!sourceGameResult.ok) {
+    return invalidDawn('invalid-important-night-events')
+  }
+
+  const previousTargets = selectDoctorPreviousTargetsForNight(sourceGameResult.value)
+  const actions: SubmittedNightAction[] = []
+  for (const actionCandidate of candidate.collectedActions) {
+    const actionResult = restoreSubmittedAction(
+      actionCandidate,
+      sourceGameResult.value,
+      previousTargets,
+    )
+    if (!actionResult.ok) {
+      return invalidDawn('invalid-important-night-events')
+    }
+    actions.push(actionResult.value)
+  }
+  const collectedActionsResult = createCollectedNightActions(
+    sourceGameResult.value,
+    actions,
+    previousTargets,
+  )
+  return collectedActionsResult.ok
+    ? succeed(
+        captureImportantNightEventCanonicalSource(
+          sourceGameResult.value,
+          collectedActionsResult.value,
+        ),
+      )
+    : invalidDawn('invalid-important-night-events')
 }
 
 function restoreRoster(

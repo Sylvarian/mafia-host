@@ -33,9 +33,9 @@ winner.
 Phase 6 adds one canonical `DoctorPreviousTarget` array to `GameState`, with runtime validation,
 per-role-instance uniqueness, participating-player ordering, and immutable canonical copies. The
 night-application boundary explicitly enters `night-resolution`, revalidates the resolution against
-the completed action batch, applies provisional deaths and configured public role reveals once,
-records every Doctor's submitted target even if the Doctor or target is killed, builds a public-safe Dawn
-model, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, and
+the completed action batch, applies provisional deaths and configured announcement-role reveals once,
+records every Doctor's submitted target even if the Doctor or target is killed, builds the
+rule-compliant Dawn announcement, and enters `dawn-announcement`. It preserves assignments, counters, Mayor state, and
 Executioner targets. Phase 7C extends this same final-death boundary with explicit night-death
 records and qualifying Executioner conversions, but still performs no personal-win or faction
 outcome calculation.
@@ -59,7 +59,7 @@ visit. Dawn history records an unblocked Doctor's confirmed target even if the D
 dies, but records nothing for a blocked Doctor.
 
 Phase 7B adds two narrow pure operations under `day/`. The Dawn-to-day boundary validates the
-active game, public Dawn announcement, and numbered Night N/Day N relationship before
+active game, Dawn announcement, and numbered Night N/Day N relationship before
 atomically entering `day-discussion`. It changes no death, assignment, reveal, Executioner target,
 Doctor-history, neutral, or winner state.
 
@@ -176,3 +176,15 @@ existing collection rank used to canonicalize resolution input. This keeps physi
 and deterministic resolution ordering explicit and independently testable. Target intelligence,
 card-recipient randomization, alignment grouping, and Day layout remain outside domain state; no
 target-validity or resolution mechanic changes.
+
+Phase 7F.5 adds one bounded `ImportantNightEvents` evidence value derived from the canonical
+`NightResolution` before application. It contains only confirmed current-night role blocks,
+frames, and ordinary attack outcomes; a protected attack carries the exact canonical Doctor
+sources that changed an otherwise-lethal attack. Validation binds evidence to game/night, player
+and role-instance ownership, active roles, configured attack outcomes, canonical ordering,
+uniqueness, and the applied night-death set. Complete evidence also retains a bounded pre-night
+mutable-state snapshot and confirmed action batch, recomputes and reapplies resolution against the
+one current game, and rejects omitted events, substituted Doctors, or fabricated block/frame
+targets. Derived display events are not duplicated in persistence. It is not a generic history or prose model.
+The domain still does not format UI sentences. Host and announcement display models remain in the
+application layer.

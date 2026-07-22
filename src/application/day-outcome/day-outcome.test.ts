@@ -9,7 +9,7 @@ import {
   completeDayWithoutExecution,
   executePlayerAndCompleteDay,
   selectDayExecutionCandidates,
-  selectPublicDayOutcomeView,
+  selectDayOutcomeView,
 } from './day-outcome.ts'
 
 function dayState(revealRoleOnDeath = false): Parameters<typeof selectDayExecutionCandidates>[0] {
@@ -68,7 +68,7 @@ describe('day-outcome application boundary', () => {
     expect(candidates.every(Object.isFrozen)).toBe(true)
   })
 
-  it('returns a sanitized execution summary and obeys the death-reveal setting', () => {
+  it('separates the rule-compliant announcement from the exact host result', () => {
     const hiddenState = dayState()
     const hiddenExecution = executePlayerAndCompleteDay(
       hiddenState,
@@ -76,17 +76,23 @@ describe('day-outcome application boundary', () => {
     )
     if (!hiddenExecution.ok) throw new Error('Expected hidden Jester execution.')
 
-    const hiddenView = selectPublicDayOutcomeView(hiddenExecution.value)
+    const hiddenView = selectDayOutcomeView(hiddenExecution.value)
     expect(hiddenView).toEqual({
       dayNumber: 1,
       dayLabel: 'Day 1',
-      outcome: {
+      announcement: {
         kind: 'player-executed',
         playerDisplayLabel: 'Alex (Player 1)',
         revealedRoleDisplayName: null,
       },
+      hostResult: {
+        kind: 'player-executed',
+        playerDisplayLabel: 'Alex (Player 1)',
+        currentRoleDisplayName: 'Jester',
+        originalRoleDisplayName: null,
+        alignmentDisplayName: 'Neutral',
+      },
     })
-    expect(JSON.stringify(hiddenView)).not.toMatch(/jester|win|revenge|executioner|target/i)
 
     const revealedState = dayState(true)
     const revealedExecution = executePlayerAndCompleteDay(
@@ -94,24 +100,29 @@ describe('day-outcome application boundary', () => {
       revealedState.game.players[2]?.playerId ?? nightFixturePlayerId('missing-player'),
     )
     if (!revealedExecution.ok) throw new Error('Expected revealed Citizen execution.')
-    expect(selectPublicDayOutcomeView(revealedExecution.value)).toMatchObject({
-      outcome: {
+    expect(selectDayOutcomeView(revealedExecution.value)).toMatchObject({
+      announcement: {
         kind: 'player-executed',
         playerDisplayLabel: 'Taylor',
         revealedRoleDisplayName: 'Citizen',
       },
+      hostResult: {
+        currentRoleDisplayName: 'Citizen',
+        alignmentDisplayName: 'Town',
+      },
     })
   })
 
-  it('returns a public no-execution summary without creating a later workflow', () => {
+  it('returns a host no-execution summary without creating a later workflow', () => {
     const result = completeDayWithoutExecution(dayState())
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected no-execution completion.')
-    expect(selectPublicDayOutcomeView(result.value)).toEqual({
+    expect(selectDayOutcomeView(result.value)).toEqual({
       dayNumber: 1,
       dayLabel: 'Day 1',
-      outcome: { kind: 'no-execution' },
+      announcement: { kind: 'no-execution' },
+      hostResult: { kind: 'no-execution' },
     })
     expect(result.value).not.toHaveProperty('workflow')
     expect(result.value).not.toHaveProperty('winner')

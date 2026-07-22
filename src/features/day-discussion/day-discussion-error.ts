@@ -14,7 +14,7 @@ export function getBeginDayDiscussionErrorMessage(error: BeginDayDiscussionWorkf
     case 'INVALID_DAY_TRANSITION_GAME':
       return 'The active Dawn game failed domain validation. Dawn is unchanged and can be retried after correction.'
     case 'INVALID_DAWN_GAME_MATCH':
-      return 'The public Dawn announcement no longer matches this game and night. Dawn is unchanged.'
+      return 'The Dawn announcement no longer matches this game and night. Dawn is unchanged.'
     case 'INVALID_DAY_COUNTER_STATE':
       return 'The current day and night counters are incompatible with beginning day discussion.'
     case 'INVALID_DAY_DISCUSSION_PARTICIPANTS':

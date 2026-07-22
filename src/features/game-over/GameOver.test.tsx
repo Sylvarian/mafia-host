@@ -3,77 +3,73 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { nightFixturePlayerId } from '../../../tests/support/night-action-fixtures.ts'
 import { GameOver } from './GameOver.tsx'
 
-describe('public game-over feature', () => {
-  it.each(['Town wins', 'Mafia wins', 'Serial Killer wins', 'Draw'] as const)(
-    'focuses the final heading and displays %s without controls or hidden authority',
-    (heading) => {
-      const status =
-        heading === 'Town wins'
-          ? 'town-victory'
-          : heading === 'Mafia wins'
-            ? 'mafia-victory'
-            : heading === 'Serial Killer wins'
-              ? 'serial-killer-victory'
-              : 'draw'
-      render(
-        <GameOver
-          view={{
-            heading,
-            status,
-            explanation: null,
-            dayNumber: 1,
-            endedAtLabel: 'Day 1',
-            players: [
-              {
-                playerDisplayLabel: 'Alex (Player 1)',
-                alive: false,
-                revealedRoleDisplayName: 'Citizen',
-              },
-              {
-                playerDisplayLabel: 'Alex (Player 2)',
-                alive: true,
-                revealedRoleDisplayName: null,
-              },
-            ],
-          }}
-          onStartNextGame={() => undefined}
-        />,
-      )
-
-      expect(screen.getByRole('heading', { name: 'Game over' })).toHaveFocus()
-      expect(screen.getByText(heading)).toBeVisible()
-      expect(screen.getByText('Alex (Player 1)')).toBeVisible()
-      expect(screen.getByText('Public role: Citizen')).toBeVisible()
-      expect(screen.getByRole('button', { name: 'Start next game' })).toBeVisible()
-      expect(document.body).not.toHaveTextContent(
-        /personal win|Executioner target|pending revenge|conversion record|player-1/i,
-      )
-    },
-  )
-
-  it.each([
-    'No players survived.',
-    'The final two players could not eliminate each other.',
-    'The final two players eliminated each other.',
-  ])('shows the public-safe draw explanation: %s', (explanation) => {
+describe('host game-over feature', () => {
+  it('keeps the result prominent and renders complete role, target, transformation, and win details', () => {
     render(
       <GameOver
         view={{
-          heading: 'Draw',
-          status: 'draw',
-          explanation,
+          heading: 'Mafia wins',
+          status: 'mafia-victory',
+          explanation: null,
           dayNumber: 2,
           endedAtLabel: 'after Day 2',
-          players: [],
+          players: [
+            {
+              playerId: nightFixturePlayerId('player-1'),
+              playerDisplayLabel: 'Alex',
+              status: 'alive',
+              alive: true,
+              activeRoleDisplayName: 'Godfather',
+              originallyAssignedRoleDisplayName: 'Framer',
+              alignment: 'mafia',
+              alignmentDisplayName: 'Mafia',
+              deathCause: null,
+              executionerTargetDisplayLabel: null,
+              promotionNightNumber: 2,
+              conversionTargetDisplayLabel: null,
+              personalWins: [],
+              revengeResults: [],
+            },
+            {
+              playerId: nightFixturePlayerId('player-2'),
+              playerDisplayLabel: 'Taylor',
+              status: 'dead',
+              alive: false,
+              activeRoleDisplayName: 'Jester',
+              originallyAssignedRoleDisplayName: 'Executioner',
+              alignment: 'neutral',
+              alignmentDisplayName: 'Neutral',
+              deathCause: { kind: 'day-execution', dayNumber: 2 },
+              executionerTargetDisplayLabel: 'Morgan',
+              promotionNightNumber: null,
+              conversionTargetDisplayLabel: 'Morgan',
+              personalWins: [{ kind: 'jester-executed', dayNumber: 2 }],
+              revengeResults: [
+                {
+                  kind: 'victim-killed',
+                  nightNumber: 3,
+                  victimPlayerDisplayLabel: 'Jordan',
+                },
+              ],
+            },
+          ],
         }}
         onStartNextGame={() => undefined}
       />,
     )
 
-    expect(screen.getByText(explanation)).toBeVisible()
-    expect(document.body).not.toHaveTextContent(/Godfather|Serial Killer/i)
+    expect(screen.getByRole('heading', { name: 'Game over' })).toHaveFocus()
+    expect(screen.getByText('Mafia wins')).toBeVisible()
+    expect(screen.getByText('Godfather · Mafia')).toBeVisible()
+    expect(screen.getByText('Originally: Framer')).toBeVisible()
+    expect(screen.getByText('Promoted to Godfather for Night 2')).toBeVisible()
+    expect(screen.getByText('Executioner target: Morgan')).toBeVisible()
+    expect(screen.getByText(/Personal win: executed as Jester/)).toBeVisible()
+    expect(screen.getByText(/Jester revenge killed Jordan/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Start next game' })).toBeVisible()
   })
 
   it('owns fluid 390px and 320px layouts without horizontal fixed-width content', () => {

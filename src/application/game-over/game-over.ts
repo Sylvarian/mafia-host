@@ -4,14 +4,13 @@ import { validateGameState } from '@/domain/game/game-invariants.ts'
 import type { GameState } from '@/domain/game/game-state.ts'
 import type { PlayerId } from '@/domain/identifiers.ts'
 import type { Player } from '@/domain/players/player.ts'
-import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
-import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
 import type { TerminalFactionResult } from '@/domain/win-conditions/faction-result.ts'
 import {
   validateStoredTerminalFactionResult,
   type EvaluatedFactionVictory,
   type StoredFactionResultError,
 } from '@/domain/win-conditions/faction-victory.ts'
+import { selectHostPlayerRoleViews, type HostPlayerRoleView } from '../player-roles/index.ts'
 
 export type GameOverState = Readonly<{
   game: GameState
@@ -32,19 +31,50 @@ export type InvalidGameOverStateError =
       reason: 'invalid-player' | 'duplicate-player' | 'game-mismatch'
     }>
 
-export type PublicGameOverPlayerView = Readonly<{
-  playerDisplayLabel: string
-  alive: boolean
-  revealedRoleDisplayName: string | null
-}>
+export type GameOverPlayerView = HostPlayerRoleView &
+  Readonly<{
+    alive: boolean
+    deathCause:
+      | Readonly<{ kind: 'night-death'; nightNumber: number }>
+      | Readonly<{ kind: 'day-execution'; dayNumber: number }>
+      | Readonly<{
+          kind: 'jester-revenge'
+          nightNumber: number
+          jesterPlayerDisplayLabel: string
+        }>
+      | Readonly<{
+          kind: 'final-killing-role-showdown'
+          opponentPlayerDisplayLabel: string
+        }>
+      | null
+    executionerTargetDisplayLabel: string | null
+    promotionNightNumber: number | null
+    conversionTargetDisplayLabel: string | null
+    personalWins: readonly (
+      | Readonly<{ kind: 'jester-executed'; dayNumber: number }>
+      | Readonly<{
+          kind: 'executioner-target-executed'
+          dayNumber: number
+          targetPlayerDisplayLabel: string
+        }>
+    )[]
+    revengeResults: readonly (
+      | Readonly<{
+          kind: 'victim-killed'
+          nightNumber: number
+          victimPlayerDisplayLabel: string
+        }>
+      | Readonly<{ kind: 'no-survivor'; nightNumber: number }>
+    )[]
+  }>
 
-export type PublicGameOverView = Readonly<{
+export type HostGameOverView = Readonly<{
   heading: 'Town wins' | 'Mafia wins' | 'Serial Killer wins' | 'Draw'
   status: 'town-victory' | 'mafia-victory' | 'serial-killer-victory' | 'draw'
   explanation: string | null
   dayNumber: number
   endedAtLabel: string
-  players: readonly PublicGameOverPlayerView[]
+  players: readonly GameOverPlayerView[]
 }>
 
 export function validateGameOverState(
@@ -100,8 +130,12 @@ export function createTrustedGameOverStateFromEvaluation(
   )
 }
 
-export function selectPublicGameOverView(state: GameOverState): PublicGameOverView {
+export function selectHostGameOverView(state: GameOverState): HostGameOverView {
   const result = state.result
+  const hostPlayersResult = selectHostPlayerRoleViews(state.game, state.participants)
+  if (!hostPlayersResult.ok) {
+    throw new Error('The final host player view could not be derived.')
+  }
   return Object.freeze({
     heading: selectResultHeading(result),
     status: result.kind,
@@ -113,20 +147,70 @@ export function selectPublicGameOverView(state: GameOverState): PublicGameOverVi
         : `at Dawn ${String(state.game.nightNumber)}`,
     players: Object.freeze(
       state.game.players.map((player) => {
-        const revealedRole =
-          player.publiclyRevealedRoleId === null
-            ? undefined
-            : findRoleDefinition(player.publiclyRevealedRoleId)
-        if (player.publiclyRevealedRoleId !== null && revealedRole === undefined) {
-          throw new Error('A public game-over role is absent from the canonical registry.')
+        const hostPlayer = requireHostPlayer(hostPlayersResult.value, player.playerId)
+        const executionerTarget = state.game.executionerTargets.find(
+          (target) => target.executionerPlayerId === player.playerId,
+        )
+        const promotion = state.game.godfatherPromotions.find(
+          (record) => record.playerId === player.playerId,
+        )
+        const conversion = state.game.executionerConversions.find(
+          (record) => record.playerId === player.playerId,
+        )
+        const personalWins: GameOverPlayerView['personalWins'][number][] = []
+        for (const record of state.game.personalWins) {
+          if (record.playerId !== player.playerId) {
+            continue
+          }
+          personalWins.push(
+            record.kind === 'jester-executed'
+              ? Object.freeze({ kind: record.kind, dayNumber: record.dayNumber })
+              : Object.freeze({
+                  kind: record.kind,
+                  dayNumber: record.dayNumber,
+                  targetPlayerDisplayLabel: selectPlayerDisplayLabel(
+                    state.participants,
+                    record.targetPlayerId,
+                  ),
+                }),
+          )
+        }
+        const revengeResults: GameOverPlayerView['revengeResults'][number][] = []
+        for (const record of state.game.jesterRevengeResolutions) {
+          if (record.jesterPlayerId !== player.playerId) {
+            continue
+          }
+          revengeResults.push(
+            record.kind === 'no-survivor'
+              ? Object.freeze({
+                  kind: record.kind,
+                  nightNumber: record.resolvedAtNightNumber,
+                })
+              : Object.freeze({
+                  kind: record.kind,
+                  nightNumber: record.resolvedAtNightNumber,
+                  victimPlayerDisplayLabel: selectPlayerDisplayLabel(
+                    state.participants,
+                    record.victimPlayerId,
+                  ),
+                }),
+          )
         }
         return Object.freeze({
-          playerDisplayLabel: selectPlayerDisplayLabel(state.participants, player.playerId),
+          ...hostPlayer,
           alive: player.alive,
-          revealedRoleDisplayName:
-            revealedRole === undefined
+          deathCause: selectGameOverDeathCause(state, player.playerId),
+          executionerTargetDisplayLabel:
+            executionerTarget === undefined
               ? null
-              : getRoleInstanceDisplayName(player.role, revealedRole),
+              : selectPlayerDisplayLabel(state.participants, executionerTarget.targetPlayerId),
+          promotionNightNumber: promotion?.promotedAtNightNumber ?? null,
+          conversionTargetDisplayLabel:
+            conversion === undefined
+              ? null
+              : selectPlayerDisplayLabel(state.participants, conversion.targetPlayerId),
+          personalWins: Object.freeze(personalWins),
+          revengeResults: Object.freeze(revengeResults),
         })
       }),
     ),
@@ -185,7 +269,7 @@ function validateGameOverBase(
   )
 }
 
-function selectResultHeading(result: TerminalFactionResult): PublicGameOverView['heading'] {
+function selectResultHeading(result: TerminalFactionResult): HostGameOverView['heading'] {
   switch (result.kind) {
     case 'town-victory':
       return 'Town wins'
@@ -196,6 +280,52 @@ function selectResultHeading(result: TerminalFactionResult): PublicGameOverView[
     case 'draw':
       return 'Draw'
   }
+}
+
+function selectGameOverDeathCause(
+  state: GameOverState,
+  selectedPlayerId: PlayerId,
+): GameOverPlayerView['deathCause'] {
+  const record = state.game.deathRecords.find(
+    (candidate) => candidate.playerId === selectedPlayerId,
+  )
+  if (record === undefined) {
+    return null
+  }
+  switch (record.cause.kind) {
+    case 'night-death':
+      return Object.freeze({ kind: record.cause.kind, nightNumber: record.cause.nightNumber })
+    case 'day-execution':
+      return Object.freeze({ kind: record.cause.kind, dayNumber: record.cause.dayNumber })
+    case 'jester-revenge':
+      return Object.freeze({
+        kind: record.cause.kind,
+        nightNumber: record.cause.nightNumber,
+        jesterPlayerDisplayLabel: selectPlayerDisplayLabel(
+          state.participants,
+          record.cause.jesterPlayerId,
+        ),
+      })
+    case 'final-killing-role-showdown':
+      return Object.freeze({
+        kind: record.cause.kind,
+        opponentPlayerDisplayLabel: selectPlayerDisplayLabel(
+          state.participants,
+          record.cause.opponentPlayerId,
+        ),
+      })
+  }
+}
+
+function requireHostPlayer(
+  players: readonly HostPlayerRoleView[],
+  selectedPlayerId: PlayerId,
+): HostPlayerRoleView {
+  const player = players.find((candidate) => candidate.playerId === selectedPlayerId)
+  if (player === undefined) {
+    throw new Error('A final host player is absent from the canonical view.')
+  }
+  return player
 }
 
 function copyParticipants(

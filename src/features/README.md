@@ -40,89 +40,49 @@ There is no `Action recorded` or `Outcome acknowledged` production screen. React
 not construct actions, calculate blocks, frames, visits, investigations, attacks, or deaths. The
 coordinating app guards rapid repeated operations and saves each canonical transition once.
 
-Phase 7A.1 removes the old private-result replay from `dawn`. That slice now renders only the
-hidden-death `ready-for-dawn` boundary and public Dawn announcement. Phase 7C.1 uses one deliberate
-**Finalize Dawn** action plus an inline eyes-closed reminder, with no confirmation dialog. The
-public Dawn screen tells the host when players may open their eyes. The public view has no day-discussion
-data beyond the announcement. The deliberate **Continue to Day N** transition enters the current
-numbered day.
+Phase 7A.1 removes the old private-result replay from `dawn`. Phase 7C.1 uses one deliberate
+**Finalize Dawn** action plus an inline eyes-closed reminder, with no confirmation dialog. Phase
+7F.5 renders one host Dawn with **Announce to players**, **Host results**, and a conditional
+**Important night events** section. Exact names, current/original roles, attackers, Doctors,
+protected targets, blocks, frames, and immunity reasons come from application view models; React
+does not reconstruct resolution. **Continue to Day N** enters the current numbered day.
 
-`day-discussion` renders a numbered host display with a unified full-width three-column player-card area, only
-authoritative public role reveals, the living-player strict-majority trial threshold, separate
-guilty-greater-than-innocent execution guidance, and textual three-vote reminders for
-each living revealed Mayor. Phase 7C adds only **Execute a player** and **End day without
-execution** as final controls; it still contains no nomination, vote, winner, revenge-resolution,
-or next-night controls.
+`day-discussion` renders a numbered host display with one full-width three-column player-card area,
+exact current/original roles and announcement-role status, living/dead state and cause, the
+strict-majority trial threshold, separate execution guidance, and three-vote Mayor reminders.
+**Show roles** / **Hide roles** is a convenience control whose React state never autosaves. Cards
+remain in stable Mafia/Town/Neutral positions. Converted Executioners appear as active
+Jester/original Executioner and promoted Mafia as active Godfather/original assignment. Raw
+persistence IDs never enter the DOM, and the grid avoids horizontal overflow at 320px and 390px.
 
-Phase 7F.4 retains **Show roles** / **Hide roles** only for editable day discussion. Roles are
-hidden by default and toggle state never autosaves or enters the application session. Cards remain
-in the same DOM positions while their role text changes in place. Rows are grouped under
-accessible Mafia, Town, and Neutral headings, with living/dead subsections. Each entire player
-card uses a light red, green, or grey background derived from active alignment, using the column
-heading as the textual alignment cue. They show duplicate-safe labels, alive/dead state, current
-role, optional original assignment, and separate legitimate public-role status.
-Converted Executioners appear as active Jester/original Executioner and promoted Mafia as active
-Godfather/original assignment; targets, wins, pending revenge, and raw IDs never enter props or
-DOM. Hiding, refresh, recovery, and new-day entry all return to role-hidden cards. Controls retain
-44px minimum targets, and the owned grid avoids horizontal overflow at 320px and 390px.
+Mayor, execution, and no-execution controls open focused host confirmation dialogs. Their typed
+command candidates and temporary selection remain React state; application/domain authority owns
+the resulting reveal or outcome. Background inertness, Escape/cancel, focus restoration, and
+rapid-operation guards remain presentation concerns. `day-outcome` renders **Announce to players**
+according to `revealRoleOnDeath` and exact **Host results** with role, alignment, and cause.
 
-Opening **Confirm Mayor reveal** makes the public background inert and enters a focused dialog.
-The dialog receives only sanitized candidate IDs and duplicate-safe
-labels, never a game, role map, faction, or Executioner target. Radio selection, dialog openness,
-focus, and operation guards are temporary React state. Escape and Cancel restore focus; rapid
-confirmation is guarded.
+`session-persistence` renders host-only V2 recovery summaries and local-save status. Summaries show
+duplicate-safe player names, numbered stage, player count, save time, and the exact next host
+action. They never include raw game/player/role-instance IDs or serialize display prose as
+authority. Continue restores the exact validated stage without rerunning randomness or replaying
+a completed result.
 
-The execution control opens a full-width alert dialog grouped under Mafia, Town, and Neutral because that
-list is already authorized to contain living duplicate-safe player labels, current active roles,
-and an optional changed original assignment. Alignment is carried by the column rather than
-repeated on every card. Canonical roster order is retained
-inside each group. It
-never shows Executioner targets, personal wins, pending revenge, or predicted neutral effects. The
-no-execution control has its own irreversible confirmation. Both make the background inert,
-support Escape/cancel and focus restoration, keep selection and guards in React only, and guard
-rapid confirmation. `day-outcome` renders a focused public summary with only the executed name and
-authorized role reveal, or “No player was executed.” Corrected Phase 7D and Phase 7E use the same
-public “The game continues” copy whether revenge is privately pending or no faction has won, then
-offer the explicit next numbered night without exposing the pending obligation.
-
-`session-persistence` renders public-safe V2 recovery summaries and local-save status. Night
-summaries expose only the night number, general stage, player count, and save time. Current actor,
-role, target, blocked state, role composition, action progress, and results are absent from text,
-attributes, and accessible labels until the host explicitly continues. Errors, dialog openness,
-focus, save status, and operation guards remain transient. Day recovery similarly exposes only
-generic numbered-day discussion, player count, and save time; revealed or hidden Mayor identities appear
-only after Continue. Post-day recovery likewise shows only generic “Day complete” metadata until
-Continue and never exposes personal wins, conversions, pending revenge, or targets.
-
-`game-over` renders a focused public `Game over` heading plus Town, Mafia, Serial Killer, or Draw.
-Phase 7F.2 distinguishes no survivors, opposing-killer stalemate, and opposing-killer mutual
-elimination with short public-safe explanations that do not name hidden roles or settings.
-Its responsive roster contains only duplicate-safe names, alive/dead state, and roles already
-legitimately public. Hidden roles are not automatically revealed; targets, conversions, pending
-revenge, personal wins, and raw IDs never enter its props or DOM. The feature has no next-night,
-revenge, or role-reveal control and remains usable without horizontal overflow at 320px and 390px.
-Both final-two branches arrive as terminal application authority, so the feature offers no target
-collection or next-night action. Existing private personal wins remain outside its props and DOM.
-The private promotion feature uses the label **Continue** because its
-acknowledgement may either enter the ordinary wake sequence or settle an eligible final two first.
-
-Waiting recovery remains generic `Day complete` even when private pending revenge exists. Game-over
-recovery may show only `Game over`, its public faction/draw, Day number, player count, and saved
-time before Continue.
+`game-over` renders a focused host `Game over` heading plus Town, Mafia, Serial Killer, or Draw.
+Its responsive final state includes duplicate-safe names, exact current/original roles, alignment,
+alive/dead status, causes, Executioner targets, promotions, conversions, personal wins, and revenge
+results. Raw IDs never enter its DOM. Both final-two branches arrive as terminal authority, so no
+target collection or next-night action is offered.
 
 Phase 7E gives a non-terminal day summary one deliberate **Begin Night N** control. Later nights
 reuse `night-runner`; only living actionable active roles appear, and prior actions/results are
-absent. `revenge-resolution` is a focused Neutral Jester Dawn screen shown only after recovery Continue.
-It names the already-selected random victim and applies
-the unavoidable death once. The public Dawn then combines only current ordinary/revenge deaths
-without causes, or the app goes directly to public-safe Game Over. **Continue to Day N** and the
-existing day controls repeat for later cycles; host-role visibility resets hidden on each entry
-and recovery.
+absent. `revenge-resolution` names the already-selected random victim and applies the unavoidable
+death once. Host Dawn then combines the rule-compliant current-night announcement with exact cause
+and event evidence, or the app goes directly to host Game Over.
 
-Phase 7F adds `godfather-promotion`, a focused Mafia screen before a newly promoted player's
-first later-night action. Its large Godfather heading receives focus and its duplicate-safe identity wraps
-at 320px/390px, and its only 44px control continues to night actions. It cannot be dismissed with
-Escape. Save failure leaves the same briefing visible.
+Phase 7F.5 removes the separate `godfather-promotion` feature. The existing Mafia overview shows
+**MAFIA OPEN YOUR EYES**, the exact promoted player, current Godfather role, original Mafia role,
+and every living Mafia member. Its existing Continue action advances directly to the first
+actionable Mafia role.
 
 Fresh setup may prefill the full ordered roster, Playing/Not playing choices, role quantities, and
 settings from the saved next-game template. **Clear saved setup** affects future prefill, keeps the

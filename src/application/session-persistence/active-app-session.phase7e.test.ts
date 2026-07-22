@@ -78,6 +78,7 @@ describe('Phase 7E next-night application flow', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error(`Expected Night 2: ${result.error.type}`)
+    if (result.value.stage !== 'sequential-night') throw new Error('Expected playable Night 2.')
     expect(result.value.workflow.game).toMatchObject({
       phase: 'night-action-collection',
       nightNumber: 2,
@@ -124,6 +125,7 @@ describe('Phase 7E next-night application flow', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected Night 2 with pending revenge.')
+    if (result.value.stage !== 'sequential-night') throw new Error('Expected playable Night 2.')
     expect(result.value.workflow.game.pendingJesterRevenges).toEqual(
       waiting.game.pendingJesterRevenges,
     )
@@ -156,6 +158,7 @@ describe('Phase 7E next-night application flow', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected converted-role Night 2.')
+    if (result.value.stage !== 'sequential-night') throw new Error('Expected playable Night 2.')
     expect(
       result.value.workflow.steps.flatMap((step) =>
         step.type === 'actor-action' ? [step.actorPlayerId] : [],
@@ -214,6 +217,7 @@ describe('Phase 7E next-night application flow', () => {
     if (dayOne.stage !== 'post-day-waiting') throw new Error('Expected Day 1 waiting.')
     const nightTwo = beginSessionNextNight(dayOne, { next: () => 0 })
     if (!nightTwo.ok) throw new Error('Expected Night 2.')
+    if (nightTwo.value.stage !== 'sequential-night') throw new Error('Expected playable Night 2.')
     const dawnGame = validateGameState({
       ...nightTwo.value.workflow.game,
       phase: 'dawn-announcement',
@@ -243,6 +247,7 @@ describe('Phase 7E next-night application flow', () => {
 
     expect(nightThree.ok).toBe(true)
     if (!nightThree.ok) throw new Error('Expected Night 3.')
+    if (nightThree.value.stage !== 'sequential-night') throw new Error('Expected playable Night 3.')
     expect(nightThree.value.workflow.game).toMatchObject({
       phase: 'night-action-collection',
       nightNumber: 3,

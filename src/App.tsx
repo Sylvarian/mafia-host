@@ -2,13 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   selectMayorRevealCandidates,
-  selectHostRoleDayView,
-  selectPublicDayDiscussionView,
+  selectDayDiscussionView,
   type ConfirmMayorRevealWorkflowError,
 } from '@/application/day-discussion/index.ts'
 import {
   selectDayExecutionCandidates,
-  selectPublicDayOutcomeView,
+  selectDayOutcomeView,
   type CompleteDayOutcomeWorkflowError,
 } from '@/application/day-outcome/index.ts'
 import {
@@ -27,8 +26,7 @@ import {
   type NextGameSetupTemplate,
   type NextGameSetupTemplateRepository,
 } from '@/application/game-setup/index.ts'
-import { selectPublicGameOverView } from '@/application/game-over/index.ts'
-import { selectGodfatherPromotionBriefingView } from '@/application/godfather-promotion/index.ts'
+import { selectHostGameOverView } from '@/application/game-over/index.ts'
 import type { NightActionCollectionError } from '@/application/night-actions/index.ts'
 import type { NightCompletionError } from '@/application/night-completion/index.ts'
 import {
@@ -41,7 +39,6 @@ import type {
 } from '@/application/role-assignment/index.ts'
 import {
   acknowledgeSessionExecutionerBriefing,
-  acknowledgeSessionGodfatherPromotion,
   assignSessionRoles,
   beginSessionDayDiscussion,
   beginSessionFirstNight,
@@ -84,7 +81,6 @@ import {
 } from '@/features/executioner-briefing/index.ts'
 import { GameSetup } from '@/features/game-setup/index.ts'
 import { GameOver } from '@/features/game-over/index.ts'
-import { GodfatherPromotionBriefing } from '@/features/godfather-promotion/index.ts'
 import { getNightActionCollectionErrorMessage, NightRunner } from '@/features/night-runner/index.ts'
 import { RevengeResolution } from '@/features/revenge-resolution/index.ts'
 import {
@@ -167,11 +163,8 @@ export default function App({
   const [postDayErrorMessage, setPostDayErrorMessage] = useState<string | null>(null)
   const [firstNightErrorMessage, setFirstNightErrorMessage] = useState<string | null>(null)
   const [briefingErrorMessage, setBriefingErrorMessage] = useState<string | null>(null)
-  const [promotionBriefingErrorMessage, setPromotionBriefingErrorMessage] = useState<string | null>(
-    null,
-  )
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false)
-  const [dayPrivatePresentationOpen, setDayPrivatePresentationOpen] = useState(false)
+  const [dayDialogOpen, setDayDialogOpen] = useState(false)
   const persistedFingerprintRef = useRef<string | null>(initialState.persistedFingerprint)
   const identityOperationPendingRef = useRef(false)
   const nightOperationPendingRef = useRef(false)
@@ -180,7 +173,6 @@ export default function App({
   const dayOperationPendingRef = useRef(false)
   const recoveryContinuePendingRef = useRef(false)
   const clearOperationPendingRef = useRef(false)
-  const pendingPromotionAcknowledgementRef = useRef<ActiveAppSession | null>(null)
   const activeSession = appState.mode === 'active' ? appState.session : null
 
   useEffect(() => {
@@ -233,7 +225,6 @@ export default function App({
     setPostDayErrorMessage(null)
     setFirstNightErrorMessage(null)
     setBriefingErrorMessage(null)
-    setPromotionBriefingErrorMessage(null)
   }
 
   function clearSavedSession(): void {
@@ -252,7 +243,6 @@ export default function App({
     const freshSession = createActiveAppSession(savedSetupTemplate)
     const fingerprint = createSessionFingerprint(freshSession)
     persistedFingerprintRef.current = fingerprint
-    pendingPromotionAcknowledgementRef.current = null
     clearOperationPendingRef.current = false
     clearErrors()
     setClearConfirmationOpen(false)
@@ -531,70 +521,6 @@ export default function App({
             }}
           />
         )
-      case 'godfather-promotion-briefing': {
-        const viewResult = selectGodfatherPromotionBriefingView(session.workflow)
-        if (!viewResult.ok) {
-          throw new Error(`Invalid Godfather promotion briefing: ${viewResult.error.type}.`)
-        }
-        return (
-          <GodfatherPromotionBriefing
-            view={viewResult.value}
-            errorMessage={promotionBriefingErrorMessage}
-            onContinue={() => {
-              runBriefingOperation(() => {
-                let acknowledgedSession = pendingPromotionAcknowledgementRef.current
-                if (acknowledgedSession === null) {
-                  const result = acknowledgeSessionGodfatherPromotion(session)
-                  if (!result.ok) {
-                    if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                      handleInvalidStage(result.error)
-                    }
-                    setPromotionBriefingErrorMessage(
-                      'The promotion was preserved, but the final transition was rejected. Retry from this briefing.',
-                    )
-                    return false
-                  }
-                  acknowledgedSession = result.value
-                  pendingPromotionAcknowledgementRef.current = acknowledgedSession
-                }
-                if (appState.mode !== 'active') {
-                  throw new Error('Godfather promotion acknowledgement requires an active session.')
-                }
-                const envelope = createPersistedSessionEnvelopeV2(
-                  acknowledgedSession,
-                  sessionClock.now(),
-                )
-                const saveResult = sessionStore.save(envelope)
-                if (!saveResult.ok) {
-                  setPromotionBriefingErrorMessage(
-                    acknowledgedSession.stage === 'game-over'
-                      ? 'The promotion and final draw are preserved, but they could not be saved. Retry from this briefing.'
-                      : 'The promotion is preserved, but it could not be saved. Retry before beginning night actions.',
-                  )
-                  setAppState({
-                    ...appState,
-                    session,
-                    saveStatus: { status: 'failed', error: saveResult.error },
-                    clearError: null,
-                  })
-                  return false
-                }
-                persistedFingerprintRef.current = createSessionFingerprint(acknowledgedSession)
-                pendingPromotionAcknowledgementRef.current = null
-                setPromotionBriefingErrorMessage(null)
-                setAppState({
-                  ...appState,
-                  session: acknowledgedSession,
-                  saveStatus: { status: 'saved', savedAt: envelope.savedAt },
-                  hasStoredSave: true,
-                  clearError: null,
-                })
-                return true
-              })
-            }}
-          />
-        )
-      }
       case 'sequential-night':
         return (
           <NightRunner
@@ -699,22 +625,25 @@ export default function App({
             }}
           />
         )
-      case 'day-discussion':
+      case 'day-discussion': {
+        const viewResult = selectDayDiscussionView(session)
+        if (!viewResult.ok) {
+          throw new Error(`Invalid host Day view: ${viewResult.error.type}.`)
+        }
         return (
           <DayDiscussion
-            view={selectPublicDayDiscussionView(session)}
-            privateMayorCandidates={selectMayorRevealCandidates(session)}
-            privateExecutionCandidates={selectDayExecutionCandidates(session)}
+            view={viewResult.value}
+            mayorCandidates={selectMayorRevealCandidates(session)}
+            executionCandidates={selectDayExecutionCandidates(session)}
             revealError={mayorRevealError}
             outcomeError={dayOutcomeError}
             onClearRevealError={() => {
               setMayorRevealError(null)
             }}
-            onPrivatePresentationChange={setDayPrivatePresentationOpen}
+            onDialogPresentationChange={setDayDialogOpen}
             onClearOutcomeError={() => {
               setDayOutcomeError(null)
             }}
-            getHostRoleView={() => selectHostRoleDayView(session)}
             onConfirmMayorReveal={(selectedPlayerId) =>
               runDayOperation(() => {
                 const result = confirmSessionMayorReveal(session, selectedPlayerId)
@@ -741,7 +670,7 @@ export default function App({
                   return false
                 }
                 clearErrors()
-                setDayPrivatePresentationOpen(false)
+                setDayDialogOpen(false)
                 const settlement = settleSessionAfterDayOutcome(result.value)
                 if (!settlement.ok) {
                   setPostDayErrorMessage(getPostDaySettlementErrorMessage(settlement.error))
@@ -763,7 +692,7 @@ export default function App({
                   return false
                 }
                 clearErrors()
-                setDayPrivatePresentationOpen(false)
+                setDayDialogOpen(false)
                 const settlement = settleSessionAfterDayOutcome(result.value)
                 if (!settlement.ok) {
                   setPostDayErrorMessage(getPostDaySettlementErrorMessage(settlement.error))
@@ -776,10 +705,11 @@ export default function App({
             }
           />
         )
+      }
       case 'day-outcome':
         return (
           <DayOutcomeSummary
-            view={selectPublicDayOutcomeView({
+            view={selectDayOutcomeView({
               game: session.game,
               participants: session.participants,
             })}
@@ -791,14 +721,12 @@ export default function App({
       case 'pending-revenge-waiting':
         return (
           <DayOutcomeSummary
-            view={selectPublicDayOutcomeView({
+            view={selectDayOutcomeView({
               game: session.game,
               participants: session.participants,
             })}
             status="game-continues"
-            errorMessage={
-              nightError === null ? null : 'The next night could not be started safely. Retry.'
-            }
+            errorMessage={postDayErrorMessage}
             nextNightNumber={session.game.nightNumber + 1}
             onBeginNextNight={() => {
               runNightOperation(() => {
@@ -811,7 +739,7 @@ export default function App({
                     handleInvalidStage(result.error)
                     return false
                   }
-                  setNightError(result.error)
+                  setPostDayErrorMessage('The next night could not be started safely. Retry.')
                   return false
                 }
                 clearErrors()
@@ -824,7 +752,7 @@ export default function App({
       case 'game-over':
         return (
           <GameOver
-            view={selectPublicGameOverView({
+            view={selectHostGameOverView({
               game: session.game,
               participants: session.participants,
               result: session.result,
@@ -1045,10 +973,7 @@ export default function App({
             >
               {renderActiveSession(appState.session)}
             </div>
-            <div
-              aria-hidden={dayPrivatePresentationOpen || undefined}
-              inert={dayPrivatePresentationOpen ? true : undefined}
-            >
+            <div aria-hidden={dayDialogOpen || undefined} inert={dayDialogOpen ? true : undefined}>
               <SessionSaveStatus
                 saveStatus={appState.saveStatus}
                 hasStoredSave={appState.hasStoredSave}

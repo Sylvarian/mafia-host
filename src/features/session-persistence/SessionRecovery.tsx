@@ -115,6 +115,12 @@ export function SessionRecovery(props: SessionRecoveryProps) {
           <span>
             {summary.playerCount} participating {summary.playerCount === 1 ? 'player' : 'players'}
           </span>
+          {summary.playerDisplayLabels.length === 0 ? null : (
+            <span>Players: {summary.playerDisplayLabels.join(', ')}</span>
+          )}
+          {summary.currentHostAction === null ? null : (
+            <span>Awaiting host action: {summary.currentHostAction}</span>
+          )}
           <span>Saved locally at {formatSavedAt(props.envelope.savedAt)}</span>
         </div>
         {props.clearError === null ? null : <ClearError error={props.clearError} />}

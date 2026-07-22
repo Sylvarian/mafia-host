@@ -50,14 +50,23 @@ export type InvalidDayOutcomeStateError =
 export type CompleteDayOutcomeWorkflowError =
   CompleteDayOutcomeError | InvalidDayDiscussionStateError | InvalidDayOutcomeStateError
 
-export type PublicDayOutcomeView = Readonly<{
+export type DayOutcomeView = Readonly<{
   dayNumber: number
   dayLabel: string
-  outcome:
+  announcement:
     | Readonly<{
         kind: 'player-executed'
         playerDisplayLabel: string
         revealedRoleDisplayName: string | null
+      }>
+    | Readonly<{ kind: 'no-execution' }>
+  hostResult:
+    | Readonly<{
+        kind: 'player-executed'
+        playerDisplayLabel: string
+        currentRoleDisplayName: string
+        originalRoleDisplayName: string | null
+        alignmentDisplayName: string
       }>
     | Readonly<{ kind: 'no-execution' }>
 }>
@@ -169,7 +178,7 @@ export function validateDayOutcomeState(
   )
 }
 
-export function selectPublicDayOutcomeView(state: DayOutcomeState): PublicDayOutcomeView {
+export function selectDayOutcomeView(state: DayOutcomeState): DayOutcomeView {
   const result = validateDayOutcomeState(state)
   if (!result.ok) {
     throw new Error(`Invalid day outcome state: ${result.error.type}.`)
@@ -183,7 +192,8 @@ export function selectPublicDayOutcomeView(state: DayOutcomeState): PublicDayOut
     return Object.freeze({
       dayNumber: outcome.dayNumber,
       dayLabel: `Day ${String(outcome.dayNumber)}`,
-      outcome: Object.freeze({ kind: 'no-execution' }),
+      announcement: Object.freeze({ kind: 'no-execution' }),
+      hostResult: Object.freeze({ kind: 'no-execution' }),
     })
   }
   const player = result.value.game.players.find(
@@ -199,14 +209,29 @@ export function selectPublicDayOutcomeView(state: DayOutcomeState): PublicDayOut
   if (player.publiclyRevealedRoleId !== null && revealedRole === undefined) {
     throw new Error('The execution reveal role is absent from the canonical registry.')
   }
+  const hostRoles = selectHostPlayerRoleViews(result.value.game, result.value.participants)
+  if (!hostRoles.ok) {
+    throw new Error('The executed player has invalid active role metadata.')
+  }
+  const hostPlayer = hostRoles.value.find((candidate) => candidate.playerId === player.playerId)
+  if (hostPlayer === undefined) {
+    throw new Error('The executed player is absent from the host role view.')
+  }
   return Object.freeze({
     dayNumber: outcome.dayNumber,
     dayLabel: `Day ${String(outcome.dayNumber)}`,
-    outcome: Object.freeze({
+    announcement: Object.freeze({
       kind: 'player-executed',
-      playerDisplayLabel: selectPlayerDisplayLabel(result.value.participants, player.playerId),
+      playerDisplayLabel: hostPlayer.playerDisplayLabel,
       revealedRoleDisplayName:
         revealedRole === undefined ? null : getRoleInstanceDisplayName(player.role, revealedRole),
+    }),
+    hostResult: Object.freeze({
+      kind: 'player-executed',
+      playerDisplayLabel: hostPlayer.playerDisplayLabel,
+      currentRoleDisplayName: hostPlayer.activeRoleDisplayName,
+      originalRoleDisplayName: hostPlayer.originallyAssignedRoleDisplayName,
+      alignmentDisplayName: hostPlayer.alignmentDisplayName,
     }),
   })
 }
@@ -259,19 +284,4 @@ function copyParticipants(
     })
   }
   return succeed(Object.freeze(copied))
-}
-
-function selectPlayerDisplayLabel(
-  participants: readonly Player[],
-  selectedPlayerId: PlayerId,
-): string {
-  const index = participants.findIndex((participant) => participant.id === selectedPlayerId)
-  const participant = participants[index]
-  if (participant === undefined) {
-    throw new Error('A day-outcome player is absent from the participant roster.')
-  }
-  const duplicateName = participants.some(
-    (candidate, candidateIndex) => candidateIndex !== index && candidate.name === participant.name,
-  )
-  return duplicateName ? `${participant.name} (Player ${String(index + 1)})` : participant.name
 }

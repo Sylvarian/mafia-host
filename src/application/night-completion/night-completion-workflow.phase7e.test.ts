@@ -16,7 +16,7 @@ import {
 import {
   beginFinalNightResolution,
   continueJesterRevengeResolution,
-  prepareDawnAnnouncement,
+  finalizeNightAtDawn,
 } from './night-completion-workflow.ts'
 
 function pendingNight(
@@ -80,7 +80,7 @@ describe('Phase 7E Dawn completion ordering', () => {
     workflow = confirm(workflow, protectedVictim.playerId)
     const ready = beginFinalNightResolution(complete(workflow))
     if (!ready.ok) throw new Error(`Expected night resolution: ${ready.error.type}`)
-    const revenge = prepareDawnAnnouncement(ready.value, { next: () => 0.61 })
+    const revenge = finalizeNightAtDawn(ready.value, { next: () => 0.61 })
 
     expect(revenge.ok).toBe(true)
     if (!revenge.ok || revenge.value.status !== 'revenge-resolution') {
@@ -129,7 +129,7 @@ describe('Phase 7E Dawn completion ordering', () => {
     workflow = confirm(workflow, ordinaryVictim.playerId)
     const ready = beginFinalNightResolution(complete(workflow))
     if (!ready.ok) throw new Error('Expected night resolution.')
-    const revenge = prepareDawnAnnouncement(ready.value, { next: () => 0.99 })
+    const revenge = finalizeNightAtDawn(ready.value, { next: () => 0.99 })
     if (!revenge.ok || revenge.value.status !== 'revenge-resolution') {
       throw new Error('Expected selected revenge.')
     }
@@ -173,7 +173,7 @@ describe('Phase 7E Dawn completion ordering', () => {
     workflow = confirm(workflow, godfather.playerId)
     const ready = beginFinalNightResolution(complete(workflow))
     if (!ready.ok) throw new Error(`Expected night resolution: ${ready.error.type}`)
-    const revenge = prepareDawnAnnouncement(ready.value, { next: () => 0.99 })
+    const revenge = finalizeNightAtDawn(ready.value, { next: () => 0.99 })
     if (!revenge.ok || revenge.value.status !== 'revenge-resolution') {
       throw new Error('Expected selected revenge.')
     }
@@ -228,7 +228,7 @@ describe('Phase 7E Dawn completion ordering', () => {
     workflow = confirm(workflow, citizen.playerId)
     const ready = beginFinalNightResolution(complete(workflow))
     if (!ready.ok) throw new Error(`Expected night resolution: ${ready.error.type}`)
-    const terminal = prepareDawnAnnouncement(ready.value, { next: () => 0 })
+    const terminal = finalizeNightAtDawn(ready.value, { next: () => 0 })
 
     expect(terminal.ok).toBe(true)
     if (!terminal.ok || terminal.value.status !== 'game-over') {

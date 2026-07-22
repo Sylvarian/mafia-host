@@ -38,7 +38,7 @@ export function getNightCompletionErrorMessage(error: NightCompletionError): str
     case 'NIGHT_RESOLUTION_CONTENT_MISMATCH':
       return 'The night result no longer matches the completed sequential actions.'
     case 'INVALID_DAWN_ANNOUNCEMENT':
-      return 'A public-safe Dawn announcement could not be constructed.'
+      return 'The Dawn announcement could not be constructed from the saved game.'
     case 'NO_PENDING_JESTER_REVENGE':
     case 'INVALID_JESTER_REVENGE_SELECTION':
     case 'JESTER_REVENGE_SURVIVOR_STILL_EXISTS':

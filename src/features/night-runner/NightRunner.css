@@ -73,6 +73,20 @@
   font-weight: 900;
 }
 
+.night-instruction__promotion {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid var(--mafia);
+  border-radius: var(--radius-small);
+  background: var(--faction-mafia-soft);
+}
+
+.night-instruction__promotion span {
+  color: var(--text-muted);
+}
+
 .night-instruction ul {
   display: grid;
   gap: 0.65rem;
@@ -292,6 +306,24 @@
   font-size: clamp(1.8rem, 7vw, 3.5rem);
   font-weight: 900;
   line-height: 1.08;
+}
+
+.sheriff-result--suspicious {
+  color: var(--danger-strong);
+}
+
+.sheriff-result--not-suspicious {
+  color: var(--success-strong);
+}
+
+.sheriff-result__details {
+  display: grid;
+  gap: 0.15rem;
+  font-size: clamp(1.05rem, 3vw, 1.35rem);
+}
+
+.sheriff-result__details span {
+  color: var(--text-muted);
 }
 
 .immediate-outcome__eyebrow {

@@ -1,7 +1,7 @@
 export {
   beginFinalNightResolution,
   continueJesterRevengeResolution,
-  prepareDawnAnnouncement,
+  finalizeNightAtDawn,
 } from './night-completion-workflow.ts'
 export type {
   DawnWorkflow,
@@ -18,7 +18,11 @@ export {
 } from './night-completion-selectors.ts'
 export type {
   DawnAnnouncementView,
-  DawnDeathView,
+  DawnDeathAnnouncementView,
+  DawnHostDeathView,
+  DawnHostResultsView,
+  HostNightPlayerView,
+  ImportantNightEventView,
   NightCompletionView,
   RevengeResolutionView,
 } from './night-completion-selectors.ts'

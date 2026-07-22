@@ -4,7 +4,7 @@ import { createExecutionerBriefingWorkflow } from '@/application/executioner-bri
 import {
   confirmMayorRevealDuringDay,
   createDayDiscussionState,
-  selectPublicDayDiscussionView,
+  selectDayDiscussionView,
 } from '@/application/day-discussion/index.ts'
 import {
   completeDayWithoutExecution,
@@ -12,7 +12,7 @@ import {
 } from '@/application/day-outcome/index.ts'
 import {
   beginFinalNightResolution,
-  prepareDawnAnnouncement,
+  finalizeNightAtDawn,
 } from '@/application/night-completion/index.ts'
 import {
   confirmNightActionTarget,
@@ -891,7 +891,7 @@ describe('persisted sequential session V2', () => {
     })
   })
 
-  it('round-trips the final resolution boundary and public-only Dawn', () => {
+  it('round-trips the final resolution boundary and host Dawn', () => {
     const complete = completeDoctorNight(1)
     const readyResult = beginFinalNightResolution(complete)
     if (!readyResult.ok) throw new Error('Expected final night resolution.')
@@ -906,7 +906,7 @@ describe('persisted sequential session V2', () => {
     }
     expect(restoredReady.workflow.game.players.every((player) => player.alive)).toBe(true)
 
-    const dawnResult = prepareDawnAnnouncement(readyResult.value, LOWEST_RANDOM_SOURCE)
+    const dawnResult = finalizeNightAtDawn(readyResult.value, LOWEST_RANDOM_SOURCE)
     if (!dawnResult.ok || dawnResult.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const dawnSession: ActiveAppSession = { stage: 'dawn', workflow: dawnResult.value }
     const persistedDawn = toPersistedAppSessionV2(dawnSession)
@@ -925,7 +925,7 @@ describe('persisted sequential session V2', () => {
     const complete = completeDoctorNight(1)
     const readyResult = beginFinalNightResolution(complete)
     if (!readyResult.ok) throw new Error('Expected final night resolution.')
-    const dawnResult = prepareDawnAnnouncement(readyResult.value, LOWEST_RANDOM_SOURCE)
+    const dawnResult = finalizeNightAtDawn(readyResult.value, LOWEST_RANDOM_SOURCE)
     if (!dawnResult.ok || dawnResult.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const envelope = JSON.parse(
       JSON.stringify(
@@ -1076,7 +1076,7 @@ describe('narrow V1 migration', () => {
 
     const ready = beginFinalNightResolution(completeDoctorNight(1))
     if (!ready.ok) throw new Error('Expected resolution.')
-    const dawn = prepareDawnAnnouncement(ready.value, LOWEST_RANDOM_SOURCE)
+    const dawn = finalizeNightAtDawn(ready.value, LOWEST_RANDOM_SOURCE)
     if (!dawn.ok || dawn.value.status !== 'dawn') throw new Error('Expected Dawn.')
     const dawnSession: ActiveAppSession = { stage: 'dawn', workflow: dawn.value }
 
@@ -1130,9 +1130,15 @@ describe('persisted Phase 7B day discussion V2', () => {
     if (restored.stage !== 'day-discussion') {
       throw new Error('Expected restored day session.')
     }
-    const view = selectPublicDayDiscussionView(restored)
-    expect(view.dayLabel).toBe('Day 1')
-    expect(view.livingPlayers.filter((row) => row.hasThreeVoteReminder)).toHaveLength(2)
+    const view = selectDayDiscussionView(restored)
+    expect(view.ok).toBe(true)
+    if (!view.ok) throw new Error('Expected restored host Day view.')
+    expect(view.value.dayLabel).toBe('Day 1')
+    expect(
+      view.value.groups
+        .flatMap((group) => group.players)
+        .filter((player) => player.announcedRole?.status === 'publicly-revealed-mayor'),
+    ).toHaveLength(2)
   })
 
   it('persists only the canonical day game and participants', () => {
@@ -1590,6 +1596,13 @@ describe('persisted Phase 7C final day outcome V2', () => {
               revealedRoleId: deadTarget.publiclyRevealedRoleId,
             },
           ],
+        },
+        importantNightEvents: {
+          gameId: fixture.game.id,
+          nightNumber: fixture.game.nightNumber,
+          completeness: 'legacy-unavailable',
+          canonicalSource: null,
+          events: [],
         },
       },
     }

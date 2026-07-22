@@ -46,16 +46,19 @@ each produce one ordinary application save after their authoritative transition.
 host-only day roles never calls the adapter because that state is React-only.
 
 Phase 7E keeps the same V2 key and browser adapter. The application payload's neutral-state
-sub-version `3` can represent later-night collection/resolution, private selected-revenge Dawn
-resolution, current public Dawn, later days, and later game over without changing localStorage
+sub-version `3` can represent later-night collection/resolution, selected-revenge Dawn
+resolution, current host Dawn, later days, and later game over without changing localStorage
 transport. The adapter never selects or rerolls a revenge victim, derives a conversion, evaluates
 victory, or interprets history. Save failure/retry transports the same selected-victim session, so
 ordinary deaths, revenge death, conversions, and counters cannot be applied twice.
 
 Phase 7F keeps the active-session key and transport while the application writes neutral-state
-sub-version `4` for Godfather promotions and the private unacknowledged briefing. The adapter never
-chooses a successor, builds wake order, acknowledges the briefing, or interprets promotion
-history; it only transports the already-canonical payload.
+sub-version `4` for Godfather promotions. Phase 7F.5 removes the separate live briefing stage; the
+adapter never chooses a successor, builds wake order, or interprets promotion history and only
+transports the already-canonical payload. Dawn/revenge payloads may include the bounded pre-night
+mutable-state snapshot and confirmed actions used by application/domain restoration to prove
+complete important-night evidence against the restored game; the adapter treats them as opaque
+data and never replays them itself.
 
 `BrowserNextGameSetupTemplateRepository` owns the separate
 `mafia-host:next-game-setup-template:v1` key and the narrow compatibility read/removal of
@@ -81,3 +84,10 @@ Phase 7F.4 keeps that key and schema. The adapter transports the exact stage-loc
 recipient ID sequence but does not generate, validate, reorder, or reroll it. The application owns
 deterministic roster fallback for compatible earlier distribution saves and exact former-wake-order
 recovery; successful canonicalization uses the existing write-back path.
+
+Phase 7F.5 keeps the same V2 key, schema, and neutral-state sub-version. Dawn and selected-revenge
+payloads now transport bounded current-night important-event evidence; the adapter does not build,
+validate, format, or infer it. Exact older Dawn payloads are upgraded by the application with an
+explicit unavailable-evidence marker. Recovery display may contain host names and workflow action
+labels, but the adapter never places any authority in URL parameters, document title, console
+output, or browser history state.

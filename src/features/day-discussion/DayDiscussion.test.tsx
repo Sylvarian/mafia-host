@@ -4,54 +4,26 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import type {
-  HostRoleDayView,
+  DayDiscussionView,
   MayorRevealCandidateView,
-  PublicDayDiscussionView,
 } from '@/application/day-discussion/index.ts'
 import { nightFixturePlayerId } from '../../../tests/support/night-action-fixtures.ts'
 import { DayDiscussion } from './DayDiscussion.tsx'
 
-const hiddenMayorId = nightFixturePlayerId('private-player-1')
-const revealedMayorId = nightFixturePlayerId('private-player-2')
-const deadPlayerId = nightFixturePlayerId('private-player-3')
+const hiddenMayorId = nightFixturePlayerId('authority-player-1')
+const revealedMayorId = nightFixturePlayerId('authority-player-2')
+const deadPlayerId = nightFixturePlayerId('authority-player-3')
 
-function publicView(overrides: Partial<PublicDayDiscussionView> = {}): PublicDayDiscussionView {
+function hostView(overrides: Partial<DayDiscussionView> = {}): DayDiscussionView {
   return {
     dayNumber: 1,
     dayLabel: 'Day 1',
-    livingPlayers: [
-      {
-        playerId: hiddenMayorId,
-        playerDisplayLabel: 'Alex (Player 1)',
-        status: 'alive',
-        publicRoleDisplayName: null,
-        publiclyRevealedMayor: false,
-        hasThreeVoteReminder: false,
-      },
-      {
-        playerId: revealedMayorId,
-        playerDisplayLabel: 'Alex (Player 2)',
-        status: 'alive',
-        publicRoleDisplayName: 'Mayor 2',
-        publiclyRevealedMayor: true,
-        hasThreeVoteReminder: true,
-      },
-    ],
-    deadPlayers: [
-      {
-        playerId: deadPlayerId,
-        playerDisplayLabel: 'Taylor',
-        status: 'dead',
-        publicRoleDisplayName: null,
-        publiclyRevealedMayor: false,
-        hasThreeVoteReminder: false,
-      },
-    ],
     mayorRevealAvailable: true,
     votingRequirements: {
       livingPlayerCount: 2,
       votesToPutOnTrial: 2,
     },
+    groups: defaultHostView().groups,
     ...overrides,
   }
 }
@@ -63,7 +35,7 @@ const candidates: readonly MayorRevealCandidateView[] = [
   },
 ]
 
-function defaultHostView(): HostRoleDayView {
+function defaultHostView(): Pick<DayDiscussionView, 'groups'> {
   return {
     groups: [
       { alignment: 'mafia', alignmentDisplayName: 'Mafia', players: [] },
@@ -79,7 +51,8 @@ function defaultHostView(): HostRoleDayView {
             alignment: 'town',
             alignmentDisplayName: 'Town',
             originallyAssignedRoleDisplayName: null,
-            publicRole: null,
+            announcedRole: null,
+            deathCause: null,
           },
           {
             playerId: revealedMayorId,
@@ -89,7 +62,8 @@ function defaultHostView(): HostRoleDayView {
             alignment: 'town',
             alignmentDisplayName: 'Town',
             originallyAssignedRoleDisplayName: null,
-            publicRole: { displayName: 'Mayor 2', status: 'publicly-revealed-mayor' },
+            announcedRole: { displayName: 'Mayor 2', status: 'publicly-revealed-mayor' },
+            deathCause: null,
           },
         ],
       },
@@ -105,7 +79,8 @@ function defaultHostView(): HostRoleDayView {
             alignment: 'neutral',
             alignmentDisplayName: 'Neutral',
             originallyAssignedRoleDisplayName: null,
-            publicRole: { displayName: 'Jester', status: 'revealed-on-death' },
+            announcedRole: { displayName: 'Jester', status: 'revealed-on-death' },
+            deathCause: { kind: 'night-death', nightNumber: 1 },
           },
         ],
       },
@@ -138,13 +113,12 @@ describe('host day discussion UI', () => {
   it('focuses the day heading and renders one alignment-grouped living/dead card region', () => {
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -171,20 +145,19 @@ describe('host day discussion UI', () => {
     expect(screen.getByRole('button', { name: 'Execute a player' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
     expect(container.innerHTML).not.toMatch(
-      /private-player|role-instance|executionerTarget|actualRoleId|nightResolution/,
+      /authority-player|role-instance|executionerTarget|actualRoleId|nightResolution/,
     )
   })
 
   it('shows a generic unavailable control without explaining hidden Mayor state', () => {
     render(
       <DayDiscussion
-        view={publicView({ mayorRevealAvailable: false })}
-        privateMayorCandidates={[]}
+        view={hostView({ mayorRevealAvailable: false })}
+        mayorCandidates={[]}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -193,7 +166,8 @@ describe('host day discussion UI', () => {
   })
 
   it('renders empty living groups safely', () => {
-    const noLivingView: HostRoleDayView = {
+    const noLivingView: DayDiscussionView = {
+      ...hostView(),
       groups: defaultHostView().groups.map((group) => ({
         ...group,
         players: group.players.map((player) => ({ ...player, status: 'dead' as const })),
@@ -201,16 +175,15 @@ describe('host day discussion UI', () => {
     }
     render(
       <DayDiscussion
-        view={publicView({
-          livingPlayers: [],
+        view={{
+          ...noLivingView,
           mayorRevealAvailable: false,
-        })}
-        privateMayorCandidates={[]}
+        }}
+        mayorCandidates={[]}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={() => ({ ok: true, value: noLivingView })}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -222,13 +195,12 @@ describe('host day discussion UI', () => {
   it('keeps public Mayor and death-revealed roles visible in both toggle states', () => {
     render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={() => ({ ok: true, value: defaultHostView() })}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -243,9 +215,10 @@ describe('host day discussion UI', () => {
   })
 })
 
-describe('temporary host role view', () => {
+describe('host role convenience control', () => {
   it('changes role text in place without replacing or reordering alignment cards', () => {
-    const hostView: HostRoleDayView = {
+    const roleView: DayDiscussionView = {
+      ...hostView(),
       groups: [
         {
           alignment: 'mafia',
@@ -259,7 +232,8 @@ describe('temporary host role view', () => {
               alignment: 'mafia',
               alignmentDisplayName: 'Mafia',
               originallyAssignedRoleDisplayName: 'Framer',
-              publicRole: null,
+              announcedRole: null,
+              deathCause: null,
             },
           ],
         },
@@ -275,7 +249,8 @@ describe('temporary host role view', () => {
               alignment: 'town',
               alignmentDisplayName: 'Town',
               originallyAssignedRoleDisplayName: null,
-              publicRole: { displayName: 'Doctor', status: 'revealed-on-death' },
+              announcedRole: { displayName: 'Doctor', status: 'revealed-on-death' },
+              deathCause: { kind: 'night-death', nightNumber: 1 },
             },
           ],
         },
@@ -291,26 +266,24 @@ describe('temporary host role view', () => {
               alignment: 'neutral',
               alignmentDisplayName: 'Neutral',
               originallyAssignedRoleDisplayName: 'Executioner',
-              publicRole: null,
+              announcedRole: null,
+              deathCause: null,
             },
           ],
         },
       ],
     }
-    const getHostRoleView = vi.fn(() => ({ ok: true as const, value: hostView }))
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={roleView}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={getHostRoleView}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
-    expect(getHostRoleView).toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Town' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Neutral' })).toBeVisible()
@@ -334,7 +307,7 @@ describe('temporary host role view', () => {
     expect([...container.querySelectorAll('.host-role-card')]).toEqual(cardsBefore)
     expect(container).not.toHaveTextContent('Alignment:')
     expect(container.innerHTML).not.toMatch(
-      /private-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
+      /authority-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
@@ -348,7 +321,8 @@ describe('temporary host role view', () => {
   })
 
   it('uses stable player identity when display labels collide without rendering raw IDs', () => {
-    const collidingView: HostRoleDayView = {
+    const collidingView: DayDiscussionView = {
+      ...hostView(),
       groups: defaultHostView().groups.map((group) => ({
         ...group,
         players: group.players.map((player) => ({
@@ -360,34 +334,33 @@ describe('temporary host role view', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={collidingView}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
-        getHostRoleView={() => ({ ok: true, value: collidingView })}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
     expect(screen.getAllByText('Colliding label')).toHaveLength(3)
     expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/same key|unique.*key/i)
-    expect(container.innerHTML).not.toMatch(/private-player/)
+    expect(container.innerHTML).not.toMatch(/authority-player/)
     consoleError.mockRestore()
   })
 })
 
-describe('private Mayor reveal boundary', () => {
+describe('host Mayor reveal dialog', () => {
   it('receives focus, makes the background inert, cancels on Escape, and restores focus', () => {
-    const onPrivatePresentationChange = vi.fn()
+    const onDialogPresentationChange = vi.fn()
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={() => true}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={onPrivatePresentationChange}
+        onDialogPresentationChange={onDialogPresentationChange}
       />,
     )
     const openButton = screen.getByRole('button', { name: 'Confirm Mayor reveal' })
@@ -398,26 +371,26 @@ describe('private Mayor reveal boundary', () => {
     expect(dialog).toHaveFocus()
     expect(dialog).toHaveTextContent('Mayor reveal')
     expect(dialog).not.toHaveTextContent(/host-only|keep this screen hidden/i)
-    expect(container.querySelector('.day-discussion__public')).toHaveAttribute('inert')
-    expect(onPrivatePresentationChange).toHaveBeenLastCalledWith(true)
-    expect(container.innerHTML).not.toMatch(/private-player/)
+    expect(container.querySelector('.day-discussion__content')).toHaveAttribute('inert')
+    expect(onDialogPresentationChange).toHaveBeenLastCalledWith(true)
+    expect(container.innerHTML).not.toMatch(/authority-player/)
 
     fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(openButton).toHaveFocus()
-    expect(onPrivatePresentationChange).toHaveBeenLastCalledWith(false)
+    expect(onDialogPresentationChange).toHaveBeenLastCalledWith(false)
   })
 
   it('requires selection, uses duplicate-safe labels, and confirms clear public consequences', () => {
     const onConfirm = vi.fn(() => true)
     render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={onConfirm}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
@@ -441,16 +414,16 @@ describe('private Mayor reveal boundary', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
-  it('guards rapid repeated confirmation in the private boundary', () => {
+  it('guards rapid repeated confirmation in the host dialog', () => {
     const onConfirm = vi.fn(() => true)
     render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={onConfirm}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
@@ -475,12 +448,12 @@ describe('private Mayor reveal boundary', () => {
     }
     const { rerender } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
+        view={hostView()}
+        mayorCandidates={candidates}
         revealError={null}
         onConfirmMayorReveal={onConfirm}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
@@ -493,12 +466,12 @@ describe('private Mayor reveal boundary', () => {
 
     rerender(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={[secondCandidate]}
+        view={hostView()}
+        mayorCandidates={[secondCandidate]}
         revealError={null}
         onConfirmMayorReveal={onConfirm}
         onClearRevealError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
@@ -511,15 +484,15 @@ describe('private Mayor reveal boundary', () => {
   })
 })
 
-describe('private final-day boundaries', () => {
+describe('host final-day dialogs', () => {
   it('shows only living display labels and guards a deliberate execution confirmation', () => {
     const onExecute = vi.fn(() => true)
-    const onPrivatePresentationChange = vi.fn()
+    const onDialogPresentationChange = vi.fn()
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
-        privateExecutionCandidates={[
+        view={hostView()}
+        mayorCandidates={candidates}
+        executionCandidates={[
           executionCandidate(hiddenMayorId, 'Alex (Player 1)', 'mafia', 'Godfather'),
           executionCandidate(revealedMayorId, 'Alex (Player 2)'),
           executionCandidate(deadPlayerId, 'Taylor', 'neutral', 'Jester'),
@@ -531,7 +504,7 @@ describe('private final-day boundaries', () => {
         onEndDayWithoutExecution={() => true}
         onClearRevealError={() => undefined}
         onClearOutcomeError={() => undefined}
-        onPrivatePresentationChange={onPrivatePresentationChange}
+        onDialogPresentationChange={onDialogPresentationChange}
       />,
     )
 
@@ -539,7 +512,7 @@ describe('private final-day boundaries', () => {
     fireEvent.click(openButton)
     const dialog = screen.getByRole('alertdialog', { name: 'Execute a player' })
     expect(dialog).toHaveFocus()
-    expect(container.querySelector('.day-discussion__public')).toHaveAttribute('inert')
+    expect(container.querySelector('.day-discussion__content')).toHaveAttribute('inert')
     expect(within(dialog).getAllByRole('radio')).toHaveLength(3)
     const mafiaGroup = within(dialog).getByRole('group', { name: 'MAFIA' })
     const townGroup = within(dialog).getByRole('group', { name: 'TOWN' })
@@ -573,16 +546,16 @@ describe('private final-day boundaries', () => {
 
     expect(onExecute).toHaveBeenCalledTimes(1)
     expect(onExecute).toHaveBeenCalledWith(revealedMayorId)
-    expect(onPrivatePresentationChange).toHaveBeenCalledWith(true)
+    expect(onDialogPresentationChange).toHaveBeenCalledWith(true)
   })
 
   it('cancels execution with Escape and restores focus without applying an outcome', () => {
     const onExecute = vi.fn(() => true)
     render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
-        privateExecutionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
+        view={hostView()}
+        mayorCandidates={candidates}
+        executionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
         revealError={null}
         outcomeError={null}
         onConfirmMayorReveal={() => true}
@@ -590,7 +563,7 @@ describe('private final-day boundaries', () => {
         onEndDayWithoutExecution={() => true}
         onClearRevealError={() => undefined}
         onClearOutcomeError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -607,9 +580,9 @@ describe('private final-day boundaries', () => {
     const longPlayerLabel = `Alex${'UnbrokenName'.repeat(18)}`
     render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
-        privateExecutionCandidates={[executionCandidate(hiddenMayorId, longPlayerLabel)]}
+        view={hostView()}
+        mayorCandidates={candidates}
+        executionCandidates={[executionCandidate(hiddenMayorId, longPlayerLabel)]}
         revealError={null}
         outcomeError={null}
         onConfirmMayorReveal={() => true}
@@ -617,7 +590,7 @@ describe('private final-day boundaries', () => {
         onEndDayWithoutExecution={() => true}
         onClearRevealError={() => undefined}
         onClearOutcomeError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 
@@ -633,9 +606,9 @@ describe('private final-day boundaries', () => {
     const onEndDay = vi.fn(() => true)
     const { container } = render(
       <DayDiscussion
-        view={publicView()}
-        privateMayorCandidates={candidates}
-        privateExecutionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
+        view={hostView()}
+        mayorCandidates={candidates}
+        executionCandidates={[executionCandidate(hiddenMayorId, 'Alex (Player 1)')]}
         revealError={null}
         outcomeError={null}
         onConfirmMayorReveal={() => true}
@@ -643,7 +616,7 @@ describe('private final-day boundaries', () => {
         onEndDayWithoutExecution={onEndDay}
         onClearRevealError={() => undefined}
         onClearOutcomeError={() => undefined}
-        onPrivatePresentationChange={() => undefined}
+        onDialogPresentationChange={() => undefined}
       />,
     )
 

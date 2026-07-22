@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import type {
   ConfirmMayorRevealWorkflowError,
-  HostRoleDayView,
-  HostRoleDayViewError,
+  DayDiscussionView,
+  DayPlayerView,
   MayorRevealCandidateView,
-  PublicDayDiscussionView,
 } from '@/application/day-discussion/index.ts'
 import type {
   CompleteDayOutcomeWorkflowError,
@@ -17,12 +16,12 @@ import { getDayOutcomeErrorMessage, getMayorRevealErrorMessage } from './day-dis
 
 import './DayDiscussion.css'
 
-type PrivateDialog = 'mayor' | 'execution' | 'no-execution' | null
+type HostDialog = 'mayor' | 'execution' | 'no-execution' | null
 
 type DayDiscussionProps = Readonly<{
-  view: PublicDayDiscussionView
-  privateMayorCandidates: readonly MayorRevealCandidateView[]
-  privateExecutionCandidates?: readonly DayExecutionCandidateView[]
+  view: DayDiscussionView
+  mayorCandidates: readonly MayorRevealCandidateView[]
+  executionCandidates?: readonly DayExecutionCandidateView[]
   revealError: ConfirmMayorRevealWorkflowError | null
   outcomeError?: CompleteDayOutcomeWorkflowError | null
   onConfirmMayorReveal: (selectedPlayerId: PlayerId) => boolean
@@ -30,16 +29,13 @@ type DayDiscussionProps = Readonly<{
   onEndDayWithoutExecution?: () => boolean
   onClearRevealError: () => void
   onClearOutcomeError?: () => void
-  onPrivatePresentationChange: (open: boolean) => void
-  getHostRoleView?: () =>
-    | Readonly<{ ok: true; value: HostRoleDayView }>
-    | Readonly<{ ok: false; error: HostRoleDayViewError }>
+  onDialogPresentationChange: (open: boolean) => void
 }>
 
 export function DayDiscussion({
   view,
-  privateMayorCandidates,
-  privateExecutionCandidates = [],
+  mayorCandidates,
+  executionCandidates = [],
   revealError,
   outcomeError = null,
   onConfirmMayorReveal,
@@ -47,8 +43,7 @@ export function DayDiscussion({
   onEndDayWithoutExecution = () => false,
   onClearRevealError,
   onClearOutcomeError = () => undefined,
-  onPrivatePresentationChange,
-  getHostRoleView,
+  onDialogPresentationChange,
 }: DayDiscussionProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const revealButtonRef = useRef<HTMLButtonElement>(null)
@@ -57,7 +52,7 @@ export function DayDiscussion({
   const dialogRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLButtonElement | null>(null)
   const confirmationPendingRef = useRef(false)
-  const [dialog, setDialog] = useState<PrivateDialog>(null)
+  const [dialog, setDialog] = useState<HostDialog>(null)
   const [selectedMayorPlayerId, setSelectedMayorPlayerId] = useState<PlayerId | null>(null)
   const [selectedExecutionPlayerId, setSelectedExecutionPlayerId] = useState<PlayerId | null>(null)
   const [showHostRoles, setShowHostRoles] = useState(false)
@@ -77,29 +72,27 @@ export function DayDiscussion({
   const selectedMayor =
     selectedMayorPlayerId === null
       ? undefined
-      : privateMayorCandidates.find((candidate) => candidate.playerId === selectedMayorPlayerId)
+      : mayorCandidates.find((candidate) => candidate.playerId === selectedMayorPlayerId)
   const selectedExecution =
     selectedExecutionPlayerId === null
       ? undefined
-      : privateExecutionCandidates.find(
-          (candidate) => candidate.playerId === selectedExecutionPlayerId,
-        )
+      : executionCandidates.find((candidate) => candidate.playerId === selectedExecutionPlayerId)
 
   function openDialog(
-    nextDialog: Exclude<PrivateDialog, null>,
+    nextDialog: Exclude<HostDialog, null>,
     invokingControl: HTMLButtonElement | null,
   ): void {
     confirmationPendingRef.current = false
     returnFocusRef.current = invokingControl
     onClearRevealError()
     onClearOutcomeError()
-    onPrivatePresentationChange(true)
+    onDialogPresentationChange(true)
     setDialog(nextDialog)
   }
 
   function closeDialog(): void {
     confirmationPendingRef.current = false
-    onPrivatePresentationChange(false)
+    onDialogPresentationChange(false)
     setDialog(null)
     setSelectedMayorPlayerId(null)
     setSelectedExecutionPlayerId(null)
@@ -117,15 +110,13 @@ export function DayDiscussion({
     }
   }
 
-  const privateDialogOpen = dialog !== null
-  const hostRoleResult = getHostRoleView === undefined ? null : getHostRoleView()
-
+  const hostDialogOpen = dialog !== null
   return (
     <section className="day-discussion" aria-labelledby="day-discussion-heading">
       <div
-        className="day-discussion__public"
-        aria-hidden={privateDialogOpen || undefined}
-        inert={privateDialogOpen ? true : undefined}
+        className="day-discussion__content"
+        aria-hidden={hostDialogOpen || undefined}
+        inert={hostDialogOpen ? true : undefined}
       >
         <p className="day-discussion__eyebrow">{view.dayLabel} · Host display</p>
         <h2 id="day-discussion-heading" ref={headingRef} tabIndex={-1}>
@@ -136,7 +127,7 @@ export function DayDiscussion({
           <button
             type="button"
             className="button button--secondary"
-            disabled={privateDialogOpen}
+            disabled={hostDialogOpen}
             aria-expanded={showHostRoles}
             aria-controls="day-player-cards"
             onClick={() => {
@@ -145,7 +136,7 @@ export function DayDiscussion({
           >
             {showHostRoles ? 'Hide roles' : 'Show roles'}
           </button>
-          <span>Roles change in place on the player cards below.</span>
+          <span>This convenience control changes role details in place.</span>
         </aside>
 
         <section className="day-discussion__guidance" aria-labelledby="voting-requirements-heading">
@@ -165,20 +156,10 @@ export function DayDiscussion({
         </section>
 
         <div id="day-player-cards" className="host-role-view">
-          {hostRoleResult === null ? (
-            <p className="host-role-view__error" role="alert">
-              Player cards are unavailable.
-            </p>
-          ) : hostRoleResult.ok ? (
-            <UnifiedDayPlayerCards view={hostRoleResult.value} showRoles={showHostRoles} />
-          ) : (
-            <p className="host-role-view__error" role="alert">
-              {getHostRoleViewErrorMessage(hostRoleResult.error)}
-            </p>
-          )}
+          <UnifiedDayPlayerCards view={view} showRoles={showHostRoles} />
         </div>
 
-        <aside className="day-discussion__mayor-control" aria-label="Private host controls">
+        <aside className="day-discussion__mayor-control" aria-label="Host controls">
           <div>
             <strong>Mayor reveal</strong>
             <span>Open only when a player has verbally asked to reveal as Mayor.</span>
@@ -187,7 +168,7 @@ export function DayDiscussion({
             ref={revealButtonRef}
             type="button"
             className="button button--primary"
-            disabled={!view.mayorRevealAvailable || privateDialogOpen}
+            disabled={!view.mayorRevealAvailable || hostDialogOpen}
             onClick={() => {
               openDialog('mayor', revealButtonRef.current)
             }}
@@ -206,7 +187,7 @@ export function DayDiscussion({
               ref={executionButtonRef}
               type="button"
               className="button button--danger"
-              disabled={privateExecutionCandidates.length === 0 || privateDialogOpen}
+              disabled={executionCandidates.length === 0 || hostDialogOpen}
               onClick={() => {
                 openDialog('execution', executionButtonRef.current)
               }}
@@ -217,7 +198,7 @@ export function DayDiscussion({
               ref={noExecutionButtonRef}
               type="button"
               className="button button--secondary"
-              disabled={privateDialogOpen}
+              disabled={hostDialogOpen}
               onClick={() => {
                 openDialog('no-execution', noExecutionButtonRef.current)
               }}
@@ -235,8 +216,8 @@ export function DayDiscussion({
             className={`mayor-reveal${dialog === 'execution' ? ' mayor-reveal--execution' : ''}`}
             role="alertdialog"
             aria-modal="true"
-            aria-labelledby="private-day-dialog-heading"
-            aria-describedby={dialog === 'no-execution' ? 'private-day-dialog-warning' : undefined}
+            aria-labelledby="host-day-dialog-heading"
+            aria-describedby={dialog === 'no-execution' ? 'host-day-dialog-warning' : undefined}
             tabIndex={-1}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -250,11 +231,11 @@ export function DayDiscussion({
             </p>
             {dialog === 'mayor' ? (
               <>
-                <h3 id="private-day-dialog-heading">Confirm a Mayor’s public reveal</h3>
+                <h3 id="host-day-dialog-heading">Confirm a Mayor’s public reveal</h3>
                 <CandidateList
                   legend="Select the player who verbally revealed"
                   name="mayor-reveal-candidate"
-                  candidates={privateMayorCandidates}
+                  candidates={mayorCandidates}
                   selectedPlayerId={selectedMayorPlayerId}
                   detail="Eligible living Mayor"
                   onSelect={(playerId) => {
@@ -273,7 +254,7 @@ export function DayDiscussion({
                 )}
                 {revealError === null ? null : (
                   <p className="mayor-reveal__error" role="alert">
-                    {getMayorRevealErrorMessage(revealError, privateMayorCandidates)}
+                    {getMayorRevealErrorMessage(revealError, mayorCandidates)}
                   </p>
                 )}
                 <DialogActions
@@ -285,7 +266,7 @@ export function DayDiscussion({
                       completeOutcome(() => {
                         const completed = onConfirmMayorReveal(selectedMayor.playerId)
                         if (completed) {
-                          onPrivatePresentationChange(false)
+                          onDialogPresentationChange(false)
                           setDialog(null)
                           setSelectedMayorPlayerId(null)
                           onClearRevealError()
@@ -298,9 +279,9 @@ export function DayDiscussion({
               </>
             ) : dialog === 'execution' ? (
               <>
-                <h3 id="private-day-dialog-heading">Execute a player</h3>
+                <h3 id="host-day-dialog-heading">Execute a player</h3>
                 <ExecutionCandidateGroups
-                  candidates={privateExecutionCandidates}
+                  candidates={executionCandidates}
                   selectedPlayerId={selectedExecutionPlayerId}
                   onSelect={(playerId) => {
                     setSelectedExecutionPlayerId(playerId)
@@ -348,8 +329,8 @@ export function DayDiscussion({
               </>
             ) : (
               <>
-                <h3 id="private-day-dialog-heading">End {view.dayLabel} without an execution?</h3>
-                <p id="private-day-dialog-warning" className="mayor-reveal__warning">
+                <h3 id="host-day-dialog-heading">End {view.dayLabel} without an execution?</h3>
+                <p id="host-day-dialog-warning" className="mayor-reveal__warning">
                   No player will be executed today.
                   <br />
                   This action cannot be undone.
@@ -378,7 +359,7 @@ export function DayDiscussion({
 function UnifiedDayPlayerCards({
   view,
   showRoles,
-}: Readonly<{ view: HostRoleDayView; showRoles: boolean }>) {
+}: Readonly<{ view: DayDiscussionView; showRoles: boolean }>) {
   return (
     <div className="host-role-view__groups">
       {view.groups.map((group) => (
@@ -420,21 +401,24 @@ function UnifiedDayPlayerCards({
                               <strong>
                                 {showRoles
                                   ? player.activeRoleDisplayName
-                                  : (player.publicRole?.displayName ?? 'Role hidden')}
+                                  : (player.announcedRole?.displayName ?? 'Role hidden')}
                               </strong>
                               {!showRoles ||
                               player.originallyAssignedRoleDisplayName === null ? null : (
                                 <span>Originally: {player.originallyAssignedRoleDisplayName}</span>
                               )}
-                              {player.publicRole?.status === 'publicly-revealed-mayor' ? (
+                              {player.announcedRole?.status === 'publicly-revealed-mayor' ? (
                                 <span>Mayor revealed</span>
                               ) : null}
-                              {player.publicRole?.status === 'publicly-revealed-mayor' &&
+                              {player.announcedRole?.status === 'publicly-revealed-mayor' &&
                               player.status === 'alive' ? (
                                 <span className="day-player__mayor-reminder">
                                   This player counts as 3 votes.
                                 </span>
                               ) : null}
+                              {player.deathCause === null ? null : (
+                                <span>{formatDayDeathCause(player.deathCause)}</span>
+                              )}
                             </div>
                           </li>
                         ))}
@@ -452,7 +436,7 @@ function UnifiedDayPlayerCards({
 }
 
 function getHostRoleCardClass(
-  alignment: HostRoleDayView['groups'][number]['alignment'],
+  alignment: DayDiscussionView['groups'][number]['alignment'],
 ):
   | 'host-role-card host-role-card--mafia'
   | 'host-role-card host-role-card--town'
@@ -467,15 +451,16 @@ function getHostRoleCardClass(
   }
 }
 
-function getHostRoleViewErrorMessage(error: HostRoleDayViewError): string {
-  switch (error.type) {
-    case 'INVALID_ACTIVE_DAY_ROLE':
-      return 'A player’s active role could not be derived safely. Host roles remain hidden.'
-    case 'INVALID_DAY_DISCUSSION_GAME':
-    case 'DAY_DISCUSSION_PHASE_MISMATCH':
-    case 'INVALID_DAY_DISCUSSION_PARTICIPANTS':
-    case 'INVALID_DAY_DISCUSSION_COUNTERS':
-      return 'The current day state could not be validated. Host roles remain hidden.'
+function formatDayDeathCause(cause: NonNullable<DayPlayerView['deathCause']>): string {
+  switch (cause.kind) {
+    case 'night-death':
+      return `Died during Night ${String(cause.nightNumber)}`
+    case 'day-execution':
+      return `Executed on Day ${String(cause.dayNumber)}`
+    case 'jester-revenge':
+      return `Killed by Jester revenge during Night ${String(cause.nightNumber)}`
+    case 'final-killing-role-showdown':
+      return 'Died in the final killing-role showdown'
   }
 }
 

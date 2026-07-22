@@ -258,16 +258,44 @@ describe('sequential Night Runner UI', () => {
 
     const resultHeading = screen.getByRole('heading', { name: 'Sheriff' })
     expect(resultHeading).toHaveFocus()
-    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
+    expect(screen.getByText('YOUR TARGET IS NOT SUSPICIOUS')).toHaveClass(
+      'sheriff-result--not-suspicious',
+    )
     expect(document.querySelector('.immediate-outcome')).toHaveClass('turn-surface--town')
     expect(screen.queryByText('Action recorded')).toBeNull()
 
     expect(screen.getAllByRole('button')).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByRole('heading', { name: 'Final night resolution prepared' })).toHaveFocus()
-    expect(screen.queryByText('NOT SUSPICIOUS')).toBeNull()
+    expect(screen.queryByText('YOUR TARGET IS NOT SUSPICIOUS')).toBeNull()
     expect(screen.queryByText('Target: Target')).toBeNull()
     expect(screen.queryByText('Outcome acknowledged')).toBeNull()
+  })
+
+  it('shows the exact suspicious result as the red visual focus with its reason', () => {
+    const workflow = actorWorkflow(
+      startedWorkflow([
+        { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+        { roleId: ROLE_IDS.serialKiller, name: 'Target' },
+      ]),
+      ROLE_IDS.sheriff,
+    )
+    render(<NightHarness initialWorkflow={workflow} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Target, Serial Killer, alive, available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
+
+    expect(screen.getByText('YOUR TARGET IS SUSPICIOUS')).toHaveClass('sheriff-result--suspicious')
+    expect(screen.getByText('Target')).toBeVisible()
+    expect(screen.getByText('Serial Killer')).toBeVisible()
+    expect(screen.getByText('Neutral')).toBeVisible()
+    expect(screen.getByText('Reason: Serial Killers appear suspicious.')).toBeVisible()
+
+    const css = readFileSync(resolve('src/features/night-runner/NightRunner.css'), 'utf8')
+    expect(css).toMatch(/\.sheriff-result--suspicious\s*\{[\s\S]*?color:\s*var\(--danger-strong\)/)
+    expect(css).toMatch(
+      /\.sheriff-result--not-suspicious\s*\{[\s\S]*?color:\s*var\(--success-strong\)/,
+    )
   })
 
   it('shows the immediate four-role Group D card without revealing the actual role', () => {

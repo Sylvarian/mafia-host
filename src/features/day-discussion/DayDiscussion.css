@@ -2,7 +2,7 @@
   min-width: 0;
 }
 
-.day-discussion__public {
+.day-discussion__content {
   display: grid;
   gap: 1.5rem;
   min-width: 0;
@@ -534,7 +534,7 @@
 }
 
 @media (max-width: 20rem) {
-  .day-discussion__public,
+  .day-discussion__content,
   .mayor-reveal {
     padding: 0.5rem;
   }

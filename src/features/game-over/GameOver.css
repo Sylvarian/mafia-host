@@ -82,7 +82,7 @@
   list-style: none;
 }
 
-.game-over__players li {
+.game-over__player {
   display: grid;
   min-width: 0;
   gap: 0.2rem;
@@ -90,6 +90,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   background: var(--surface-soft);
+}
+
+.game-over__player--mafia {
+  border-color: var(--mafia);
+  background: var(--faction-mafia-soft);
+}
+
+.game-over__player--town {
+  border-color: var(--town);
+  background: var(--faction-town-soft);
+}
+
+.game-over__player--neutral {
+  border-color: var(--neutral);
+  background: var(--faction-neutral-soft);
 }
 
 .game-over__players span {

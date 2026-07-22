@@ -1,10 +1,9 @@
 export {
   confirmMayorRevealDuringDay,
   createDayDiscussionState,
-  selectHostRoleDayView,
+  selectDayDiscussionView,
   selectDayVotingRequirements,
   selectMayorRevealCandidates,
-  selectPublicDayDiscussionView,
   validateDayDiscussionState,
 } from './day-discussion.ts'
 export type {
@@ -12,11 +11,9 @@ export type {
   ConfirmMayorRevealWorkflowError,
   DayDiscussionState,
   DayVotingRequirementsView,
-  HostRoleDayPlayerView,
-  HostRoleDayView,
-  HostRoleDayViewError,
+  DayDiscussionView,
+  DayDiscussionViewError,
+  DayPlayerView,
   InvalidDayDiscussionStateError,
   MayorRevealCandidateView,
-  PublicDayDiscussionView,
-  PublicDayPlayerView,
 } from './day-discussion.ts'

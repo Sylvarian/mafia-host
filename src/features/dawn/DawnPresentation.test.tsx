@@ -1,17 +1,44 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { NightCompletionView } from '@/application/night-completion/index.ts'
+import type {
+  HostNightPlayerView,
+  NightCompletionView,
+} from '@/application/night-completion/index.ts'
 import { nightFixturePlayerId } from '../../../tests/support/night-action-fixtures.ts'
 import { DawnPresentation } from './DawnPresentation.tsx'
 
-describe('public Dawn presentation', () => {
-  it('keeps deaths hidden and players asleep behind one deliberate finalization control', () => {
+const sarah: HostNightPlayerView = {
+  playerId: nightFixturePlayerId('player-1'),
+  playerDisplayLabel: 'Sarah',
+  activeRoleDisplayName: 'Sheriff',
+  originallyAssignedRoleDisplayName: null,
+  alignment: 'town',
+  alignmentDisplayName: 'Town',
+}
+const george: HostNightPlayerView = {
+  playerId: nightFixturePlayerId('player-2'),
+  playerDisplayLabel: 'George',
+  activeRoleDisplayName: 'Godfather',
+  originallyAssignedRoleDisplayName: 'Framer',
+  alignment: 'mafia',
+  alignmentDisplayName: 'Mafia',
+}
+const peter: HostNightPlayerView = {
+  playerId: nightFixturePlayerId('player-3'),
+  playerDisplayLabel: 'Peter',
+  activeRoleDisplayName: 'Doctor',
+  originallyAssignedRoleDisplayName: null,
+  alignment: 'town',
+  alignmentDisplayName: 'Town',
+}
+
+describe('host Dawn presentation', () => {
+  it('keeps deaths unapplied behind the one deliberate finalization control', () => {
     const onPrepareDawn = vi.fn()
-    const view: NightCompletionView = { status: 'ready-for-dawn' }
     render(
       <DawnPresentation
-        view={view}
+        view={{ status: 'ready-for-dawn' }}
         error={null}
         dayTransitionErrorMessage={null}
         onPrepareDawn={onPrepareDawn}
@@ -21,28 +48,35 @@ describe('public Dawn presentation', () => {
 
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
     expect(screen.queryByText(/died during the night/i)).toBeNull()
-    expect(screen.getByText('Keep every player’s eyes closed, then finalize Dawn.')).toBeVisible()
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Finalize Dawn' }))
-    expect(onPrepareDawn).toHaveBeenCalledTimes(1)
+    expect(onPrepareDawn).toHaveBeenCalledOnce()
   })
 
-  it('renders only public Dawn data and no private-result replay controls', () => {
-    const onBeginDayDiscussion = vi.fn()
+  it('separates rule-compliant announcement text from exact host roles and attackers', () => {
     const view: NightCompletionView = {
       status: 'dawn',
       announcement: {
         outcome: 'deaths',
-        nightNumber: 1,
+        nightNumber: 2,
         deaths: [
           {
-            playerId: nightFixturePlayerId('player-2'),
-            playerDisplayLabel: 'Alex (Player 2)',
-            revealedRoleDisplayName: 'Citizen',
+            playerId: sarah.playerId,
+            playerDisplayLabel: sarah.playerDisplayLabel,
+            revealedRoleDisplayName: null,
           },
         ],
       },
+      hostResults: {
+        deaths: [
+          {
+            ...sarah,
+            cause: { kind: 'ordinary-night-attack', attackers: [george] },
+          },
+        ],
+        conversions: [],
+      },
+      importantEvents: [],
     }
     render(
       <DawnPresentation
@@ -50,23 +84,44 @@ describe('public Dawn presentation', () => {
         error={null}
         dayTransitionErrorMessage={null}
         onPrepareDawn={() => undefined}
-        onBeginDayDiscussion={onBeginDayDiscussion}
+        onBeginDayDiscussion={() => undefined}
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'Dawn deaths' })).toHaveFocus()
-    const deaths = screen.getByRole('list', {
-      name: 'Players who died during the night',
-    })
-    expect(deaths).toHaveTextContent(
-      'Alex (Player 2) died during the night. Their role was Citizen.',
+    expect(screen.getByRole('heading', { name: 'Dawn' })).toHaveFocus()
+    const announcement = screen.getByRole('heading', { name: 'Announce to players' }).parentElement
+    expect(announcement).toHaveTextContent('Sarah died during the night.')
+    expect(announcement).not.toHaveTextContent(/Sheriff|Godfather|Framer/)
+    const hostResults = screen.getByRole('heading', { name: 'Host results' }).parentElement
+    expect(hostResults).toHaveTextContent('Sarah (Sheriff) died')
+    expect(hostResults).toHaveTextContent('George (Godfather, originally Framer)')
+  })
+
+  it('shows exact Doctor-save and two-way immunity participants without duplicate events', () => {
+    const view: NightCompletionView = {
+      status: 'dawn',
+      announcement: { outcome: 'no-deaths', nightNumber: 2 },
+      hostResults: { deaths: [], conversions: [] },
+      importantEvents: [
+        { kind: 'doctor-save', attacker: george, target: sarah, doctors: [peter] },
+        { kind: 'mutual-attack-immunity', firstAttacker: george, secondAttacker: sarah },
+      ],
+    }
+    render(
+      <DawnPresentation
+        view={view}
+        error={null}
+        dayTransitionErrorMessage={null}
+        onPrepareDawn={() => undefined}
+        onBeginDayDiscussion={() => undefined}
+      />,
     )
-    expect(
-      screen.getByText('Ask every player to open their eyes, then begin the daytime stage.'),
-    ).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Acknowledge result/i })).toBeNull()
-    expect(screen.queryByText(/Sheriff result|Investigator result|Detective result/i)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
-    expect(onBeginDayDiscussion).toHaveBeenCalledTimes(1)
+
+    const events = screen.getByRole('heading', { name: 'Important night events' }).parentElement
+    expect(events).toHaveTextContent(
+      'Peter (Doctor) prevented George (Godfather, originally Framer) from killing Sarah (Sheriff).',
+    )
+    expect(events).toHaveTextContent(/attacked each other, but neither attack had any effect/)
+    expect(events?.querySelectorAll('li')).toHaveLength(2)
   })
 })

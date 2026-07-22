@@ -1,14 +1,14 @@
 .dawn-ready,
-.dawn-public {
+.dawn {
   min-width: 0;
-  overflow-wrap: anywhere;
   padding: clamp(1.1rem, 4vw, 2.25rem);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
+  overflow-wrap: anywhere;
 }
 
 .dawn-ready__eyebrow,
-.dawn-public__eyebrow {
+.dawn__eyebrow {
   margin: 0 0 0.45rem;
   font-size: 0.74rem;
   font-weight: 900;
@@ -17,7 +17,7 @@
 }
 
 .dawn-ready h2,
-.dawn-public h2 {
+.dawn h2 {
   margin: 0;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(1.75rem, 5vw, 3rem);
@@ -25,7 +25,7 @@
 }
 
 .dawn-ready .button,
-.dawn-public .button {
+.dawn .button {
   min-height: 2.75rem;
 }
 
@@ -57,55 +57,83 @@
   font-weight: 850;
 }
 
-.dawn-public {
+.dawn {
+  display: grid;
+  gap: 1rem;
   border: 2px solid #b9a575;
-  background: linear-gradient(145deg, #fff8df, #efe3bd);
   color: #302915;
+  background: linear-gradient(145deg, #fff8df, #efe3bd);
 }
 
-.dawn-public__eyebrow {
+.dawn__eyebrow {
   color: #78601f;
 }
 
-.dawn-public__headline {
-  margin: 1.5rem 0;
-  font-size: clamp(1.4rem, 4vw, 2.2rem);
+.dawn__section {
+  min-width: 0;
+  padding: clamp(0.85rem, 3vw, 1.25rem);
+  border: 1px solid #cdbb89;
+  border-radius: var(--radius-medium);
+  background: rgb(255 255 255 / 58%);
+}
+
+.dawn__section h3 {
+  margin: 0 0 0.75rem;
+  color: #68501a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dawn__section p,
+.dawn__section ul {
+  margin-block: 0;
+}
+
+.dawn__section ul {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.25rem;
+}
+
+.dawn__headline {
+  font-size: clamp(1.25rem, 4vw, 1.9rem);
   font-weight: 850;
 }
 
-.dawn-public__deaths {
-  display: grid;
-  gap: 0.85rem;
-  margin: 1.5rem 0;
-  padding: 0;
-  list-style: none;
+.dawn__host-results {
+  border-color: #8da0af;
+  background: rgb(241 247 250 / 86%);
 }
 
-.dawn-public__deaths li {
-  padding: 1rem;
-  border: 1px solid #cdbb89;
-  border-radius: var(--radius-medium);
-  background: rgb(255 255 255 / 55%);
-  font-size: clamp(1.05rem, 3vw, 1.35rem);
+.dawn__events {
+  border-color: #a88c4b;
 }
 
-.dawn-public__boundary {
+.dawn__boundary {
   display: grid;
   gap: 0.2rem;
-  padding-top: 1rem;
+  padding-top: 0.9rem;
   border-top: 1px solid #cdbb89;
 }
 
-.dawn-public__boundary span {
+.dawn__boundary span {
   color: #685b37;
 }
 
 .dawn-error {
-  margin: 1rem 0 0;
+  margin: 0;
   padding: 0.8rem;
   border: 1px solid var(--danger-border);
   border-radius: var(--radius-small);
   color: var(--danger-strong);
   background: var(--danger-soft);
   font-weight: 750;
+}
+
+@media (max-width: 24.375rem) {
+  .dawn > .button {
+    width: 100%;
+  }
 }

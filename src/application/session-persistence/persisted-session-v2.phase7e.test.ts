@@ -45,12 +45,19 @@ function revengeSession(): Extract<ActiveAppSession, Readonly<{ stage: 'revenge-
       game: dawn.value,
       participants: fixture.participants,
       selectedRevenge: selected.value,
+      importantNightEvents: {
+        gameId: dawn.value.id,
+        nightNumber: dawn.value.nightNumber,
+        completeness: 'legacy-unavailable',
+        canonicalSource: null,
+        events: [],
+      },
     },
   }
 }
 
 describe('Phase 7E persistence', () => {
-  it('round-trips a selected mid-revenge boundary without rerolling or public recovery leakage', () => {
+  it('round-trips a selected mid-revenge boundary with exact host recovery metadata', () => {
     const session = revengeSession()
     const envelope = createPersistedSessionEnvelopeV2(session, SAVED_AT)
     const restored = restorePersistedSessionEnvelopeV2(
@@ -72,10 +79,10 @@ describe('Phase 7E persistence', () => {
       nightNumber: 2,
       dayNumber: 1,
       resultLabel: null,
+      playerDisplayLabels: ['Player 1', 'Player 2', 'Player 3', 'Player 4'],
+      currentHostAction: 'Resolve the selected Jester revenge',
     })
-    expect(JSON.stringify(summary)).not.toMatch(
-      /revenge|jester|victim|executioner|role-instance|player-/i,
-    )
+    expect(JSON.stringify(summary)).not.toMatch(/role-instance|player-/i)
 
     const originalResolution = resolveSessionJesterRevenge(session)
     const restoredResolution = resolveSessionJesterRevenge(restored.value.session)
@@ -115,7 +122,7 @@ describe('Phase 7E persistence', () => {
     })
   })
 
-  it('rejects a public Dawn save that retains an unresolved due revenge', () => {
+  it('rejects a Dawn save that retains an unresolved due revenge', () => {
     const envelope = createPersistedSessionEnvelopeV2(revengeSession(), SAVED_AT)
     if (envelope.session.stage !== 'revenge-resolution') {
       throw new Error('Expected revenge persistence.')
@@ -143,7 +150,7 @@ describe('Phase 7E persistence', () => {
     })
   })
 
-  it('rejects a current-version public Dawn save whose faction result is already terminal', () => {
+  it('rejects a current-version Dawn save whose faction result is already terminal', () => {
     const fixture = createNightFixture(
       [
         { roleId: ROLE_IDS.godfather, alive: false },
@@ -159,6 +166,13 @@ describe('Phase 7E persistence', () => {
         game: fixture.game,
         participants: fixture.participants,
         dawnAnnouncement: buildCurrentDawnAnnouncement(fixture.game),
+        importantNightEvents: {
+          gameId: fixture.game.id,
+          nightNumber: fixture.game.nightNumber,
+          completeness: 'legacy-unavailable',
+          canonicalSource: null,
+          events: [],
+        },
       },
     }
 

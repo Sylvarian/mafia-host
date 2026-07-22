@@ -1,6 +1,5 @@
 export {
   acknowledgeSessionExecutionerBriefing,
-  acknowledgeSessionGodfatherPromotion,
   assignSessionRoles,
   beginSessionFirstNight,
   beginSessionNextNight,
@@ -29,7 +28,6 @@ export type {
   DayDiscussionAppSession,
   DayOutcomeAppSession,
   GameOverAppSession,
-  GodfatherPromotionBriefingAppSession,
   ExecutionerBriefingAppSession,
   InvalidActiveAppSessionStageError,
   NightResolutionAppSession,

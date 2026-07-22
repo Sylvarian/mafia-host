@@ -7,6 +7,9 @@ import type {
   NightResolution,
   RoleBlockAttemptOutcome,
 } from '@/domain/resolution/night-resolution-models.ts'
+import type { ImportantNightEvents } from '@/domain/resolution/important-night-events.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
+import { findRoleDefinition } from '@/domain/roles/role-registry.ts'
 
 import type { GameSetupDraft, RoleCount } from '../game-setup/index.ts'
 import type {
@@ -326,6 +329,27 @@ export type PersistedDawnAnnouncementV2 =
       }>[]
     }>
 
+export type PersistedImportantNightEventsV2 = Readonly<{
+  gameId: string
+  nightNumber: number
+  completeness: 'complete' | 'legacy-unavailable'
+  canonicalSource: Readonly<{
+    gameId: string
+    nightNumber: number
+    collectedActions: readonly PersistedSubmittedNightActionV2[]
+    playerStatuses: readonly Readonly<{
+      playerId: string
+      alive: boolean
+      publiclyRevealedRoleId: string | null
+    }>[]
+    doctorPreviousTargets: PersistedGameV2['doctorPreviousTargets']
+    deathRecords: PersistedGameV2['deathRecords']
+    executionerConversions: PersistedGameV2['executionerConversions']
+    pendingJesterRevenges: PersistedGameV2['pendingJesterRevenges']
+    jesterRevengeResolutions: PersistedGameV2['jesterRevengeResolutions']
+  }> | null
+}>
+
 export type PersistedTerminalFactionResultV2 =
   | Readonly<{ kind: 'town-victory'; gameId: string }>
   | Readonly<{
@@ -406,6 +430,7 @@ export type PersistedAppSessionV2 =
       game: PersistedGameV2
       participants: readonly PersistedPlayerV2[]
       dawnAnnouncement: PersistedDawnAnnouncementV2
+      importantNightEvents: PersistedImportantNightEventsV2
     }>
   | Readonly<{
       stage: 'revenge-resolution'
@@ -422,6 +447,7 @@ export type PersistedAppSessionV2 =
         victimPlayerId: string
         resolvedAtNightNumber: number
       }>
+      importantNightEvents: PersistedImportantNightEventsV2
     }>
   | Readonly<{
       stage: 'day-discussion'
@@ -474,7 +500,7 @@ export type SessionStageSummary = Readonly<{
     | 'Setup prepared'
     | 'Role distribution'
     | 'Role distribution confirmed'
-    | 'Private briefing'
+    | 'Executioner briefing'
     | 'Night actions'
     | 'Night resolution'
     | 'Dawn resolution'
@@ -486,7 +512,14 @@ export type SessionStageSummary = Readonly<{
   nightNumber: number | null
   dayNumber: number | null
   resultLabel: 'Town wins' | 'Mafia wins' | 'Serial Killer wins' | 'Draw' | null
+  playerDisplayLabels: readonly string[]
+  currentHostAction: string | null
 }>
+
+type SessionStageBaseSummary = Omit<
+  SessionStageSummary,
+  'playerDisplayLabels' | 'currentHostAction'
+>
 
 export function createPersistedSessionEnvelopeV2(
   session: ActiveAppSession,
@@ -552,16 +585,6 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
             ? null
             : copyImmediateOutcome(session.workflow.currentOutcome),
       })
-    case 'godfather-promotion-briefing':
-      return deepFreeze({
-        stage: 'godfather-promotion-briefing',
-        workflowStatus: 'promotion-briefing',
-        game: copyGame(session.workflow.game),
-        participants: session.workflow.participants.map(copyPlayer),
-        currentStepIndex: 0,
-        completedSteps: [],
-        currentOutcome: null,
-      })
     case 'night-resolution':
       return deepFreeze({
         stage: 'night-resolution',
@@ -578,6 +601,9 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
         game: copyGame(session.workflow.game),
         participants: session.workflow.participants.map(copyPlayer),
         selectedRevenge: { ...session.workflow.selectedRevenge },
+        importantNightEvents: toPersistedImportantNightEventsV2(
+          session.workflow.importantNightEvents,
+        ),
       })
     case 'dawn':
       return deepFreeze({
@@ -599,6 +625,9 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
                   revealedRoleId: death.revealedRoleId,
                 })),
               },
+        importantNightEvents: toPersistedImportantNightEventsV2(
+          session.workflow.importantNightEvents,
+        ),
       })
     case 'day-discussion':
       return deepFreeze({
@@ -679,7 +708,53 @@ export function toPersistedNightResolutionV2(
   })
 }
 
+export function toPersistedImportantNightEventsV2(
+  evidence: ImportantNightEvents,
+): PersistedImportantNightEventsV2 {
+  return deepFreeze({
+    gameId: evidence.gameId,
+    nightNumber: evidence.nightNumber,
+    completeness: evidence.completeness,
+    canonicalSource:
+      evidence.canonicalSource === null
+        ? null
+        : {
+            gameId: evidence.canonicalSource.collectedActions.gameId,
+            nightNumber: evidence.canonicalSource.collectedActions.nightNumber,
+            collectedActions:
+              evidence.canonicalSource.collectedActions.actions.map(copyNightAction),
+            playerStatuses: evidence.canonicalSource.playerStatuses.map((status) => ({
+              ...status,
+            })),
+            doctorPreviousTargets: evidence.canonicalSource.doctorPreviousTargets.map((entry) => ({
+              ...entry,
+            })),
+            deathRecords: evidence.canonicalSource.deathRecords.map((record) => ({
+              ...record,
+              cause: { ...record.cause },
+            })),
+            executionerConversions: evidence.canonicalSource.executionerConversions.map(
+              (record) => ({ ...record }),
+            ),
+            pendingJesterRevenges: evidence.canonicalSource.pendingJesterRevenges.map((record) => ({
+              ...record,
+            })),
+            jesterRevengeResolutions: evidence.canonicalSource.jesterRevengeResolutions.map(
+              (record) => ({ ...record }),
+            ),
+          },
+  })
+}
+
 export function createSessionStageSummary(session: ActiveAppSession): SessionStageSummary {
+  return Object.freeze({
+    ...createSessionStageBaseSummary(session),
+    playerDisplayLabels: selectSessionPlayerDisplayLabels(session),
+    currentHostAction: selectCurrentHostAction(session),
+  })
+}
+
+function createSessionStageBaseSummary(session: ActiveAppSession): SessionStageBaseSummary {
   switch (session.stage) {
     case 'setup':
       return Object.freeze({
@@ -702,21 +777,13 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
       })
     case 'executioner-briefing':
       return Object.freeze({
-        stage: 'Private briefing',
+        stage: 'Executioner briefing',
         playerCount: session.game.players.length,
         nightNumber: session.game.nightNumber,
         dayNumber: session.game.dayNumber,
         resultLabel: null,
       })
     case 'sequential-night':
-      return Object.freeze({
-        stage: 'Night actions',
-        playerCount: session.workflow.game.players.length,
-        nightNumber: session.workflow.game.nightNumber,
-        dayNumber: session.workflow.game.dayNumber,
-        resultLabel: null,
-      })
-    case 'godfather-promotion-briefing':
       return Object.freeze({
         stage: 'Night actions',
         playerCount: session.workflow.game.players.length,
@@ -781,6 +848,94 @@ export function createSessionStageSummary(session: ActiveAppSession): SessionSta
         dayNumber: session.game.dayNumber,
         resultLabel: selectPersistedResultLabel(session.result),
       })
+  }
+}
+
+function selectSessionPlayerDisplayLabels(session: ActiveAppSession): readonly string[] {
+  const players =
+    session.stage === 'setup'
+      ? session.workflow.draft.roster.filter((player) => player.playing)
+      : session.stage === 'role-distribution'
+        ? session.workflow.setup.participatingPlayers
+        : session.stage === 'executioner-briefing'
+          ? session.participants
+          : session.stage === 'sequential-night' ||
+              session.stage === 'night-resolution' ||
+              session.stage === 'revenge-resolution' ||
+              session.stage === 'dawn'
+            ? session.workflow.participants
+            : session.participants
+  return Object.freeze(
+    players.map((player, index) => {
+      const duplicate = players.some(
+        (candidate, candidateIndex) => candidateIndex !== index && candidate.name === player.name,
+      )
+      return duplicate ? `${player.name} (Player ${String(index + 1)})` : player.name
+    }),
+  )
+}
+
+function selectCurrentHostAction(session: ActiveAppSession): string | null {
+  switch (session.stage) {
+    case 'setup':
+      return session.workflow.status === 'editing' ? 'Finish game setup' : 'Assign roles'
+    case 'role-distribution':
+      return session.workflow.status === 'distributing'
+        ? 'Deliver role cards'
+        : 'Begin the first night'
+    case 'executioner-briefing':
+      return 'Deliver the current Executioner target briefing'
+    case 'sequential-night': {
+      const step = session.workflow.steps[session.workflow.currentStepIndex]
+      if (step === undefined) {
+        return 'Finish the current night'
+      }
+      if (step.type === 'mafia-overview') {
+        return 'Continue the Mafia overview'
+      }
+      const player = session.workflow.game.players.find(
+        (candidate) => candidate.playerId === step.actorPlayerId,
+      )
+      const activeRoleId =
+        player === undefined ? null : selectActiveRoleId(session.workflow.game, player.playerId)
+      const role = activeRoleId === null ? undefined : findRoleDefinition(activeRoleId)
+      if (role === undefined) {
+        return 'Continue the current role turn'
+      }
+      const participantIndex = session.workflow.participants.findIndex(
+        (candidate) => candidate.id === step.actorPlayerId,
+      )
+      const participant = session.workflow.participants[participantIndex]
+      if (participant === undefined) {
+        return `Continue the ${role.name} turn`
+      }
+      const duplicate = session.workflow.participants.some(
+        (candidate, candidateIndex) =>
+          candidateIndex !== participantIndex && candidate.name === participant.name,
+      )
+      const label = duplicate
+        ? `${participant.name} (Player ${String(participantIndex + 1)})`
+        : participant.name
+      if (session.workflow.status === 'awaiting-outcome-acknowledgement') {
+        return `Review ${role.name} result — ${label}`
+      }
+      return `${role.name} turn — ${label}`
+    }
+    case 'night-resolution':
+      return 'Finalize Dawn'
+    case 'revenge-resolution':
+      return 'Resolve the selected Jester revenge'
+    case 'dawn':
+      return `Continue to Day ${String(session.workflow.game.nightNumber)}`
+    case 'day-discussion':
+      return `Run Day ${String(session.game.dayNumber)} discussion`
+    case 'day-outcome':
+      return 'Settle the recorded day outcome'
+    case 'post-day-waiting':
+    case 'pending-revenge-waiting':
+      return `Begin Night ${String(session.game.nightNumber + 1)}`
+    case 'game-over':
+      return 'Review the final game state'
   }
 }
 

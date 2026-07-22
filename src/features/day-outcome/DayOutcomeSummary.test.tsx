@@ -3,17 +3,24 @@ import { describe, expect, it } from 'vitest'
 
 import { DayOutcomeSummary } from './DayOutcomeSummary.tsx'
 
-describe('public day-outcome summary', () => {
-  it('focuses and renders an authorized execution reveal without private effects or later controls', () => {
+describe('host day-outcome summary', () => {
+  it('focuses and separates the announcement from exact host role details', () => {
     render(
       <DayOutcomeSummary
         view={{
           dayNumber: 1,
           dayLabel: 'Day 1',
-          outcome: {
+          announcement: {
             kind: 'player-executed',
             playerDisplayLabel: 'Alex (Player 1)',
-            revealedRoleDisplayName: 'Citizen',
+            revealedRoleDisplayName: null,
+          },
+          hostResult: {
+            kind: 'player-executed',
+            playerDisplayLabel: 'Alex (Player 1)',
+            currentRoleDisplayName: 'Jester',
+            originalRoleDisplayName: null,
+            alignmentDisplayName: 'Neutral',
           },
         }}
         status="game-continues"
@@ -24,8 +31,9 @@ describe('public day-outcome summary', () => {
     const heading = screen.getByRole('heading', { name: 'Day complete' })
     expect(heading).toHaveFocus()
     expect(screen.getByText('Alex (Player 1) was executed.')).toBeVisible()
-    expect(screen.getByText('Their role was Citizen.')).toBeVisible()
-    expect(document.body).not.toHaveTextContent(/Jester|Executioner|revenge victim|personal win/i)
+    expect(screen.queryByText(/Their role was/)).toBeNull()
+    expect(screen.getByText('Alex (Player 1) — Jester (Neutral)')).toBeVisible()
+    expect(screen.getByText('Death cause: executed on Day 1')).toBeVisible()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
@@ -35,7 +43,8 @@ describe('public day-outcome summary', () => {
         view={{
           dayNumber: 1,
           dayLabel: 'Day 1',
-          outcome: { kind: 'no-execution' },
+          announcement: { kind: 'no-execution' },
+          hostResult: { kind: 'no-execution' },
         }}
         status="game-continues"
         errorMessage={null}
@@ -44,6 +53,6 @@ describe('public day-outcome summary', () => {
 
     expect(screen.getByText('No player was executed.')).toBeVisible()
     expect(screen.getByText('The game continues.')).toBeVisible()
-    expect(document.body).not.toHaveTextContent(/role was|personal win|target|faction winner/i)
+    expect(screen.getByText('No execution was recorded.')).toBeVisible()
   })
 })

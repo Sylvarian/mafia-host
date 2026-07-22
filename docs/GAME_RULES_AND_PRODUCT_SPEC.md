@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.4 host workflow; implementation complete through Phase 7F.4<br>
+**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.5 host-only authority correction; implementation complete through Phase 7F.5<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -22,7 +22,8 @@ The completed product:
 - Records each role's target.
 - Resolves blocking, framing, investigations, protection, attacks, conversions, deaths, and win conditions.
 - Supports daytime discussion, trials, voting, executions, and Mayor vote weighting.
-- Shows only private information to the host. Players continue using physical role and result cards.
+- Shows all game information only to the host. Players never view or operate the application screen
+  and continue using physical role and result cards.
 
 ### Current implementation boundary
 
@@ -33,25 +34,25 @@ The implemented product currently includes:
 - Executioner target eligibility, assignment, and private briefing.
 - Sequential Night 1+ action confirmation and immediate private outcomes.
 - Deterministic ordinary night resolution.
-- Repeated public Dawns.
-- Repeated day discussion with a public-safe living/dead roster.
-- Public strict-majority trial guidance with execution verdict guidance kept separate.
+- Repeated host Dawns with separate rule-compliant announcements and exact host results.
+- Repeated host day discussion with exact current/original roles, alignment, status, and death causes.
+- Host strict-majority trial guidance with execution verdict guidance kept separate.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
-- Unified alignment-grouped host player cards and a full-width private execution flow, both using
+- Unified alignment-grouped host player cards and a full-width host execution flow, both using
   canonical active role/alignment without repeated per-card alignment text.
 - Three simultaneous Mafia/Town/Neutral target columns with active-role, changed-original-role,
   and alive/dead intelligence while preserving existing target legality.
 - A browser-local next-game setup template containing the full ordered roster, participation
   choices, role quantities, and settings but no match progress.
 - One stable randomized physical-card recipient order with one-click delivery confirmation.
-- Deterministic Godfather succession at the start of Night 2 or later, with a private briefing.
-- One final execution or no-execution record per day and a public-safe post-day summary.
+- Deterministic Godfather succession at the start of Night 2 or later, reported in the existing Mafia overview.
+- One final execution or no-execution record per day with separate announcement and host-result sections.
 - Explicit death causes, permanent neutral personal wins, pending Jester revenge creation, and
   Executioner-to-Jester conversion after proven non-execution target death.
 - Browser-local refresh recovery through setup, Executioner briefing, later nights, mid-revenge
   Dawn resolution, later days, and game over.
-- A pending-revenge gate, next-Dawn random revenge death, post-revenge faction victory, safe
-  post-day waiting, and public-safe game over.
+- A pending-revenge gate, next-Dawn random revenge death, post-revenge faction victory,
+  post-day waiting, and exact host Game Over.
 
 The application does **not** initially provide:
 
@@ -76,6 +77,9 @@ The application does **not** initially provide:
 6. **Reversible host mistakes:** The design should allow correction before finalising a phase and should eventually support undo of the most recent committed step.
 7. **No silent rule invention:** Any rule still marked unresolved in Section 22 must be decided
    before the corresponding mechanic is considered complete. R-001 through R-012 are finalized.
+8. **Host-only authority:** Every application screen is operated by the host. Exact roles, targets,
+   causes, transformations, and outcomes may be visible. What the host may announce aloud remains
+   governed by game rules and is presented separately where useful.
 
 ---
 
@@ -102,8 +106,9 @@ Not required initially:
 The authoritative cross-phase session lives in the application layer and is saved after successful
 authoritative transitions to browser `localStorage` under
 `mafia-host:active-session:v2`. Browser persistence remains outside the domain game model. Restored
-data is untrusted and must be schema-version checked, validated, canonicalised, and acknowledged by
-the host before private information is displayed.
+data is untrusted and must be schema-version checked, validated, and canonicalised before it is used.
+Recovery may show host-useful player and workflow metadata, but must never rerun randomness, replay
+completed results, or put game authority into the URL, document title, console, or history state.
 
 The save is local to one browser profile and device and is not encrypted. It may contain role
 assignments, Executioner targets, actions, investigative results, alive/dead state, and public
@@ -114,7 +119,7 @@ not retain it, and one host tab is recommended because tabs are not synchronised
 Phase 7A.1 uses schema V2 because the sequential immediate-result workflow cannot safely share the
 old collect-all/private-replay semantics. V2 persists setup, distribution, Executioner briefing,
 the sequential current step and canonical completed records, the current narrow immediate outcome,
-the final `night-resolution` boundary, and public Dawn. Phase 7C.1 immediate outcomes exist only
+the final `night-resolution` boundary, and host Dawn. Phase 7C.1 immediate outcomes exist only
 for a current informational or blocked screen; non-informational actions advance immediately and
 new saves contain no separate acknowledged-screen state. V2 never
 persists temporary target selection, focus, dialogs, operation guards, derived labels, display
@@ -134,12 +139,13 @@ V2 before removing V1 and preserves V1 if the V2 write fails.
 
 Current V2 persistence supports repeated night/day cycles, selected mid-revenge Dawn resolution,
 waiting, and game over. Phase 7F neutral-state sub-version `4` adds exact Godfather promotion
-records, the succession enforcement start night, and the unacknowledged promotion-briefing stage.
+records and the succession enforcement start night. The removed promotion-briefing stage remains
+accepted only for deterministic migration into the Mafia overview or exact terminal result.
 An exact sub-version `3` save is accepted with empty promotion history and a cutover at its next
 future night. Restoration therefore never invents a historical random promotion. Every
 sub-version `4` save must contain complete promotion history from its recorded cutover.
 Sub-version `3` persists explicit death causes, permanent personal wins, conversions, pending and
-resolved revenge authority, and canonical day-outcome history together. Public rows,
+resolved revenge authority, and canonical day-outcome history together. Host roster rows,
 revealed-Mayor reminders, living execution candidates, and post-day prose remain derived. A prior
 neutral-state Dawn save can be upgraded from the exact death identities in its announcement. A
 prior Day save with any dead player and no cause evidence is rejected explicitly rather than
@@ -335,7 +341,7 @@ When disabled on night one:
 - Every living Doctor, Godfather, and Serial Killer is omitted.
 - They are not woken, receive no actor-action step, select no target, submit no action, appear in no action review, and are not required by final batch validation.
 - They make no visit and produce no protection or attack attempt.
-- Living Godfathers remain visible in the private Mafia overview.
+- Living Godfathers remain visible in the host Mafia overview.
 - Consort, Framer, Consigliere, Sheriff, Investigator, and Detective continue acting normally.
 
 On night two and later, Doctor, Godfather, and Serial Killer act normally regardless of this setting. When enabled, they also act normally on night one. No fake skipped action or null-target action is created.
@@ -367,15 +373,14 @@ Godfather prevents another promotion; duplicate living Godfathers are preserved.
 Godfather later dies, another eligible Mafia member may be promoted at the start of a later night.
 No living Mafia means no promotion. Night 1 never promotes.
 
-Promotion identity remains private. Before the new Godfather's first action, the host receives one
-private briefing that survives refresh until acknowledged. Restore and save retry never select or
-reroll. Public Dawn, day, post-day, recovery, and game-over disclosure continue to follow their
-existing public-role rules; promotion does not itself reveal a role, cause a death, or change a
-faction victory rule.
+The existing Mafia overview displays **MAFIA OPEN YOUR EYES**, identifies the promoted player as
+the new Godfather, and shows the player's current Godfather and original Mafia roles. Its existing
+Continue action advances directly to the first actionable Mafia role. There is no separate
+promotion briefing or acknowledgement. Restore and save retry never select or reroll.
 
-Acknowledging that briefing is also a terminal boundary for the exact Phase 7F.2 final-two case.
-If the promotion leaves only the promoted Godfather and a Serial Killer alive, the app resolves
-the special draw before exposing any Night action or collecting either finalist's target.
+Starting the night is also a terminal boundary for the exact Phase 7F.2 final-two case. If the
+promotion leaves only the promoted Godfather and a Serial Killer alive, the app resolves the
+special draw before exposing any Night action or collecting either finalist's target.
 
 ### Framer
 
@@ -875,76 +880,86 @@ retry cannot reroll the victim.
 
 ## 13. Dawn
 
-After the last sequential actor is sealed, the application constructs and validates the
-canonical completed action batch, resolves ordinary attacks, protections, and provisional deaths,
-and enters `night-resolution`. Investigative results have already been communicated during each
-actor's wake step and are not presented again. Deaths remain unapplied and hidden.
+After the last sequential actor is sealed, the application constructs and validates the canonical
+completed action batch, resolves ordinary attacks, protections, and provisional deaths, and enters
+`night-resolution`. Investigative results have already been communicated during each actor's wake
+step and are not presented again. Deaths remain unapplied until the host deliberately selects
+**Finalize Dawn** while every player's eyes remain closed. There is no second confirmation dialog.
 
-The host then deliberately selects **Finalize Dawn** while every player's eyes remain closed.
-Inline guidance warns that a private revenge screen may appear before the public announcement.
-There is no second confirmation dialog. At this
-boundary:
+At this boundary:
 
 - Provisional deaths are applied exactly once.
-- Every unblocked Doctor's confirmed target is retained as the minimum next-night repeat-target
-  context, even if that Doctor died, the target died, or the protection was not needed. A blocked
-  Doctor submitted no target and records no new history.
-- Actual roles are made public only when `revealRoleOnDeath` is enabled or a legitimate public
-  reveal already existed.
-- Each final death receives an explicit night-death cause.
-- Every Executioner whose target died receives one explicit permanent conversion to active Jester
-  behavior, without changing original assignment identity or reviving the owner.
-- The active game enters private `dawn-resolution`, resolves any due revenge, evaluates victory,
-  and enters either `dawn-announcement` or `game-over`.
+- Every unblocked Doctor's confirmed target is retained as minimum repeat-target context, even if
+  the Doctor or target died or protection was not needed. A blocked Doctor submitted no target.
+- `revealRoleOnDeath` controls only whether a role is included in the player announcement. The
+  exact current role remains visible to the host.
+- Each final death receives an explicit cause.
+- Every qualifying Executioner receives one permanent conversion to active Jester behavior while
+  retaining the original Executioner assignment and target history.
+- Due Jester revenge is resolved before faction victory, then the app enters `dawn-announcement`
+  or `game-over`.
 
-The public Dawn screen shows only:
+Dawn is one host screen with these sections:
 
-- The night number.
-- Every player who died, once, in participating-player order.
-- A publicly revealed role where permitted.
-- A no-death message when nobody died.
+- **Announce to players:** each current-night death once in participating-player order, plus a role
+  only when the reveal rule authorizes it; or the no-death announcement.
+- **Host results:** exact dead players, current roles, changed original roles, causes, attackers,
+  and current-night conversions.
+- **Important night events:** concise exact confirmed blocks, frames, protected otherwise-lethal
+  attacks, and Godfather/Serial Killer immunity outcomes. The section is omitted when empty.
 
-It does not show causes, attackers, attacks, protections, frames, blocks, investigative results,
-hidden roles, neutral effects, or victory information.
+Important-event authority is captured from canonical resolution before the night is applied. A
+Doctor-save event exists only when one or more unblocked Doctors' confirmed protection changed an
+otherwise-lethal ordinary attack to `protected`. It identifies every relevant Doctor, attacker,
+and target. Protection with no lethal attack, a blocked Doctor, and an attack already nonlethal
+under the Godfather/Serial Killer setting are not Doctor saves. Events use duplicate-safe labels
+and current active roles, include original roles after transformation where useful, and are
+validated on recovery for game/night identity, ordering, duplicates, role ownership, outcomes,
+and matching death evidence. React never reconstructs them from final alive/dead state.
 
-Public announcement examples:
+When the Godfather and Serial Killer attack one another under the nonlethal setting, the host view
+may combine the two reciprocal records into one exact event. A one-way attack remains directional.
+Immediate investigative results are not repeated at Dawn.
+
+Announcement examples:
 
 ```text
-Alice was killed overnight.
+Alice died during the night.
 ```
 
 With role reveal enabled:
 
 ```text
-Alice was killed overnight. Alice was the Doctor.
+Alice died during the night. Their role was Doctor.
 ```
 
 When nobody dies:
 
 ```text
-It was a quiet night. Nobody died.
+No one died during the night.
 ```
 
-The source text contained “quiet now”; this specification assumes “quiet night.”
+If first-night kills are disabled, no Doctor, Godfather, or Serial Killer action exists on Night
+1, so no protection or killing effect from those roles can exist that night.
 
-If first-night kills are disabled, no Doctor, Godfather, or Serial Killer action exists on night one, so no protection or killing effect from those roles can exist for that night.
-
-The explicit **Continue to Day N** operation validates the authoritative current
-Dawn/game/night match, increments only the day counter, drops Dawn/night workflow authority, and
-enters `day-discussion`. The public announcement combines current ordinary and revenge deaths in
-roster order without revealing either cause. Persisted Dawn authority is current-night-only.
+The explicit **Continue to Day N** operation validates the authoritative Dawn/game/night match,
+increments only the day counter, drops Dawn workflow authority, and enters `day-discussion`. The
+announcement combines current ordinary and revenge deaths in roster order without revealing
+either cause. Persisted Dawn authority and important-event evidence are current-night-only.
 
 ---
 
 ## 14. Day discussion
 
-Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.1.
+Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.5.
 
 During day discussion, one host display shows every player with:
 
 - Name
-- Alive/dead state
-- Publicly revealed role, if any
+- Alive/dead state and exact death cause
+- Current active role and alignment
+- Original role when transformed
+- Role authorized for announcement, if any
 - Confirmed Mayor badge
 - A visible reminder that each living revealed Mayor has three votes
 - Votes required to put a player on trial, derived from living participating players
@@ -957,32 +972,29 @@ Available controls:
 - Execute a living participating player.
 - End the day without execution.
 
-Opening the Mayor control crosses a deliberate host-only privacy boundary and lists only living,
-unrevealed Mayor players. The public view never receives hidden assignments, factions, Executioner
-targets, or night state. Multiple Mayor copies reveal independently. The existing
+Opening the Mayor control lists only living, unrevealed Mayor players. Multiple Mayor copies reveal
+independently. The existing
 `publiclyRevealedRoleId` field is the only Mayor-reveal authority.
 
 The role control is hidden by default and is React-only: it never changes or autosaves the
-game/session and returns hidden on refresh, recovery, and new-day entry. The public day selector
-remains role-free. A canonical sanitized host selector always supplies one fixed three-column
+game/session and returns hidden on refresh, recovery, and new-day entry. It is a convenience
+control, not a privacy boundary. One canonical host selector supplies one fixed three-column
 Mafia/Town/Neutral card area with duplicate-safe player labels, visibly distinct living/dead
 states, current active role/alignment, immutable original assignment where different, and
-legitimate public-role status. Toggling changes role content in each existing card without moving
+announcement-role status. Toggling changes role content in each existing card without moving
 or replacing the card. Converted Executioners display active Jester/original
-Executioner; promoted Mafia display active Godfather/original assignment. Executioner targets, personal wins, pending
-revenge, raw IDs, and other private neutral mechanics are excluded. Each full player-card surface
+Executioner; promoted Mafia display active Godfather/original assignment. Each full player-card surface
 uses the current active alignment's light background: Mafia red, Town green, or Neutral grey.
 Column headings provide the textual alignment cue; individual cards do not repeat `Alignment:`
 lines. Alive/dead status, active role, and changed original assignment remain textual. These
 colors are feature-only and non-persistent.
 
-Both final controls use deliberate private confirmations. The execution candidate list is already
-authorized to show role/alignment, so its full-width layout groups living candidates under Mafia, Town, and Neutral
+Both final controls use deliberate host confirmations. The full-width execution candidate layout
+groups living candidates under Mafia, Town, and Neutral
 without changing canonical roster order inside each group. It contains duplicate-safe player
 labels, current active role, and an original assignment only when changed. Column headings carry
-alignment, so cards do not repeat alignment lines. It excludes
-targets, personal wins, pending revenge, and night data. Dialog state and temporary selection are
-not persisted. The same canonical role-view source supplies target, Day, and execution grouping;
+alignment, so cards do not repeat alignment lines. Dialog state and temporary selection are not
+persisted. The same canonical role-view source supplies target, Day, and execution grouping;
 those views do not become persisted authority.
 
 ---
@@ -1000,7 +1012,7 @@ majority of living participating players:
 floor(living participating players / 2) + 1
 ```
 
-The public day display derives this threshold after deaths. Zero living players safely displays
+The host day display derives this threshold after deaths. Zero living players safely displays
 one under the same formula; one living player displays one. The threshold does not include Mayor
 weight.
 
@@ -1055,8 +1067,8 @@ Phase 7C atomically implements steps 1 through 5 and records one immutable `DayO
 `execution-resolution`. Corrected Phase 7D implements step 6 only when no pending revenge exists.
 If revenge is pending, it stops without evaluating any faction predicate. Phase 7E implements step
 7 and stores each numbered day outcome without overwriting earlier authority. The post-day summary
-shows only the public outcome and an authorized role reveal; personal wins, conversions, and
-pending revenge remain private.
+separates the announcement authorized by `revealRoleOnDeath` from exact current/original role and
+alignment details for the host. Neutral and victory authority remains in the canonical game state.
 
 ---
 
@@ -1067,11 +1079,10 @@ and game-over presentation only when no Jester revenge is pending. Phase 7F.2 ev
 opposing killing-role final-two rule before ordinary faction predicates at the same valid
 post-day and post-Dawn boundaries.
 
-The Phase 7D game-over disclosure policy is deliberately conservative: the winning faction or
-draw is public, existing public role reveals remain public, and hidden roles are not automatically
-revealed. Executioner targets, conversions beyond existing public reveal authority, pending
-revenge, and private neutral/personal-win state remain hidden. The temporary host-only day role
-view is not persisted game-over disclosure authority.
+The host-only Game Over view shows the prominent winning faction or draw and the complete final
+state: every player's exact current/original role, alignment, alive/dead status, death cause,
+Executioner target, promotion, conversion, personal wins, and revenge results. The view is derived
+from validated terminal authority and is never persisted as display prose.
 
 Personal wins are permanent records attached to the winning player/role instance. They do not end
 the main game and may coexist with other personal wins and a later Town, Mafia, Serial Killer
@@ -1159,16 +1170,15 @@ The existing Godfather/Serial Killer ordinary-attack authority selects the branc
   `final-killing-role-showdown` deaths at the same post-day or post-Dawn boundary. The game then
   ends in a draw with reason `opposing-killers-mutual-elimination`.
 
-When Godfather succession first creates the eligible pair at the start of a later Night, the host
-still receives the required private promotion briefing. Its acknowledgement performs the same
-terminal check before the wake sequence becomes playable. Mutual-elimination evidence uses that
+When Godfather succession first creates the eligible pair at the start of a later Night, the
+same start-night operation performs the terminal check before the wake sequence becomes playable.
+Mutual-elimination evidence uses that
 started Night's post-Dawn boundary, but no ordinary Night action or target is created.
 
 The mutual-elimination deaths are non-execution deaths. They never create an Executioner personal
 win, but they apply any required Executioner conversion and the configured public death-reveal
 policy. Existing Mayor reveals and all earlier Jester or Executioner personal wins remain
-authoritative. Under the existing conservative game-over disclosure policy, those personal wins
-remain private and hidden roles are not automatically exposed.
+authoritative and are included in the complete host Game Over view.
 
 This rule has explicit precedence: neither Mafia parity nor Serial Killer victory may override the
 draw. It does not change ordinary Town, Mafia, Serial Killer, Jester-revenge, Executioner,
@@ -1400,7 +1410,9 @@ non-execution-death conversions. Corrected Phase 7D implements faction victory o
 revenge is absent, plus safe waiting and game over. Phase 7E implements next-Dawn revenge
 resolution and repeated later-night/day gameplay. Phase 7F.2 implements the opposing killing-role
 final-two draw with precedence over ordinary faction predicates. Phase 7F.4 changes physical host
-ordering and information presentation without changing target legality or resolution mechanics.
+ordering and target presentation. Phase 7F.5 establishes the single host-only display model,
+separate announcement models, exact Dawn evidence, and promotion-in-Mafia-overview flow without
+changing target legality or resolution mechanics.
 
 ### R-001 — Mutual killing disabled
 
@@ -1408,7 +1420,7 @@ ordering and information presentation without changing target legality or resolu
 
 ### R-002 — First-night killing disabled
 
-**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Doctor, Godfather, and Serial Killer actors are omitted entirely. They have no actor-action step, action, immediate outcome, visit, protection, attack attempt, recovery position, or placeholder and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Consort, Framer, Consigliere, Sheriff, Investigator, and Detective continue acting in canonical order. Doctor, Godfather, and Serial Killer act normally when the setting is enabled and on night two or later.
+**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Doctor, Godfather, and Serial Killer actors are omitted entirely. They have no actor-action step, action, immediate outcome, visit, protection, attack attempt, recovery position, or placeholder and are not required in the final batch. Living Godfathers remain in the host Mafia overview. Consort, Framer, Consigliere, Sheriff, Investigator, and Detective continue acting in canonical order. Doctor, Godfather, and Serial Killer act normally when the setting is enabled and on night two or later.
 
 ### R-003 — Consort blocking
 

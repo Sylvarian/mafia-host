@@ -2,7 +2,7 @@ export {
   completeDayWithoutExecution,
   executePlayerAndCompleteDay,
   selectDayExecutionCandidates,
-  selectPublicDayOutcomeView,
+  selectDayOutcomeView,
   validateDayOutcomeState,
 } from './day-outcome.ts'
 export type {
@@ -10,5 +10,5 @@ export type {
   DayExecutionCandidateView,
   DayOutcomeState,
   InvalidDayOutcomeStateError,
-  PublicDayOutcomeView,
+  DayOutcomeView,
 } from './day-outcome.ts'

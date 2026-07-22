@@ -1,7 +1,7 @@
-export { selectPublicGameOverView, validateGameOverState } from './game-over.ts'
+export { selectHostGameOverView, validateGameOverState } from './game-over.ts'
 export type {
   GameOverState,
   InvalidGameOverStateError,
-  PublicGameOverPlayerView,
-  PublicGameOverView,
+  GameOverPlayerView,
+  HostGameOverView,
 } from './game-over.ts'

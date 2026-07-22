@@ -3,6 +3,7 @@ import type { Faction } from '@/domain/roles/faction.ts'
 import { getRoleInstanceDisplayName } from '@/domain/roles/role-display-name.ts'
 import { ROLE_IDS, findRoleDefinition } from '@/domain/roles/role-registry.ts'
 import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
+import { resolveFrames } from '@/domain/resolution/frames.ts'
 import {
   groupHostPlayersByActiveAlignment,
   selectHostPlayerRoleViews,
@@ -28,6 +29,13 @@ export type MafiaOverviewMember = Readonly<{
   playerId: PlayerId
   playerDisplayLabel: string
   roleDisplayName: string
+  originallyAssignedRoleDisplayName: string | null
+}>
+
+export type MafiaOverviewPromotion = Readonly<{
+  promotedPlayerDisplayLabel: string
+  currentRoleDisplayName: 'Godfather'
+  originallyAssignedRoleDisplayName: string
 }>
 
 export type NightTargetOption = HostPlayerRoleView &
@@ -41,7 +49,11 @@ export type NightTargetGroup = HostPlayerAlignmentGroup<NightTargetOption>
 
 export type CurrentNightStepView =
   | (NightStepViewBase &
-      Readonly<{ type: 'mafia-overview'; mafiaMembers: readonly MafiaOverviewMember[] }>)
+      Readonly<{
+        type: 'mafia-overview'
+        mafiaMembers: readonly MafiaOverviewMember[]
+        promotion: MafiaOverviewPromotion | null
+      }>)
   | (NightStepViewBase &
       Readonly<{
         type: 'actor-action'
@@ -73,7 +85,17 @@ export type ImmediateNightOutcomeView =
       Readonly<{
         kind: 'sheriff-result'
         targetDisplayLabel: string
+        targetRoleDisplayName: string
+        targetOriginallyAssignedRoleDisplayName: string | null
+        targetAlignmentDisplayName: 'Mafia' | 'Town' | 'Neutral'
         status: 'suspicious' | 'not-suspicious'
+        reason:
+          | 'framed-tonight'
+          | 'serial-killer-role'
+          | 'godfather-detection-enabled'
+          | 'godfather-detection-disabled'
+          | 'role-appears-suspicious'
+          | 'role-does-not-appear-suspicious'
       }>)
   | (ImmediateNightOutcomeViewBase &
       Readonly<{
@@ -113,6 +135,7 @@ export function selectCurrentNightStepView(
       mafiaMembers: Object.freeze(
         step.mafiaPlayerIds.map((playerId) => selectMafiaMember(workflow, playerId)),
       ),
+      promotion: selectMafiaOverviewPromotion(workflow),
     }
   }
 
@@ -197,13 +220,19 @@ export function selectImmediateNightOutcomeView(
   switch (outcome.kind) {
     case 'blocked':
       return Object.freeze({ ...base, kind: outcome.kind })
-    case 'sheriff-result':
+    case 'sheriff-result': {
+      const target = selectImmediateOutcomeTarget(workflow, outcome.targetPlayerId)
       return Object.freeze({
         ...base,
         kind: outcome.kind,
-        targetDisplayLabel: selectPlayerDisplayLabel(workflow.participants, outcome.targetPlayerId),
+        targetDisplayLabel: target.playerDisplayLabel,
+        targetRoleDisplayName: target.activeRoleDisplayName,
+        targetOriginallyAssignedRoleDisplayName: target.originallyAssignedRoleDisplayName,
+        targetAlignmentDisplayName: target.alignmentDisplayName,
         status: outcome.status,
+        reason: selectSheriffReason(workflow, outcome.targetPlayerId, target.activeRoleDisplayName),
       })
+    }
     case 'investigation-result':
       return Object.freeze({
         ...base,
@@ -232,6 +261,55 @@ export function selectImmediateNightOutcomeView(
   }
 }
 
+function selectImmediateOutcomeTarget(
+  workflow: AwaitingNightOutcomeWorkflow,
+  selectedPlayerId: PlayerId,
+): HostPlayerRoleView {
+  const result = selectHostPlayerRoleViews(workflow.game, workflow.participants)
+  const target = result.ok
+    ? result.value.find((candidate) => candidate.playerId === selectedPlayerId)
+    : undefined
+  if (target === undefined) {
+    throw new Error('The immediate outcome target role is unavailable.')
+  }
+  return target
+}
+
+function selectSheriffReason(
+  workflow: AwaitingNightOutcomeWorkflow,
+  targetPlayerId: PlayerId,
+  targetRoleDisplayName: string,
+): Extract<ImmediateNightOutcomeView, Readonly<{ kind: 'sheriff-result' }>>['reason'] {
+  const confirmedActions = workflow.completedSteps.flatMap((step) =>
+    step.status === 'action-confirmed' ? [step.action] : [],
+  )
+  if (
+    resolveFrames(workflow.game, confirmedActions).some(
+      (frame) => frame.framedPlayerId === targetPlayerId,
+    )
+  ) {
+    return 'framed-tonight'
+  }
+  const target = workflow.game.players.find((player) => player.playerId === targetPlayerId)
+  const activeRoleId =
+    target === undefined ? null : selectActiveRoleId(workflow.game, target.playerId)
+  if (activeRoleId === ROLE_IDS.serialKiller) {
+    return 'serial-killer-role'
+  }
+  if (activeRoleId === ROLE_IDS.godfather) {
+    return workflow.game.settings.godfatherAppearsSuspiciousToSheriff
+      ? 'godfather-detection-enabled'
+      : 'godfather-detection-disabled'
+  }
+  if (activeRoleId === null || targetRoleDisplayName.length === 0) {
+    throw new Error('The Sheriff target role is unavailable.')
+  }
+  return workflow.currentOutcome.kind === 'sheriff-result' &&
+    workflow.currentOutcome.status === 'suspicious'
+    ? 'role-appears-suspicious'
+    : 'role-does-not-appear-suspicious'
+}
+
 function selectMafiaMember(
   workflow: CollectingNightActionsWorkflow,
   playerId: PlayerId,
@@ -253,7 +331,56 @@ function selectMafiaMember(
       activeRoleId === gamePlayer.role.roleId
         ? getRoleInstanceDisplayName(gamePlayer.role, role)
         : role.name,
+    originallyAssignedRoleDisplayName:
+      activeRoleId === gamePlayer.role.roleId
+        ? null
+        : getOriginalRoleDisplayName(gamePlayer.role.roleId, gamePlayer.role),
   })
+}
+
+function selectMafiaOverviewPromotion(
+  workflow: CollectingNightActionsWorkflow,
+): MafiaOverviewPromotion | null {
+  const promotions = workflow.game.godfatherPromotions.filter(
+    (promotion) => promotion.promotedAtNightNumber === workflow.game.nightNumber,
+  )
+  if (promotions.length === 0) {
+    return null
+  }
+  const promotion = promotions[0]
+  if (promotion === undefined || promotions.length !== 1) {
+    throw new Error('The Mafia overview has invalid current Godfather promotion authority.')
+  }
+  const promotedPlayer = workflow.game.players.find(
+    (player) =>
+      player.playerId === promotion.playerId &&
+      player.role.instanceId === promotion.originalRoleInstanceId,
+  )
+  if (promotedPlayer === undefined || promotion.activeRoleId !== ROLE_IDS.godfather) {
+    throw new Error('The promoted Godfather is unavailable to the Mafia overview.')
+  }
+  return Object.freeze({
+    promotedPlayerDisplayLabel: selectPlayerDisplayLabel(
+      workflow.participants,
+      promotedPlayer.playerId,
+    ),
+    currentRoleDisplayName: 'Godfather',
+    originallyAssignedRoleDisplayName: getOriginalRoleDisplayName(
+      promotedPlayer.role.roleId,
+      promotedPlayer.role,
+    ),
+  })
+}
+
+function getOriginalRoleDisplayName(
+  originalRoleId: CollectingNightActionsWorkflow['game']['players'][number]['role']['roleId'],
+  roleInstance: CollectingNightActionsWorkflow['game']['players'][number]['role'],
+): string {
+  const originalRole = findRoleDefinition(originalRoleId)
+  if (originalRole === undefined) {
+    throw new Error('An original Mafia role is absent from the canonical registry.')
+  }
+  return getRoleInstanceDisplayName(roleInstance, originalRole)
 }
 
 function selectRequiredActiveRoleId(

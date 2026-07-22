@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { completeDayWithoutExecution } from '../day-outcome/index.ts'
-import { beginNextNightActionCollection } from '../night-actions/index.ts'
 import { buildCurrentDawnAnnouncement } from '@/domain/resolution/dawn-announcement.ts'
 import { ROLE_IDS } from '@/domain/roles/role-registry.ts'
 import { createNightFixture } from '../../../tests/support/night-action-fixtures.ts'
 import {
-  acknowledgeSessionGodfatherPromotion,
+  beginSessionNextNight,
   settleSessionAfterDayOutcome,
   type DayOutcomeAppSession,
   type DawnAppSession,
@@ -79,20 +78,18 @@ function promotedFinalTwoSession(mutualKillingEnabled: boolean): GameOverAppSess
       settings: { godfatherAndSerialCanKillEachOther: mutualKillingEnabled },
     },
   )
-  const begun = beginNextNightActionCollection(fixture.game, fixture.participants, {
-    next: () => 0,
-  })
-  if (!begun.ok || begun.value.promotion === null) {
-    throw new Error('Expected promoted final-two briefing.')
-  }
-  const acknowledged = acknowledgeSessionGodfatherPromotion({
-    stage: 'godfather-promotion-briefing',
-    workflow: begun.value.workflow,
-  })
-  if (!acknowledged.ok || acknowledged.value.stage !== 'game-over') {
+  const begun = beginSessionNextNight(
+    {
+      stage: 'post-day-waiting',
+      game: fixture.game,
+      participants: fixture.participants,
+    },
+    { next: () => 0 },
+  )
+  if (!begun.ok || begun.value.stage !== 'game-over') {
     throw new Error('Expected promoted final-two game over.')
   }
-  return acknowledged.value
+  return begun.value
 }
 
 function toPhase7EGame(game: PersistedGameV2): Readonly<Record<string, unknown>> {
@@ -182,6 +179,13 @@ describe('opposing killing-role draw persistence', () => {
             game: fixture.game,
             participants: fixture.participants,
             dawnAnnouncement: buildCurrentDawnAnnouncement(fixture.game),
+            importantNightEvents: {
+              gameId: fixture.game.id,
+              nightNumber: fixture.game.nightNumber,
+              completeness: 'legacy-unavailable',
+              canonicalSource: null,
+              events: [],
+            },
           },
         }
       }

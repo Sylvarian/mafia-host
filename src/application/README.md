@@ -37,7 +37,7 @@ actors cannot be edited. Final advancement constructs one domain-validated
 
 The same shared domain functions resolve frames, Sheriff policy, investigation groups, blocks,
 visits, and Detective tracking for immediate and final results. Detective actions never enter the
-trackable visit ledger. Selectors provide sanitized actor, target, and immediate-outcome views;
+trackable visit ledger. Selectors provide exact host actor, target, and immediate-outcome views;
 actor/result views derive the canonical active role and alignment. Phase 7F.4's shared
 `player-roles` selector derives duplicate-safe label, alive/dead state, active role/alignment, and
 changed original assignment once for Night targets, Day cards, and execution candidates. Night
@@ -46,44 +46,40 @@ groups; presentation metadata never becomes action or game authority.
 
 `night-resolution` remains the narrow deterministic operation over a complete workflow.
 `night-completion` replaces the removed end-of-night private-result presentation slice. It enters
-`night-resolution` with deaths still provisional, then owns the deliberate direct prepare-Dawn
+`night-resolution` with deaths still provisional, then owns the deliberate direct finalize-Dawn
 operation. Dawn applies the retained batch and resolution exactly once, resolves due revenge, and
-drops all private action/resolution material before public Dawn or terminal Game Over.
+retains the bounded validated important-event evidence through revenge resolution and host Dawn.
+Terminal Game Over derives its complete display from final game authority.
 
 `session-persistence` owns the cross-phase `ActiveAppSession`. Exactly one setup, distribution,
 Executioner-briefing, sequential-night, night-resolution, revenge-resolution, Dawn,
 day-discussion, legacy day-outcome, post-day waiting, pending-revenge waiting, or game-over stage
 is authoritative.
-Completing the sequential workflow atomically creates final night resolution; preparing Dawn
-atomically creates the public-only Dawn session.
+Completing the sequential workflow atomically creates final night resolution; finalizing Dawn
+atomically creates the host Dawn session with separate announcement and exact-result models.
 
 Phase 7B adds `day-discussion` and an explicit `DayDiscussionAppSession`. Entering day atomically
 replaces the Dawn session with only one authoritative game plus the participating display roster.
 No Dawn workflow, night workflow, resolution, immediate outcome, private queue, or copied
 assignment map survives as day-session authority.
 
-`day-discussion` constructs separate views. The public view contains the numbered day, stable player
-labels, alive/dead status, legitimate public role labels, revealed-Mayor reminder booleans, and the
-derived strict-majority trial threshold. Execution remains separate guilty-greater-than-innocent
-guidance and has no fixed displayed threshold. It
-contains no hidden role IDs, factions, Executioner targets, or night data. The private candidate
-selector contains only player IDs and stable labels for living unrevealed Mayors, ordered by
-role-instance ordinal then roster position. It is consumed only inside the deliberate host privacy
-boundary. A distinct host-role selector builds canonical Mafia/Town/Neutral groups, duplicate-safe labels, alive/dead status, active
-role/alignment labels, immutable original-role labels when different, and separate legitimate
-public-role status. It reuses canonical active-role derivation so converted Executioners show
-Jester/original Executioner and promoted Mafia show Godfather/original assignment. It cannot return
-targets, personal wins, pending revenge, raw IDs, or full game state.
+`day-discussion` constructs one host view containing the numbered day, stable player labels,
+alive/dead status and causes, current/original roles, alignment, announcement-role status,
+revealed-Mayor reminders, and the derived strict-majority trial threshold. Execution remains
+separate guilty-greater-than-innocent guidance and has no fixed displayed threshold. Narrow command
+candidate selectors provide only the authority required to confirm a Mayor reveal or execution.
+The shared `player-roles` selector builds canonical Mafia/Town/Neutral groups and reuses active-role
+derivation so converted Executioners show Jester/original Executioner and promoted Mafia show
+Godfather/original assignment.
 
-Phase 7C adds `day-outcome`. Phase 7F extends its private living execution-candidate selector with
-current active role/alignment and optional original assignment while excluding neutral targets,
-wins, revenge, and night data. Its public selector exposes only Day number, executed-player label, and
-an authorized role reveal, or no execution. The execute/no-execution use cases call one pure domain
+Phase 7C adds `day-outcome`. Its living execution-candidate selector exposes current active
+role/alignment and optional original assignment. The Phase 7F.5 view contains a rule-compliant
+announcement plus exact host current/original role and alignment results. The execute/no-execution use cases call one pure domain
 operation and replace editable Day authority atomically; no Dawn/night authority, temporary
 dialog state, winner, revenge victim, or next-night workflow survives or is created.
 
 The slice defines schema V2, envelope validation, stage-specific restoration, canonical
-reconstruction, deep freezing, public-safe summaries, and narrow V1 migration. V2 persists
+reconstruction, deep freezing, validated host recovery summaries, and narrow V1 migration. V2 persists
 canonical sequential records, a current informational or blocked outcome where applicable, and the
 final night-resolution boundary. It does not persist a fabricated non-informational outcome, an
 acknowledged-screen state, sequence arrays, derived labels/descriptions,
@@ -145,11 +141,10 @@ reevaluate victory. New day completions settle before a single save. Restored Ph
 settle only after Continue and then save once; no randomness, counter advancement, revenge action,
 or next-night workflow occurs.
 
-`application/game-over` validates the authoritative game/result pair and builds the sole public
-game-over view. It exposes duplicate-safe names, alive/dead state, and existing public role reveals
-only. Phase 7F.2 adds a short public-safe explanation for each exact draw reason. It excludes
-stable IDs, hidden assignments, targets, conversions, pending revenge, and
-personal wins. Schema V2 adds exact waiting and terminal session variants while retaining existing
+`application/game-over` validates the authoritative game/result pair and builds the sole host
+Game Over view. It exposes duplicate-safe names, exact current/original roles, alignment,
+alive/dead state and causes, Executioner targets, promotions, conversions, personal wins, revenge
+results, and exact draw explanations. Schema V2 adds exact waiting and terminal session variants while retaining existing
 V1 migration and existing Phase 7C/7C.1 V2 compatibility.
 
 Phase 7E adds the explicit begin-next-night use case and the private `revenge-resolution` app
@@ -167,10 +162,10 @@ outcome and victim-free obligation, rejects partial/forged cross-cycle authority
 mechanics or randomness. Recovery summarizes the private revenge stage only as `Dawn resolution`.
 
 Phase 7F keeps schema V2 and writes neutral-state sub-version `4`, adding exact canonical
-Godfather-promotion history, its enforcement start night, and an unacknowledged private briefing
-stage. Restoration reconstructs the already-promoted wake order without consuming randomness,
-rejects partial/forged version-4 histories, and summarizes the briefing only as generic Night
-actions. Exact Phase 7E sub-version 3 saves receive empty promotion history with enforcement
+Godfather-promotion history and its enforcement start night. Restoration reconstructs the
+already-promoted wake order without consuming randomness and rejects partial/forged version-4
+histories. Phase 7F.5 accepts the removed promotion stage only as migration input, returns the
+sequential Mafia overview or terminal Game Over, and writes the canonical stage back. Exact Phase 7E sub-version 3 saves receive empty promotion history with enforcement
 starting on their next future night, so migration never fabricates a past random choice.
 
 Phase 7F.1 `game-setup/next-game-setup-template` is a separate application contract and use-case
@@ -205,7 +200,18 @@ receive a narrow upgrade to that terminal session. Restoration returns the canon
 browser write-back; recovery succeeds only after that write, while a failed write preserves the
 original save for retry.
 
-When a private succession briefing creates the eligible final two, acknowledgement runs the
-narrow post-promotion terminal evaluator before returning a sequential-Night session. A save
-failure retains that exact evaluated session for retry, so linked deaths are neither reapplied nor
-reevaluated.
+When succession creates the eligible final two, the begin-next-night coordinator runs the narrow
+post-promotion terminal evaluator before returning any sequential-Night session. Otherwise the
+current promotion is derived inside the Mafia overview. Save failure retains the exact evaluated
+session for retry, so linked deaths are neither reapplied nor reevaluated.
+
+Phase 7F.5 `night-completion` captures `ImportantNightEvents` before applying the night and carries
+it through revenge resolution into Dawn. Application selectors combine canonical player-role views
+with that evidence to produce exact death attackers, Doctor saves, blocks, frames, one-way
+immunity, and duplicate-free reciprocal immunity. Announcement selectors remain separate and obey
+`revealRoleOnDeath`. New Dawn/revenge saves require the evidence; exact older saves restore with an
+explicit `legacy-unavailable` marker rather than fabricated detail. Current saves carry the bounded
+pre-night mutable-state snapshot and confirmed action batch needed to recompute and reapply complete
+evidence against the one restored game during strict restoration. Recovery summaries show
+duplicate-safe player names and the next host action, while persistence still excludes display
+prose, CSS, focus, dialogs, and unconfirmed input.

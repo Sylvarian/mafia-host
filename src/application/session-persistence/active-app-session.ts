@@ -54,7 +54,7 @@ import { createTrustedGameOverStateFromEvaluation } from '../game-over/game-over
 import {
   beginFinalNightResolution,
   continueJesterRevengeResolution,
-  prepareDawnAnnouncement,
+  finalizeNightAtDawn,
   type DawnWorkflow,
   type NightCompletionError,
   type ReadyForDawnWorkflow,
@@ -67,7 +67,6 @@ import {
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
   type ActiveNightActionCollectionWorkflow,
-  type CollectingNightActionsWorkflow,
   type NightActionCollectionError,
 } from '../night-actions/index.ts'
 import {
@@ -101,11 +100,6 @@ export type ExecutionerBriefingAppSession = Readonly<{
 export type SequentialNightAppSession = Readonly<{
   stage: 'sequential-night'
   workflow: Exclude<ActiveNightActionCollectionWorkflow, Readonly<{ status: 'complete' }>>
-}>
-
-export type GodfatherPromotionBriefingAppSession = Readonly<{
-  stage: 'godfather-promotion-briefing'
-  workflow: CollectingNightActionsWorkflow
 }>
 
 export type NightResolutionAppSession = Readonly<{
@@ -158,7 +152,6 @@ export type ActiveAppSession =
   | SetupAppSession
   | RoleDistributionAppSession
   | ExecutionerBriefingAppSession
-  | GodfatherPromotionBriefingAppSession
   | SequentialNightAppSession
   | NightResolutionAppSession
   | DawnAppSession
@@ -180,7 +173,6 @@ export type ActiveAppSessionOperation =
   | 'acknowledge-executioner-briefing'
   | 'previous-executioner-briefing'
   | 'next-executioner-briefing'
-  | 'acknowledge-godfather-promotion'
   | 'confirm-night-target'
   | 'continue-night'
   | 'prepare-dawn'
@@ -458,7 +450,7 @@ export function prepareSessionDawn(
   if (session.stage !== 'night-resolution') {
     return invalidStage('prepare-dawn', session.stage)
   }
-  const result = prepareDawnAnnouncement(session.workflow, randomSource)
+  const result = finalizeNightAtDawn(session.workflow, randomSource)
   return result.ok ? toDawnSession(result.value) : result
 }
 
@@ -621,8 +613,11 @@ export function beginSessionNextNight(
   session: ActiveAppSession,
   randomSource: RandomSource,
 ): DomainResult<
-  SequentialNightAppSession | GodfatherPromotionBriefingAppSession,
-  NightActionCollectionError | InvalidActiveAppSessionStageError
+  SequentialNightAppSession | GameOverAppSession,
+  | NightActionCollectionError
+  | FinalizeFactionVictoryError
+  | InvalidGameOverStateError
+  | InvalidActiveAppSessionStageError
 > {
   if (session.stage !== 'post-day-waiting' && session.stage !== 'pending-revenge-waiting') {
     return invalidStage('begin-next-night', session.stage)
@@ -631,27 +626,11 @@ export function beginSessionNextNight(
   if (!result.ok) {
     return result
   }
-  return result.value.promotion === null
-    ? succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value.workflow }))
-    : succeed(
-        Object.freeze({
-          stage: 'godfather-promotion-briefing',
-          workflow: result.value.workflow,
-        }),
-      )
-}
-
-export function acknowledgeSessionGodfatherPromotion(
-  session: ActiveAppSession,
-): DomainResult<
-  SequentialNightAppSession | GameOverAppSession,
-  FinalizeFactionVictoryError | InvalidGameOverStateError | InvalidActiveAppSessionStageError
-> {
-  if (session.stage !== 'godfather-promotion-briefing') {
-    return invalidStage('acknowledge-godfather-promotion', session.stage)
+  if (result.value.promotion === null) {
+    return succeed(Object.freeze({ stage: 'sequential-night', workflow: result.value.workflow }))
   }
   const evaluationResult = evaluateAndFinalizePostPromotionFinalTwoKillingRoleOutcome(
-    session.workflow.game,
+    result.value.workflow.game,
   )
   if (!evaluationResult.ok) {
     return evaluationResult
@@ -660,13 +639,13 @@ export function acknowledgeSessionGodfatherPromotion(
     return succeed(
       Object.freeze({
         stage: 'sequential-night',
-        workflow: session.workflow,
+        workflow: result.value.workflow,
       }),
     )
   }
   const gameOverResult = createTrustedGameOverStateFromEvaluation(
     evaluationResult.value,
-    session.workflow.participants,
+    result.value.workflow.participants,
   )
   return gameOverResult.ok
     ? succeed(

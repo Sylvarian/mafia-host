@@ -109,12 +109,24 @@ function CollectionStep({
 
       {step.type === 'mafia-overview' ? (
         <div className="night-instruction night-instruction--mafia">
-          <p className="night-instruction__prompt">Open your eyes.</p>
+          <p className="night-instruction__prompt">MAFIA OPEN YOUR EYES</p>
+          {step.promotion === null ? null : (
+            <div className="night-instruction__promotion">
+              <strong>{step.promotion.promotedPlayerDisplayLabel} is the new Godfather.</strong>
+              <span>
+                Originally: {step.promotion.originallyAssignedRoleDisplayName} · Current role:{' '}
+                {step.promotion.currentRoleDisplayName}
+              </span>
+            </div>
+          )}
           <ul aria-label="Living Mafia overview">
             {step.mafiaMembers.map((member) => (
               <li key={member.playerId}>
                 <span>{member.playerDisplayLabel}</span>
                 <strong>{member.roleDisplayName}</strong>
+                {member.originallyAssignedRoleDisplayName === null ? null : (
+                  <small>Originally: {member.originallyAssignedRoleDisplayName}</small>
+                )}
               </li>
             ))}
           </ul>
@@ -264,10 +276,20 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
     case 'sheriff-result':
       return (
         <>
-          <p className="immediate-outcome__result">
-            {view.status === 'suspicious' ? 'SUSPICIOUS' : 'NOT SUSPICIOUS'}
+          <p className={`immediate-outcome__result sheriff-result sheriff-result--${view.status}`}>
+            {view.status === 'suspicious'
+              ? 'YOUR TARGET IS SUSPICIOUS'
+              : 'YOUR TARGET IS NOT SUSPICIOUS'}
           </p>
-          <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
+          <div className="sheriff-result__details">
+            <strong>{view.targetDisplayLabel}</strong>
+            <span>{view.targetRoleDisplayName}</span>
+            {view.targetOriginallyAssignedRoleDisplayName === null ? null : (
+              <span>Originally: {view.targetOriginallyAssignedRoleDisplayName}</span>
+            )}
+            <span>{view.targetAlignmentDisplayName}</span>
+          </div>
+          <p className="immediate-outcome__message">Reason: {getSheriffReason(view)}</p>
         </>
       )
     case 'investigation-result':
@@ -291,6 +313,25 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
           <p className="immediate-outcome__target">Tracked: {view.targetDisplayLabel}</p>
         </>
       )
+  }
+}
+
+function getSheriffReason(
+  view: Extract<ImmediateNightOutcomeView, Readonly<{ kind: 'sheriff-result' }>>,
+): string {
+  switch (view.reason) {
+    case 'framed-tonight':
+      return `${view.targetDisplayLabel} was framed tonight.`
+    case 'serial-killer-role':
+      return 'Serial Killers appear suspicious.'
+    case 'godfather-detection-enabled':
+      return 'Godfather detection is enabled for this game.'
+    case 'godfather-detection-disabled':
+      return 'Godfather detection is disabled for this game.'
+    case 'role-appears-suspicious':
+      return `${view.targetRoleDisplayName} appears suspicious.`
+    case 'role-does-not-appear-suspicious':
+      return `${view.targetRoleDisplayName} does not appear suspicious.`
   }
 }
 

@@ -54,24 +54,6 @@ export type BeginDayDiscussionWorkflowError =
 export type ConfirmMayorRevealWorkflowError =
   ConfirmMayorRevealError | InvalidDayDiscussionStateError
 
-export type PublicDayPlayerView = Readonly<{
-  playerId: PlayerId
-  playerDisplayLabel: string
-  status: 'alive' | 'dead'
-  publicRoleDisplayName: string | null
-  publiclyRevealedMayor: boolean
-  hasThreeVoteReminder: boolean
-}>
-
-export type PublicDayDiscussionView = Readonly<{
-  dayNumber: number
-  dayLabel: string
-  livingPlayers: readonly PublicDayPlayerView[]
-  deadPlayers: readonly PublicDayPlayerView[]
-  mayorRevealAvailable: boolean
-  votingRequirements: DayVotingRequirementsView
-}>
-
 export type DayVotingRequirementsView = Readonly<{
   livingPlayerCount: number
   votesToPutOnTrial: number
@@ -82,19 +64,29 @@ export type MayorRevealCandidateView = Readonly<{
   playerDisplayLabel: string
 }>
 
-export type HostRoleDayPlayerView = HostPlayerRoleView &
+export type DayPlayerView = HostPlayerRoleView &
   Readonly<{
-    publicRole: Readonly<{
+    announcedRole: Readonly<{
       displayName: string
       status: 'publicly-revealed-mayor' | 'revealed-on-death'
     }> | null
+    deathCause:
+      | Readonly<{ kind: 'night-death'; nightNumber: number }>
+      | Readonly<{ kind: 'day-execution'; dayNumber: number }>
+      | Readonly<{ kind: 'jester-revenge'; nightNumber: number }>
+      | Readonly<{ kind: 'final-killing-role-showdown' }>
+      | null
   }>
 
-export type HostRoleDayView = Readonly<{
-  groups: ReturnType<typeof groupHostPlayersByActiveAlignment<HostRoleDayPlayerView>>
+export type DayDiscussionView = Readonly<{
+  dayNumber: number
+  dayLabel: string
+  mayorRevealAvailable: boolean
+  votingRequirements: DayVotingRequirementsView
+  groups: ReturnType<typeof groupHostPlayersByActiveAlignment<DayPlayerView>>
 }>
 
-export type HostRoleDayViewError =
+export type DayDiscussionViewError =
   | InvalidDayDiscussionStateError
   | Readonly<{
       type: 'INVALID_ACTIVE_DAY_ROLE'
@@ -102,7 +94,7 @@ export type HostRoleDayViewError =
     }>
 
 export function createDayDiscussionState(
-  dawn: DawnWorkflow,
+  dawn: Pick<DawnWorkflow, 'status' | 'game' | 'participants' | 'dawnAnnouncement'>,
 ): DomainResult<DayDiscussionState, BeginDayDiscussionWorkflowError> {
   const participantResult = copyAndValidateParticipants(dawn.participants, dawn.game)
   if (!participantResult.ok) {
@@ -197,41 +189,6 @@ export function validateDayDiscussionState(
   )
 }
 
-export function selectPublicDayDiscussionView(state: DayDiscussionState): PublicDayDiscussionView {
-  const validatedState = requireValidDayDiscussionState(state)
-  const rows = validatedState.game.players.map((player) => {
-    const publicRole =
-      player.publiclyRevealedRoleId === null
-        ? undefined
-        : findRoleDefinition(player.publiclyRevealedRoleId)
-    if (player.publiclyRevealedRoleId !== null && publicRole === undefined) {
-      throw new Error('A public day role is absent from the canonical role registry.')
-    }
-    const publiclyRevealedMayor =
-      player.publiclyRevealedRoleId === ROLE_IDS.mayor && player.role.roleId === ROLE_IDS.mayor
-
-    return Object.freeze({
-      playerId: player.playerId,
-      playerDisplayLabel: selectPlayerDisplayLabel(validatedState.participants, player.playerId),
-      status: player.alive ? ('alive' as const) : ('dead' as const),
-      publicRoleDisplayName:
-        publicRole === undefined ? null : getRoleInstanceDisplayName(player.role, publicRole),
-      publiclyRevealedMayor,
-      hasThreeVoteReminder: player.alive && publiclyRevealedMayor,
-    })
-  })
-
-  const livingPlayers = Object.freeze(rows.filter((row) => row.status === 'alive'))
-  return Object.freeze({
-    dayNumber: validatedState.game.dayNumber,
-    dayLabel: `Day ${String(validatedState.game.dayNumber)}`,
-    livingPlayers,
-    deadPlayers: Object.freeze(rows.filter((row) => row.status === 'dead')),
-    mayorRevealAvailable: selectMayorRevealCandidates(validatedState).length > 0,
-    votingRequirements: selectDayVotingRequirements(livingPlayers.length),
-  })
-}
-
 export function selectDayVotingRequirements(livingPlayerCount: number): DayVotingRequirementsView {
   if (!Number.isSafeInteger(livingPlayerCount) || livingPlayerCount < 0) {
     throw new RangeError('Living player count must be a non-negative safe integer.')
@@ -277,9 +234,9 @@ export function selectMayorRevealCandidates(
   )
 }
 
-export function selectHostRoleDayView(
+export function selectDayDiscussionView(
   state: DayDiscussionState,
-): DomainResult<HostRoleDayView, HostRoleDayViewError> {
+): DomainResult<DayDiscussionView, DayDiscussionViewError> {
   const stateResult = validateDayDiscussionState(state)
   if (!stateResult.ok) {
     return stateResult
@@ -300,7 +257,7 @@ export function selectHostRoleDayView(
     })
   }
 
-  const rows: HostRoleDayPlayerView[] = []
+  const rows: DayPlayerView[] = []
   for (const hostRow of hostRowsResult.value) {
     const player = stateResult.value.game.players.find(
       (candidate) => candidate.playerId === hostRow.playerId,
@@ -309,11 +266,11 @@ export function selectHostRoleDayView(
       return fail({ type: 'INVALID_ACTIVE_DAY_ROLE', playerId: hostRow.playerId })
     }
 
-    const publicRole =
+    const announcedRole =
       player.publiclyRevealedRoleId === null
         ? undefined
         : findRoleDefinition(player.publiclyRevealedRoleId)
-    if (player.publiclyRevealedRoleId !== null && publicRole === undefined) {
+    if (player.publiclyRevealedRoleId !== null && announcedRole === undefined) {
       return fail({ type: 'INVALID_ACTIVE_DAY_ROLE', playerId: player.playerId })
     }
     const publiclyRevealedMayor =
@@ -328,27 +285,54 @@ export function selectHostRoleDayView(
         originallyAssignedRoleDisplayName: hostRow.originallyAssignedRoleDisplayName,
         alignment: hostRow.alignment,
         alignmentDisplayName: hostRow.alignmentDisplayName,
-        publicRole:
-          publicRole === undefined
+        announcedRole:
+          announcedRole === undefined
             ? null
             : Object.freeze({
                 displayName:
                   player.publiclyRevealedRoleId === player.role.roleId
-                    ? getRoleInstanceDisplayName(player.role, publicRole)
-                    : publicRole.name,
+                    ? getRoleInstanceDisplayName(player.role, announcedRole)
+                    : announcedRole.name,
                 status: publiclyRevealedMayor
                   ? ('publicly-revealed-mayor' as const)
                   : ('revealed-on-death' as const),
               }),
+        deathCause: selectDayDeathCause(stateResult.value.game, player.playerId),
       }),
     )
   }
 
   return succeed(
     Object.freeze({
+      dayNumber: stateResult.value.game.dayNumber,
+      dayLabel: `Day ${String(stateResult.value.game.dayNumber)}`,
+      mayorRevealAvailable: selectMayorRevealCandidates(stateResult.value).length > 0,
+      votingRequirements: selectDayVotingRequirements(
+        rows.filter((row) => row.status === 'alive').length,
+      ),
       groups: Object.freeze(groupHostPlayersByActiveAlignment(rows)),
     }),
   )
+}
+
+function selectDayDeathCause(
+  game: GameState,
+  selectedPlayerId: PlayerId,
+): DayPlayerView['deathCause'] {
+  const record = game.deathRecords.find((candidate) => candidate.playerId === selectedPlayerId)
+  if (record === undefined) {
+    return null
+  }
+  switch (record.cause.kind) {
+    case 'night-death':
+      return Object.freeze({ kind: record.cause.kind, nightNumber: record.cause.nightNumber })
+    case 'day-execution':
+      return Object.freeze({ kind: record.cause.kind, dayNumber: record.cause.dayNumber })
+    case 'jester-revenge':
+      return Object.freeze({ kind: record.cause.kind, nightNumber: record.cause.nightNumber })
+    case 'final-killing-role-showdown':
+      return Object.freeze({ kind: record.cause.kind })
+  }
 }
 
 function requireValidDayDiscussionState(state: DayDiscussionState): DayDiscussionState {
