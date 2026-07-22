@@ -80,33 +80,36 @@ function CollectionStep({
 }>) {
   const step = selectCurrentNightStepView(workflow)
   const [selectedTargetId, setSelectedTargetId] = useState<PlayerId | null>(null)
+  const surfaceClass =
+    step.type === 'mafia-overview'
+      ? 'night-runner turn-surface turn-surface--mafia'
+      : `night-runner turn-surface turn-surface--${step.faction}`
 
   return (
-    <section className="night-runner" aria-labelledby="night-runner-heading">
+    <section className={surfaceClass} aria-labelledby="night-runner-heading">
       <header className="night-runner__header">
         <div>
-          <p className="night-runner__eyebrow">Private host view · Night {step.nightNumber}</p>
+          <p className="night-runner__eyebrow">
+            Night {step.nightNumber} ·{' '}
+            {step.type === 'mafia-overview' ? 'Mafia' : step.factionLabel}
+          </p>
           <h2 id="night-runner-heading" ref={headingRef} tabIndex={-1}>
-            {step.type === 'mafia-overview'
-              ? 'Living Mafia overview'
-              : `Wake ${step.roleDisplayName} — ${step.actorDisplayLabel}`}
+            {step.type === 'mafia-overview' ? 'Mafia' : step.roleDisplayName}
           </h2>
+          {step.type === 'mafia-overview' ? null : (
+            <p className="night-runner__actor">{step.actorDisplayLabel}</p>
+          )}
         </div>
-        <div className="night-runner__progress" aria-live="polite">
-          <strong>
-            {step.position} of {step.totalSteps}
-          </strong>
-          <span>wake steps</span>
-        </div>
+        <p className="night-runner__progress" aria-live="polite">
+          {step.position} of {step.totalSteps}
+        </p>
       </header>
 
-      <PrivacyWarning />
       {error === null ? null : <NightError error={error} />}
 
       {step.type === 'mafia-overview' ? (
         <div className="night-instruction night-instruction--mafia">
-          <strong>Ask the Mafia to open their eyes.</strong>
-          <p>Review the participating Mafia team. This is an overview, not an action.</p>
+          <p className="night-instruction__prompt">Open your eyes.</p>
           <ul aria-label="Living Mafia overview">
             {step.mafiaMembers.map((member) => (
               <li key={member.playerId}>
@@ -117,18 +120,8 @@ function CollectionStep({
           </ul>
         </div>
       ) : (
-        <div className={`actor-action actor-action--${step.faction}`}>
-          <div className="actor-action__identity">
-            <span>{step.factionLabel}</span>
-            <strong>{step.roleDisplayName}</strong>
-            <p>{step.actorDisplayLabel}</p>
-          </div>
+        <div className="actor-action">
           <p className="actor-action__prompt">{step.hostPrompt}</p>
-          <p className="actor-action__finality">
-            {step.confirmationMode === 'advance-directly'
-              ? 'Confirming this target seals the action and immediately continues to the next actor.'
-              : 'Confirming this target seals the action and shows this actor’s private result.'}
-          </p>
           <div
             className="target-grid"
             role="group"
@@ -146,22 +139,24 @@ function CollectionStep({
                 <div className="target-option" key={target.playerId}>
                   <button
                     type="button"
-                    className={`target-button target-button--${target.faction}${selected ? ' is-selected' : ''}`}
+                    className={`target-button${selected ? ' is-selected' : ''}`}
                     disabled={!target.enabled}
                     aria-pressed={selected}
                     aria-describedby={reason === null ? undefined : reasonId}
-                    aria-label={`${target.playerDisplayLabel}, ${target.roleDisplayName}, ${target.factionLabel}, ${target.alive ? 'alive' : 'dead'}, ${selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}`}
+                    aria-label={`${target.playerDisplayLabel}, ${target.alive ? 'alive' : 'dead'}, ${selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}`}
                     onClick={() => {
                       setSelectedTargetId(target.playerId)
                     }}
                   >
                     <strong>{target.playerDisplayLabel}</strong>
-                    <span className="target-button__role">
-                      {target.roleDisplayName} · {target.factionLabel}
-                    </span>
                     <span>
-                      {target.alive ? 'Alive' : 'Dead'} —{' '}
-                      {selected ? 'selected' : target.enabled ? 'available' : 'unavailable'}
+                      {selected
+                        ? 'Selected'
+                        : target.enabled
+                          ? 'Available'
+                          : target.alive
+                            ? 'Unavailable'
+                            : 'Dead'}
                     </span>
                   </button>
                   {reason === null ? null : (
@@ -215,20 +210,20 @@ function ImmediateOutcome({
 }>) {
   return (
     <section
-      className={`immediate-outcome${view.kind === 'blocked' ? ' immediate-outcome--blocked' : ''}`}
+      className={`immediate-outcome turn-surface turn-surface--${view.faction}${view.kind === 'blocked' ? ' immediate-outcome--blocked' : ''}`}
       aria-labelledby="immediate-outcome-heading"
     >
-      <PrivacyWarning />
-      <p className="immediate-outcome__actor">
-        {view.roleDisplayName} · {view.actorDisplayLabel}
+      <p className="immediate-outcome__eyebrow">
+        Night {view.nightNumber} · {view.factionLabel}
       </p>
       <h2 id="immediate-outcome-heading" ref={headingRef} tabIndex={-1}>
-        {getOutcomeHeading(view)}
+        {view.roleDisplayName}
       </h2>
+      <p className="immediate-outcome__actor">{view.actorDisplayLabel}</p>
       <ImmediateOutcomeContent view={view} />
       {error === null ? null : <NightError error={error} />}
       <button type="button" className="button button--prepare" onClick={onContinue}>
-        Continue to next actor
+        Continue
       </button>
     </section>
   )
@@ -237,12 +232,17 @@ function ImmediateOutcome({
 function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcomeView }>) {
   switch (view.kind) {
     case 'blocked':
-      return <p className="immediate-outcome__message">Your action cannot be performed tonight.</p>
+      return (
+        <>
+          <p className="immediate-outcome__result">BLOCKED</p>
+          <p className="immediate-outcome__message">Your action cannot be performed tonight.</p>
+        </>
+      )
     case 'sheriff-result':
       return (
         <>
           <p className="immediate-outcome__result">
-            {view.status === 'suspicious' ? 'Suspicious' : 'Not suspicious'}
+            {view.status === 'suspicious' ? 'SUSPICIOUS' : 'NOT SUSPICIOUS'}
           </p>
           <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
         </>
@@ -250,8 +250,10 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
     case 'investigation-result':
       return (
         <>
-          <p className="immediate-outcome__result">{view.groupLabel}</p>
-          <p className="immediate-outcome__group">{view.groupRoleDisplayNames.join(' · ')}</p>
+          <p className="immediate-outcome__result">
+            Possible roles: {view.groupRoleDisplayNames.join(' · ')}
+          </p>
+          <p className="immediate-outcome__group">{view.groupLabel}</p>
           <p className="immediate-outcome__target">Target: {view.targetDisplayLabel}</p>
         </>
       )
@@ -260,21 +262,13 @@ function ImmediateOutcomeContent({ view }: Readonly<{ view: ImmediateNightOutcom
         <>
           <p className="immediate-outcome__result">
             {view.result.status === 'visited-nobody'
-              ? `${view.targetDisplayLabel} visited nobody`
-              : `${view.targetDisplayLabel} visited ${view.result.visitedPlayerDisplayLabel}`}
+              ? 'Visited: nobody'
+              : `Visited: ${view.result.visitedPlayerDisplayLabel}`}
           </p>
           <p className="immediate-outcome__target">Tracked: {view.targetDisplayLabel}</p>
         </>
       )
   }
-}
-
-function PrivacyWarning() {
-  return (
-    <p className="night-runner__privacy">
-      Private screen — make sure only the current player can see this information.
-    </p>
-  )
 }
 
 function NightError({ error }: Readonly<{ error: NightActionCollectionError }>) {
@@ -283,17 +277,4 @@ function NightError({ error }: Readonly<{ error: NightActionCollectionError }>) 
       {getNightActionCollectionErrorMessage(error)}
     </p>
   )
-}
-
-function getOutcomeHeading(view: ImmediateNightOutcomeView): string {
-  switch (view.kind) {
-    case 'blocked':
-      return 'BLOCKED'
-    case 'sheriff-result':
-      return 'Sheriff result'
-    case 'investigation-result':
-      return `${view.investigationRole === 'investigator' ? 'Investigator' : 'Consigliere'} result`
-    case 'detective-result':
-      return 'Detective result'
-  }
 }

@@ -2,7 +2,7 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7F.2 retains schema V2 with
+**Persistence:** One versioned local active-session save; Phase 7F.3 retains schema V2 with
 neutral-state sub-version 4, plus a separate complete next-game setup template<br>
 **Backend:** None
 
@@ -296,7 +296,8 @@ Implement target validation:
 
 ### Required rule decisions
 
-- R-002 is decided: omit Godfather and Serial Killer action steps entirely on a disabled first night.
+- R-002 is decided and finalized by Phase 7F.3: omit Doctor, Godfather, and Serial Killer action
+  steps entirely on a disabled first night.
 - Initial physical role order
 
 ### Acceptance criteria
@@ -384,7 +385,8 @@ At minimum:
 - Doctor repeat restriction is per Doctor.
 - Investigator and Consigliere share group logic.
 - Detective sees the confirmed non-Detective visit; Detective actions are not trackable visits.
-- Disabled first-night Godfather and Serial Killer roles produce no action, visit, or attack attempt.
+- Disabled first-night Doctor, Godfather, and Serial Killer roles produce no action, visit,
+  protection, or attack attempt.
 - Multiple simultaneous actions resolve independently of collection order.
 
 ### Acceptance criteria
@@ -534,7 +536,7 @@ Only current-night deaths are announced. No generic migration framework exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7F.2 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7F.3 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -740,7 +742,8 @@ recovery only.**
 - Make Consort, Framer, Godfather, Serial Killer, and Doctor confirmation seal the action and
   advance directly with **Confirm target and continue**.
 - Retain exactly one immediate result screen for Sheriff, Investigator, Consigliere, and Detective,
-  and one **BLOCKED** screen for blocked actors; one **Continue to next actor** seals and advances.
+  and one **BLOCKED** screen for blocked actors; Phase 7F.3 shortens the one sealing action to
+  **Continue**.
 - Remove fabricated `Action recorded` outcomes, the `Outcome acknowledged` screen, its production
   workflow state, persistence fields, selectors, errors, and translations.
 - Replace the Dawn confirmation dialog with one direct **Finalize Dawn** operation and an inline
@@ -1021,6 +1024,52 @@ evaluateGameOutcome(gameState): GameOutcome
 - Existing permanent personal wins survive unchanged under the established private disclosure
   policy.
 - No generic combat, showdown, scripting, backend, or networking abstraction is introduced.
+
+---
+
+### Phase 7F.3 — First-night wake rules and role-first host UX
+
+**Status: Implemented.**
+
+#### Work
+
+- Finalize disabled-first-night authority so living active Doctors, Godfathers, and Serial Killers
+  are absent from the canonical sequence, records, visits, action batch, and recovery position.
+  Preserve unaffected order, enabled Night 1, Night 2+, duplicate copies, promoted active roles,
+  and the existing direct-Dawn boundary when no actor remains.
+- Remove the Executioner `ready` interaction and final confirmation. The final stable-ID briefing
+  acknowledgement now atomically creates Night 1; the no-Executioner route remains direct.
+- Keep active schema V2. Revalidate and canonicalize only exact pre-7F.3 disabled-first-night
+  Doctor saves and fully acknowledged obsolete Executioner-ready saves. Write back changed
+  payloads without consuming randomness or replaying private information; ambiguous evidence
+  fails closed.
+- Make the active role the largest private-turn heading, use concise registry-owned prompts,
+  enlarge targets/results/main actions, and apply feature-only active-alignment turn surfaces:
+  Mafia light red, Town light green, Neutral light grey.
+- Remove repetitive host-only, browser-storage, and private-screen essays from operational UI while
+  retaining actual selector, recovery, focus, and hidden-DOM privacy boundaries.
+- Keep ordinary targets names-only. Group only already-authorized role-bearing host lists under
+  Mafia, Town, and Neutral, retaining active role, transformed original role, status, duplicate-safe
+  labels, and canonical roster order.
+
+#### Tests
+
+- Each omitted role separately and together, unaffected ordering, enabled Night 1, Night 2+,
+  duplicates, no placeholder/action record, direct Dawn, persistence migration, and recovery.
+- Final Executioner delivery direct transition, no second confirmation, no reroll/replay, Strict
+  Mode, rapid operation, failed-save retry, and obsolete-ready migration.
+- Role-first headings/prompts/results, promoted/converted active alignment, 44px controls, 320px,
+  390px, and tablet layouts.
+- Names-only target DOM/ARIA/classes/order, alignment-grouped authorized lists, generic recovery,
+  stale-copy searches, architecture boundaries, and randomness enforcement.
+
+#### Acceptance criteria
+
+- A disabled Night 1 never wakes or records Doctor, Godfather, or Serial Killer; enabled Night 1
+  and Night 2+ remain unchanged, and no other game mechanic changes.
+- The last Executioner target delivery is the only final click before Night 1 and creates it once.
+- The host can identify the current role, prompt, legal targets, result, and continuation at a
+  glance without target-alignment leakage or persisted presentation data.
 
 ---
 

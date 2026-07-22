@@ -12,8 +12,7 @@
 
 .game-over__eyebrow,
 .game-over__explanation,
-.game-over__status,
-.game-over__privacy {
+.game-over__status {
   margin: 0;
 }
 
@@ -61,8 +60,7 @@
 }
 
 .game-over__status,
-.game-over__explanation,
-.game-over__privacy {
+.game-over__explanation {
   color: var(--text-muted);
 }
 

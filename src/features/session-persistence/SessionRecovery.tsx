@@ -117,10 +117,6 @@ export function SessionRecovery(props: SessionRecoveryProps) {
           </span>
           <span>Saved locally at {formatSavedAt(props.envelope.savedAt)}</span>
         </div>
-        <p className="session-recovery__privacy">
-          Continuing may reveal role assignments, night targets, and private results on this
-          host-only screen.
-        </p>
         {props.clearError === null ? null : <ClearError error={props.clearError} />}
         <div className="session-recovery__actions">
           <button type="button" className="button button--prepare" onClick={props.onContinue}>

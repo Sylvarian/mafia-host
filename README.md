@@ -6,7 +6,10 @@ physical role and result cards.
 
 ## Current status
 
-Phase 7F.2 adds the opposing killing-role final-two draw. Phase 7F.1 adds a complete reusable
+Phase 7F.3 adds the finalized first-night wake rule and a role-first host runner: Doctor,
+Godfather, and Serial Killer are omitted from Night 1 when first-night kills are disabled, private
+turns use concise prompts and active-alignment surfaces, and the final Executioner target delivery
+enters Night 1 directly. Phase 7F.2 adds the opposing killing-role final-two draw. Phase 7F.1 adds a complete reusable
 next-game setup, one-click role-card delivery, and full
 alignment-coloured private host cards to Phase 7F's trial guidance and deterministic Godfather
 succession. Phase 7C.1
@@ -25,7 +28,7 @@ strict majority needed to put someone on trial as
 guilty votes must exceed innocent votes, and a tie is innocent. Trials, nominations, voters,
 abstentions, guilty/innocent votes, and trial history remain verbal and are not recorded.
 
-Day discussion also has a temporary **Show host-only roles** control. Roles are absent from the
+Day discussion also has a temporary **Show roles** control. Roles are absent from the
 public day model and DOM until requested, and visibility is React-only, hidden by default, never
 autosaved, and hidden again after refresh, recovery, or entry into a new day. The separate
 sanitized host view groups current active roles under Mafia, Town, and Neutral. Every player card
@@ -35,8 +38,9 @@ Executioner as the immutable original assignment; a promoted Mafia member appear
 with the original assignment retained. Executioner targets, personal wins, and pending revenge are
 never included.
 
-A private host-only execution dialog lists only living participants with duplicate-safe names,
-current active roles, textual alignments, and an original assignment only when changed. It does not
+A private execution dialog groups living participants under Mafia, Town, and Neutral while showing
+duplicate-safe names, current active roles, textual alignments, and an original assignment only
+when changed. It does not
 disclose targets, wins, or revenge. A separate irreversible
 confirmation ends the day without execution. The public post-day summary reports only who was
 executed and a role when `revealRoleOnDeath` authorizes it, or that nobody was executed. A
@@ -103,25 +107,25 @@ Executioner targets and enters the Executioner briefing, or enters Night 1 when 
 required. New saves contain no per-player delivery flags; exact older all-delivered lists restore
 as complete, while zero or partial lists restore as one pending bulk boundary.
 
-The first night is now one sealed canonical sequence: Mafia overview, Consorts, Framers,
+The night is one sealed canonical sequence: Mafia overview, Consorts, Framers,
 Godfathers, Serial Killers, Doctors, Sheriffs, Investigators, Consiglieres, and Detectives. Duplicate
-copies use role-instance ordinal and roster order. Disabled first-night killers have no step.
+copies use role-instance ordinal and roster order. With first-night kills disabled, Night 1 omits
+Doctor, Godfather, and Serial Killer steps entirely; Night 2+ is unchanged.
 Consorts establish blocks before later actors wake; blocked actors still wake but receive an
 explicit **BLOCKED** screen and create no action, visit, result, or Doctor target history.
 
 Consort, Framer, Godfather, Serial Killer, and Doctor confirmation atomically seals the action and
 advances directly; they receive no fabricated `Action recorded` result. Sheriff, Investigator,
 Consigliere, and Detective receive exactly one private result screen, while blocked actors receive
-exactly one **BLOCKED** screen. In both cases **Continue to next actor** seals the private screen
+exactly one **BLOCKED** screen. In both cases **Continue** seals the private screen
 and advances atomically. There is no separate `Outcome acknowledged` state or screen. Detective
 investigations do not enter the trackable visit ledger, so Detectives tracking one another see
 “visited nobody.” The obsolete end-of-night investigative replay remains removed.
 
 After the final actor, the application validates the sequential record, constructs the
 canonical action batch, calculates ordinary attacks, protections, and provisional deaths, and
-enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate direct **Show
-Dawn announcement** boundary. The inline reminder tells the host to ensure every player’s eyes are
-open; no second confirmation dialog is used. Dawn applies ordinary deaths once, records only
+enters `night-resolution`. Deaths remain unapplied and hidden until the deliberate direct
+**Finalize Dawn** boundary. Dawn applies ordinary deaths once, records only
 unblocked Doctors’ confirmed targets, then resolves any due Jester revenge against the
 post-ordinary survivor set. It evaluates faction victory only after revenge, honors
 `revealRoleOnDeath`, and exposes one combined current-night public announcement without causes.
@@ -130,9 +134,9 @@ After final physical-card confirmation, every Executioner now receives one rando
 participating Town target from the final assignments. The injected random source is called once per
 Executioner against the full canonical Town list, so duplicate Executioners remain independent and
 may share a target. The target relationship records the game, Executioner player, Executioner role
-instance, and target player. The host then sees one private briefing at a time and must acknowledge
-every briefing before the application creates the Night 1 action workflow. Games without an
-Executioner skip the briefing.
+instance, and target player. The host then sees one private briefing at a time. Delivering the
+final target immediately creates the Night 1 action workflow—there is no ready screen or second
+confirmation. Games without an Executioner enter Night 1 directly.
 
 One authoritative application session spans setup, role distribution, Executioner briefing,
 Godfather-promotion briefing, sequential night, final night resolution, private Dawn resolution,
@@ -144,8 +148,9 @@ Restoration rebuilds or validates the exact stage, rejects forged order, actions
 reveals, stale night data, extra fields, and stage/phase/counter combinations. Recovery shows only
 generic numbered night/day or broad Dawn metadata until the host chooses **Continue saved game**.
 
-When first-night killing is disabled, living Godfathers and Serial Killers are omitted entirely, so
-they do not wake or create an action, outcome, visit, or attack. Consorts remain immune to Consort
+When first-night killing is disabled, living Doctors, Godfathers, and Serial Killers are omitted
+entirely on Night 1, so they do not wake or create an action, outcome, visit, protection, or attack.
+All three act normally when enabled and on Night 2+. Consorts remain immune to Consort
 blocks but still visit and act. Confirmed temporary frames feed the shared Sheriff and permanent
 Investigator/Consigliere mechanics immediately and at final resolution. One unblocked Doctor
 protection prevents every ordinary Godfather and Serial Killer attack against its target that
@@ -212,7 +217,10 @@ false`. Dialogs, temporary selections, focus, guards, labels, and summary prose 
 persisted. A selected revenge victim is durable mid-workflow so refresh and save retry never
 reroll it; the recovery summary exposes only the broad `Dawn resolution` stage.
 
-Phase 7F.2 retains schema V2 and neutral-state sub-version `4`. The existing terminal-result union
+Phase 7F.3 retains schema V2 and neutral-state sub-version `4`. Restoration deterministically
+canonicalizes pre-7F.3 disabled-first-night Doctor progress and ready-for-Dawn batches by removing
+the retired Doctor turn, and migrates the obsolete fully acknowledged Executioner `ready` stage
+directly into Night 1 without rerolling targets or replaying a briefing. Phase 7F.2's existing terminal-result union
 now stores the exact `opposing-killers-stalemate` or
 `opposing-killers-mutual-elimination` reason. Mutual elimination also stores exactly two linked
 `final-killing-role-showdown` deaths at one post-day or post-Dawn boundary. Restoration validates

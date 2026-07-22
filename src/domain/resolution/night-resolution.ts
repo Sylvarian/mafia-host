@@ -4,7 +4,9 @@ import type { GameState } from '../game/game-state.ts'
 import { validateInvestigationGroups } from '../investigation/investigation-groups.ts'
 import {
   validateCollectedNightActions,
+  validateLegacyFirstNightCollectedActionsForRecovery,
   type CollectedNightActions,
+  type NightActionBatchError,
   type PreviousNightTarget,
 } from '../night-actions/night-action.ts'
 import { resolveAttacks, determineProvisionalDeaths } from './attacks.ts'
@@ -30,6 +32,24 @@ export type NightResolutionInput = Readonly<{
 
 export function resolveNight(
   input: NightResolutionInput,
+): DomainResult<NightResolution, NightResolutionError> {
+  return resolveNightUsingBatchValidator(input, validateCollectedNightActions)
+}
+
+/** Revalidates only the retired pre-Phase 7F.3 first-night Doctor action shape for migration. */
+export function resolveLegacyFirstNightForRecovery(
+  input: NightResolutionInput,
+): DomainResult<NightResolution, NightResolutionError> {
+  return resolveNightUsingBatchValidator(input, validateLegacyFirstNightCollectedActionsForRecovery)
+}
+
+function resolveNightUsingBatchValidator(
+  input: NightResolutionInput,
+  validateBatch: (
+    game: GameState,
+    batch: CollectedNightActions,
+    previousTargets: readonly PreviousNightTarget[],
+  ) => DomainResult<CollectedNightActions, NightActionBatchError>,
 ): DomainResult<NightResolution, NightResolutionError> {
   const { game, collectedActions, previousTargets } = input
   const collectedActionsCandidate: unknown = collectedActions
@@ -85,11 +105,7 @@ export function resolveNight(
     return groupValidationResult
   }
 
-  const batchResult = validateCollectedNightActions(
-    validatedGame,
-    collectedActions,
-    previousTargets,
-  )
+  const batchResult = validateBatch(validatedGame, collectedActions, previousTargets)
   if (!batchResult.ok) {
     return fail({ type: 'INVALID_COLLECTED_NIGHT_ACTIONS', error: batchResult.error })
   }

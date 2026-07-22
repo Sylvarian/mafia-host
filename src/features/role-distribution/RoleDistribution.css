@@ -41,15 +41,6 @@
   color: var(--text-muted);
 }
 
-.role-distribution__privacy-warning {
-  margin-top: 1.25rem;
-  padding: 0.85rem 1rem;
-  border: 2px solid var(--danger-border);
-  border-radius: var(--radius-small);
-  color: var(--danger-strong);
-  background: var(--danger-soft);
-}
-
 .distribution-error {
   margin: 1rem 0 0;
   padding: 0.85rem 1rem;
@@ -60,10 +51,51 @@
   font-weight: 750;
 }
 
-.assignment-list {
+.assignment-groups {
   display: grid;
   gap: 0.9rem;
   margin: 1.5rem 0 0;
+}
+
+.assignment-group {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-medium);
+}
+
+.assignment-group--mafia {
+  border-color: var(--mafia);
+  background: var(--faction-mafia-soft);
+}
+
+.assignment-group--town {
+  border-color: var(--town);
+  background: var(--faction-town-soft);
+}
+
+.assignment-group--neutral {
+  border-color: var(--neutral);
+  background: var(--faction-neutral-soft);
+}
+
+.assignment-group > h3 {
+  margin: 0 0 0.7rem;
+  color: var(--text-strong);
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.assignment-group__empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.assignment-list {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -82,14 +114,17 @@
 
 .assignment-card--mafia {
   border-left-color: var(--mafia);
+  background: var(--faction-mafia-soft);
 }
 
 .assignment-card--town {
   border-left-color: var(--town);
+  background: var(--faction-town-soft);
 }
 
 .assignment-card--neutral {
   border-left-color: var(--neutral);
+  background: var(--faction-neutral-soft);
 }
 
 .assignment-card__player > span,
@@ -101,7 +136,7 @@
   text-transform: uppercase;
 }
 
-.assignment-card__player h3 {
+.assignment-card__player h4 {
   margin: 0.15rem 0 0;
   color: var(--text-strong);
   font-size: 1.25rem;
@@ -121,12 +156,6 @@
   color: var(--text-strong);
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 1.45rem;
-}
-
-.assignment-card__role p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.86rem;
 }
 
 .role-distribution__actions,

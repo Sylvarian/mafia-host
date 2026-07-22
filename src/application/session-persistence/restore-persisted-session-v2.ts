@@ -1,4 +1,5 @@
 import {
+  completeExecutionerBriefingPhase,
   orderExecutionerTargets,
   type ExecutionerTarget,
 } from '@/domain/executioner/executioner-target.ts'
@@ -16,6 +17,7 @@ import {
 } from '@/domain/identifiers.ts'
 import {
   createCollectedNightActions,
+  createLegacyFirstNightCollectedActionsForRecovery,
   createSubmittedNightAction,
   type SubmittedNightAction,
 } from '@/domain/night-actions/night-action.ts'
@@ -23,6 +25,7 @@ import type { NightActionKind } from '@/domain/night-actions/night-action-kind.t
 import type { GamePlayer } from '@/domain/players/game-player.ts'
 import type { Player } from '@/domain/players/player.ts'
 import { ROLE_IDS, ROLE_REGISTRY, findRoleDefinition } from '@/domain/roles/role-registry.ts'
+import { selectActiveRoleId } from '@/domain/neutral/executioner-conversion.ts'
 import { validateCompleteGodfatherSuccessionHistory } from '@/domain/mafia/godfather-promotion-invariants.ts'
 import {
   createJesterRevengeResolutionId,
@@ -35,7 +38,10 @@ import {
   type DawnAnnouncement,
 } from '@/domain/resolution/dawn-announcement.ts'
 import { beginNightResolution } from '@/domain/resolution/night-application.ts'
-import { resolveNight } from '@/domain/resolution/night-resolution.ts'
+import {
+  resolveLegacyFirstNightForRecovery,
+  resolveNight,
+} from '@/domain/resolution/night-resolution.ts'
 import type { FactionResult } from '@/domain/win-conditions/faction-result.ts'
 import {
   evaluateAndFinalizeFactionVictory,
@@ -64,6 +70,7 @@ import {
   type ValidatedGameSetup,
 } from '../game-setup/index.ts'
 import {
+  buildNightActionSequence,
   confirmNightActionTarget,
   continueNightActionCollection,
   createNightActionCollectionForStartedNight,
@@ -284,8 +291,7 @@ function restoreEnvelope(
   }
   const writeBackEnvelope =
     !options.allowLegacyGameShape &&
-    isUnknownRecord(candidate.session) &&
-    candidate.session.stage !== sessionResult.value.stage
+    !hasSameCanonicalContent(toPersistedAppSessionV2(sessionResult.value), candidate.session)
       ? deepFreeze({
           schemaVersion: PERSISTED_SESSION_SCHEMA_VERSION,
           savedAt: candidate.savedAt,
@@ -534,7 +540,10 @@ function restoreRoleDistributionSession(
 function restoreExecutionerBriefingSession(
   candidate: Readonly<Record<string, unknown>>,
   options: RestoreOptions,
-): DomainResult<ExecutionerBriefingAppSession, RestorePersistedSessionV2Error> {
+): DomainResult<
+  ExecutionerBriefingAppSession | SequentialNightAppSession,
+  RestorePersistedSessionV2Error
+> {
   if (
     !hasExactKeys(candidate, [
       'stage',
@@ -594,6 +603,31 @@ function restoreExecutionerBriefingSession(
       workflow = next.value
     }
   }
+  const allAcknowledged = workflow.acknowledgedBriefingIds.length === workflow.briefings.length
+  if (candidate.workflowStatus === 'ready') {
+    if (!allAcknowledged || candidate.currentBriefingIndex !== workflow.briefings.length - 1) {
+      return invalidBriefing('restored-briefing-session-mismatch')
+    }
+    const completedGame = completeExecutionerBriefingPhase(gameResult.value)
+    if (!completedGame.ok) {
+      return invalidBriefing('restored-briefing-session-mismatch')
+    }
+    const nightWorkflow = createNightActionCollectionForStartedNight(
+      completedGame.value,
+      participantsResult.value,
+    )
+    return nightWorkflow.ok
+      ? succeed(
+          deepFreeze({
+            stage: 'sequential-night' as const,
+            workflow: nightWorkflow.value,
+          }),
+        )
+      : invalidBriefing('restored-briefing-session-mismatch')
+  }
+  if (allAcknowledged) {
+    return invalidBriefing('restored-briefing-session-mismatch')
+  }
   if (
     candidate.currentBriefingIndex < 0 ||
     candidate.currentBriefingIndex >= workflow.briefings.length ||
@@ -615,10 +649,6 @@ function restoreExecutionerBriefingSession(
     }
     workflow = next.value
   }
-  if (workflow.status !== candidate.workflowStatus) {
-    return invalidBriefing('restored-briefing-session-mismatch')
-  }
-
   const session = deepFreeze({
     stage: 'executioner-briefing' as const,
     game: gameResult.value,
@@ -678,26 +708,221 @@ function restoreSequentialNightSession(
   if (!initialResult.ok) {
     return invalidSequential('invalid-game')
   }
+  const currentResult =
+    candidate.currentStepIndex < 0 || candidate.currentStepIndex >= initialResult.value.steps.length
+      ? invalidSequential('invalid-order')
+      : isLegacySequentialNightCandidate(candidate, candidate.completedSteps)
+        ? restoreLegacySequentialNightProgress(
+            candidate,
+            candidate.completedSteps,
+            initialResult.value,
+            gameResult.value,
+          )
+        : restoreCurrentSequentialNightProgress(
+            candidate,
+            candidate.completedSteps,
+            initialResult.value,
+            gameResult.value,
+          )
+
+  if (currentResult.ok || !hasLegacyFirstNightDoctor(gameResult.value)) {
+    return currentResult
+  }
+
+  return restoreLegacyFirstNightDoctorSequentialSession(
+    candidate,
+    candidate.completedSteps,
+    initialResult.value,
+    gameResult.value,
+  )
+}
+
+function restoreLegacyFirstNightDoctorSequentialSession(
+  candidate: Readonly<Record<string, unknown>>,
+  completedSteps: readonly unknown[],
+  currentInitialWorkflow: ActiveNightActionCollectionWorkflow,
+  game: GameState,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
+  if (typeof candidate.currentStepIndex !== 'number') {
+    return invalidSequential('invalid-order')
+  }
+  const enabledGame = deepFreeze({
+    ...game,
+    settings: { ...game.settings, allowFirstNightKills: true },
+  })
+  const sequenceResult = buildNightActionSequence(enabledGame)
+  if (!sequenceResult.ok) {
+    return invalidSequential('invalid-order')
+  }
+  const legacySteps = sequenceResult.value.filter((step) => {
+    if (step.type !== 'actor-action') return true
+    const activeRoleId = selectActiveRoleId(game, step.actorPlayerId)
+    return activeRoleId !== ROLE_IDS.godfather && activeRoleId !== ROLE_IDS.serialKiller
+  })
+  const legacyInitialWorkflow = deepFreeze({
+    ...currentInitialWorkflow,
+    steps: legacySteps,
+  })
+
   if (
     candidate.currentStepIndex < 0 ||
-    candidate.currentStepIndex >= initialResult.value.steps.length
+    candidate.currentStepIndex >= legacyInitialWorkflow.steps.length
   ) {
     return invalidSequential('invalid-order')
   }
 
-  return isLegacySequentialNightCandidate(candidate, candidate.completedSteps)
-    ? restoreLegacySequentialNightProgress(
-        candidate,
-        candidate.completedSteps,
-        initialResult.value,
-        gameResult.value,
-      )
-    : restoreCurrentSequentialNightProgress(
-        candidate,
-        candidate.completedSteps,
-        initialResult.value,
-        gameResult.value,
-      )
+  const restoredLegacy = isLegacySequentialNightCandidate(candidate, completedSteps)
+    ? restoreLegacySequentialNightProgress(candidate, completedSteps, legacyInitialWorkflow, game)
+    : restoreCurrentSequentialNightProgress(candidate, completedSteps, legacyInitialWorkflow, game)
+  if (!restoredLegacy.ok || restoredLegacy.value.stage !== 'sequential-night') {
+    return invalidSequential('invalid-step')
+  }
+
+  return migrateLegacyFirstNightDoctorProgress(
+    restoredLegacy.value.workflow,
+    currentInitialWorkflow,
+  )
+}
+
+function migrateLegacyFirstNightDoctorProgress(
+  legacyWorkflow: SequentialNightAppSession['workflow'],
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+): DomainResult<
+  SequentialNightAppSession | NightResolutionAppSession,
+  RestorePersistedSessionV2Error
+> {
+  let workflow = initialWorkflow
+
+  for (const legacyRecord of legacyWorkflow.completedSteps) {
+    if (legacyRecord.actorRoleId === ROLE_IDS.doctor) {
+      continue
+    }
+
+    const alignment = alignWorkflowToActor(workflow, legacyRecord.actorRoleInstanceId)
+    if (!alignment.ok) {
+      return alignment
+    }
+    workflow = alignment.value
+
+    if (legacyRecord.status === 'action-confirmed') {
+      if (workflow.status !== 'collecting') {
+        return invalidSequential('restore-position-mismatch')
+      }
+      const confirmation = confirmNightActionTarget(workflow, legacyRecord.action.targetPlayerId)
+      if (!confirmation.ok) {
+        return invalidSequential('invalid-step')
+      }
+      workflow = confirmation.value
+    } else if (
+      workflow.status !== 'awaiting-outcome-acknowledgement' ||
+      workflow.completedSteps.at(-1)?.actorRoleInstanceId !== legacyRecord.actorRoleInstanceId
+    ) {
+      return invalidSequential('invalid-step')
+    }
+
+    if (
+      workflow.status === 'awaiting-outcome-acknowledgement' &&
+      legacyWorkflow.currentStepIndex > legacyRecord.stepIndex
+    ) {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+  }
+
+  if (
+    workflow.status === 'collecting' &&
+    workflow.steps[workflow.currentStepIndex]?.type === 'mafia-overview' &&
+    legacyWorkflow.currentStepIndex > 0
+  ) {
+    const advance = continueNightActionCollection(workflow)
+    if (!advance.ok) {
+      return invalidSequential('restore-position-mismatch')
+    }
+    workflow = advance.value
+  }
+
+  if (workflow.status === 'complete') {
+    const resolution = beginFinalNightResolution(workflow)
+    return resolution.ok
+      ? succeed(deepFreeze({ stage: 'night-resolution' as const, workflow: resolution.value }))
+      : invalidSequential('restore-position-mismatch')
+  }
+
+  const legacyCurrentStep = legacyWorkflow.steps[legacyWorkflow.currentStepIndex]
+  const currentStep = workflow.steps[workflow.currentStepIndex]
+  const legacyCurrentRoleId =
+    legacyCurrentStep?.type === 'actor-action'
+      ? selectActiveRoleId(legacyWorkflow.game, legacyCurrentStep.actorPlayerId)
+      : null
+  if (legacyCurrentRoleId === ROLE_IDS.doctor) {
+    if (
+      workflow.status === 'collecting' &&
+      workflow.steps[workflow.currentStepIndex]?.type === 'mafia-overview'
+    ) {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+    }
+    if (workflow.status === 'complete') {
+      const resolution = beginFinalNightResolution(workflow)
+      return resolution.ok
+        ? succeed(deepFreeze({ stage: 'night-resolution' as const, workflow: resolution.value }))
+        : invalidSequential('restore-position-mismatch')
+    }
+    return succeed(deepFreeze({ stage: 'sequential-night' as const, workflow }))
+  }
+  const positionsMatch =
+    legacyCurrentStep?.type === 'mafia-overview'
+      ? currentStep?.type === 'mafia-overview'
+      : legacyCurrentStep?.type === 'actor-action' &&
+        currentStep?.type === 'actor-action' &&
+        legacyCurrentStep.actorRoleInstanceId === currentStep.actorRoleInstanceId
+  if (!positionsMatch || legacyWorkflow.status !== workflow.status) {
+    return invalidSequential('restore-position-mismatch')
+  }
+
+  return succeed(deepFreeze({ stage: 'sequential-night' as const, workflow }))
+}
+
+function alignWorkflowToActor(
+  initialWorkflow: ActiveNightActionCollectionWorkflow,
+  actorRoleInstanceId: SubmittedNightAction['actorRoleInstanceId'],
+): DomainResult<ActiveNightActionCollectionWorkflow, RestorePersistedSessionV2Error> {
+  let workflow = initialWorkflow
+  while (workflow.status !== 'complete') {
+    const step = workflow.steps[workflow.currentStepIndex]
+    if (step?.type === 'actor-action' && step.actorRoleInstanceId === actorRoleInstanceId) {
+      return succeed(workflow)
+    }
+    if (step?.type === 'mafia-overview' || workflow.status === 'awaiting-outcome-acknowledgement') {
+      const advance = continueNightActionCollection(workflow)
+      if (!advance.ok) {
+        return invalidSequential('restore-position-mismatch')
+      }
+      workflow = advance.value
+      continue
+    }
+    return invalidSequential('restore-position-mismatch')
+  }
+  return invalidSequential('restore-position-mismatch')
+}
+
+function hasLegacyFirstNightDoctor(game: GameState): boolean {
+  return (
+    game.nightNumber === 1 &&
+    !game.settings.allowFirstNightKills &&
+    game.players.some(
+      (player) => player.alive && selectActiveRoleId(game, player.playerId) === ROLE_IDS.doctor,
+    )
+  )
 }
 
 function restoreGodfatherPromotionBriefingSession(
@@ -1250,6 +1475,92 @@ function restoreNightResolutionSession(
     }
     actions.push(actionResult.value)
   }
+
+  const currentResult = restoreCanonicalNightResolutionSession(
+    candidate,
+    gameResult.value,
+    participantsResult.value,
+    actionGame,
+    actions,
+    previousTargets,
+  )
+  if (currentResult.ok || !hasLegacyFirstNightDoctor(actionGame)) {
+    return currentResult
+  }
+
+  const legacyBatch = createLegacyFirstNightCollectedActionsForRecovery(
+    actionGame,
+    actions,
+    previousTargets,
+  )
+  if (
+    !legacyBatch.ok ||
+    !hasSameCanonicalContent(legacyBatch.value.actions, candidate.collectedActions)
+  ) {
+    return invalidNightResolution('invalid-actions')
+  }
+  const legacyResolution = resolveLegacyFirstNightForRecovery({
+    game: actionGame,
+    collectedActions: legacyBatch.value,
+    previousTargets,
+  })
+  if (
+    !legacyResolution.ok ||
+    !hasSameCanonicalContent(
+      toPersistedNightResolutionV2(legacyResolution.value),
+      candidate.resolution,
+    )
+  ) {
+    return invalidNightResolution('invalid-resolution')
+  }
+
+  const migratedBatch = createCollectedNightActions(
+    actionGame,
+    actions.filter((action) => action.actorRoleId !== ROLE_IDS.doctor),
+    previousTargets,
+  )
+  if (!migratedBatch.ok) {
+    return invalidNightResolution('invalid-actions')
+  }
+  const migratedResolution = resolveNight({
+    game: actionGame,
+    collectedActions: migratedBatch.value,
+    previousTargets,
+  })
+  if (!migratedResolution.ok) {
+    return invalidNightResolution('invalid-resolution')
+  }
+  const migratedGame = beginNightResolution(
+    actionGame,
+    migratedResolution.value,
+    migratedBatch.value,
+  )
+  if (!migratedGame.ok) {
+    return invalidNightResolution('invalid-game')
+  }
+
+  return succeed(
+    deepFreeze({
+      stage: 'night-resolution' as const,
+      workflow: {
+        status: 'ready-for-dawn' as const,
+        game: migratedGame.value,
+        participants: participantsResult.value,
+        resolution: migratedResolution.value,
+        collectedActions: migratedBatch.value,
+      },
+    }),
+  )
+}
+
+function restoreCanonicalNightResolutionSession(
+  candidate: Readonly<Record<string, unknown>>,
+  persistedGame: GameState,
+  participants: readonly Player[],
+  actionGame: GameState,
+  actions: readonly SubmittedNightAction[],
+  previousTargets: ReturnType<typeof selectDoctorPreviousTargetsForNight>,
+): DomainResult<NightResolutionAppSession, RestorePersistedSessionV2Error> {
   const batchResult = createCollectedNightActions(actionGame, actions, previousTargets)
   if (!batchResult.ok) {
     return invalidNightResolution('invalid-actions')
@@ -1269,7 +1580,7 @@ function restoreNightResolutionSession(
     return invalidNightResolution('invalid-resolution')
   }
   const begunGame = beginNightResolution(actionGame, resolutionResult.value, batchResult.value)
-  if (!begunGame.ok || !hasSameCanonicalContent(begunGame.value, gameResult.value)) {
+  if (!begunGame.ok || !hasSameCanonicalContent(begunGame.value, persistedGame)) {
     return invalidNightResolution('invalid-game')
   }
   const session = deepFreeze({
@@ -1277,7 +1588,7 @@ function restoreNightResolutionSession(
     workflow: {
       status: 'ready-for-dawn' as const,
       game: begunGame.value,
-      participants: participantsResult.value,
+      participants,
       resolution: resolutionResult.value,
       collectedActions: batchResult.value,
     },

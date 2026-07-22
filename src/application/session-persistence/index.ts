@@ -5,7 +5,6 @@ export {
   beginSessionFirstNight,
   beginSessionNextNight,
   beginSessionDayDiscussion,
-  completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionMayorReveal,
   confirmAllSessionRoleCardsDelivered,

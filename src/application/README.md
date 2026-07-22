@@ -13,12 +13,15 @@ immediately enters Executioner briefing or Night 1 through the active-session co
 `executioner-briefing` owns the Phase 7A private workflow. It rebuilds minimal briefing records from
 canonical Executioner target relationships, orders duplicate Executioners by ordinal and roster
 order, and owns bounded navigation and acknowledgement. Names and duplicate labels are selector
-output; target roles and display prose are not authority.
+output; target roles and display prose are not authority. Phase 7F.3 derives readiness solely from
+the complete stable-ID acknowledgement set. The final acknowledgement atomically enters Night 1;
+there is no current `ready` workflow, completion action, or second confirmation.
 
 `night-actions` owns the Phase 7A.1 sequential-night authority. Its canonical order is Mafia
 overview, Consorts, Framers, Godfathers, Serial Killers, Doctors, Sheriffs, Investigators,
 Consiglieres, and Detectives. Duplicate copies use role-instance ordinal and roster order.
-First-night-disabled killers have no step.
+On disabled Night 1, active Doctors, Godfathers, and Serial Killers have no step. Enabled Night 1
+and Night 2+ retain them.
 
 Confirmed Consort actions determine later blocked steps. Every immutable actor record is either one
 validated action with an optional informational outcome, or an explicit blocked outcome with no
@@ -32,8 +35,9 @@ actors cannot be edited. Final advancement constructs one domain-validated
 The same shared domain functions resolve frames, Sheriff policy, investigation groups, blocks,
 visits, and Detective tracking for immediate and final results. Detective actions never enter the
 trackable visit ledger. Selectors provide sanitized actor, target, and immediate-outcome views;
-target rows contain only the display label, role, faction, alive/availability state, and structured
-disabled reason needed by the host UI.
+actor/result views derive the canonical active role and alignment. Ordinary target rows contain
+only the duplicate-safe display label, alive/availability state, and structured disabled reason;
+they contain no target role, faction, alignment group, colour class, or hidden alignment metadata.
 
 `night-resolution` remains the narrow deterministic operation over a complete workflow.
 `night-completion` replaces the removed end-of-night private-result presentation slice. It enters
@@ -87,6 +91,14 @@ cross-checks stored outcomes against canonical mechanics, rejects extra fields, 
 randomness. Safe V1 setup, distribution, Executioner briefing, and valid first-Dawn saves migrate
 to V2. Old in-progress night-action and private-result-replay saves fail closed because revealed
 information cannot be reconstructed without guessing. No generic migration framework exists.
+
+Phase 7F.3 retains schema V2 and neutral-state sub-version `4`. Restoration first applies current
+authority. If an exact disabled-first-night save fails only because it carries the historical
+Doctor wake, it revalidates that payload against the explicitly isolated pre-7F.3 rule, rebuilds
+current progress without the Doctor, and returns a canonical write-back when fields changed. A
+fully acknowledged obsolete Executioner `ready` stage enters Night 1 directly; incomplete or
+unknown evidence fails closed. These paths consume no randomness, reroll no target, and replay no
+acknowledged private screen.
 
 Phase 7C.1 deliberately accepts earlier V2 sequential shapes only through exact evidence. An old
 non-informational `Action recorded` record is validated through the canonical action operation and

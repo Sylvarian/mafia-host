@@ -31,9 +31,19 @@ describe('role distribution bulk delivery UI', () => {
       />,
     )
 
-    expect(screen.getByText(/HOST-ONLY VIEW/)).toBeVisible()
+    expect(screen.getByText('Role cards')).toBeVisible()
+    expect(screen.queryByText(/HOST-ONLY VIEW/)).toBeNull()
     expect(screen.getByText('Godfather')).toBeVisible()
     expect(screen.getByText('Citizen')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Mafia' }).closest('section')).toHaveClass(
+      'assignment-group--mafia',
+    )
+    expect(screen.getByRole('heading', { name: 'Town' }).closest('section')).toHaveClass(
+      'assignment-group--town',
+    )
+    expect(screen.getByRole('heading', { name: 'Neutral' }).closest('section')).toHaveClass(
+      'assignment-group--neutral',
+    )
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByRole('button', { name: /mark.*delivered/i })).toBeNull()
     const button = screen.getByRole('button', {
@@ -64,13 +74,13 @@ describe('role distribution bulk delivery UI', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'Role-card delivery complete' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Role cards delivered' })).toBeVisible()
     expect(
       screen.queryByRole('button', {
         name: 'Confirm all role cards delivered',
       }),
     ).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to First Night' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(begin).toHaveBeenCalledOnce()
   })
 
@@ -82,6 +92,9 @@ describe('role distribution bulk delivery UI', () => {
 
     expect(css).toContain('@media (max-width: 42rem)')
     expect(css).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(css).toContain('background: var(--faction-mafia-soft)')
+    expect(css).toContain('background: var(--faction-town-soft)')
+    expect(css).toContain('background: var(--faction-neutral-soft)')
     expect(css).toMatch(/\.role-distribution__actions > \.button,[\s\S]*width: 100%/)
     expect(css).not.toMatch(/min-width:\s*(?:[3-9]\d|\d{3,})rem/)
   })

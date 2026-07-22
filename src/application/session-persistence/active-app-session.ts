@@ -180,7 +180,6 @@ export type ActiveAppSessionOperation =
   | 'acknowledge-executioner-briefing'
   | 'previous-executioner-briefing'
   | 'next-executioner-briefing'
-  | 'complete-executioner-briefings'
   | 'acknowledge-godfather-promotion'
   | 'confirm-night-target'
   | 'continue-night'
@@ -324,14 +323,32 @@ export function acknowledgeSessionExecutionerBriefing(
   session: ActiveAppSession,
   briefingId: ExecutionerBriefingId,
 ): DomainResult<
-  ExecutionerBriefingAppSession,
-  ExecutionerBriefingError | InvalidActiveAppSessionStageError
+  ExecutionerBriefingAppSession | SequentialNightAppSession,
+  | ExecutionerBriefingError
+  | CompleteExecutionerBriefingPhaseError
+  | NightActionCollectionError
+  | InvalidActiveAppSessionStageError
 > {
-  return updateExecutionerBriefingSession(
-    session,
-    'acknowledge-executioner-briefing',
-    (game, workflow) => acknowledgeExecutionerBriefing(game, workflow, briefingId),
+  if (session.stage !== 'executioner-briefing') {
+    return invalidStage('acknowledge-executioner-briefing', session.stage)
+  }
+  const acknowledgement = acknowledgeExecutionerBriefing(session.game, session.workflow, briefingId)
+  if (!acknowledgement.ok) {
+    return acknowledgement
+  }
+  const acknowledgedSession = Object.freeze({
+    ...session,
+    workflow: acknowledgement.value,
+  })
+  const readiness = validateExecutionerBriefingsReadyForCompletion(
+    acknowledgedSession.game,
+    acknowledgedSession.workflow,
   )
+  return readiness.ok
+    ? completeExecutionerBriefingSession(acknowledgedSession)
+    : readiness.error.type === 'INCOMPLETE_EXECUTIONER_BRIEFINGS'
+      ? succeed(acknowledgedSession)
+      : readiness
 }
 
 export function previousSessionExecutionerBriefing(
@@ -360,18 +377,12 @@ export function nextSessionExecutionerBriefing(
   )
 }
 
-export function completeSessionExecutionerBriefings(
-  session: ActiveAppSession,
+function completeExecutionerBriefingSession(
+  session: ExecutionerBriefingAppSession,
 ): DomainResult<
   SequentialNightAppSession,
-  | ExecutionerBriefingError
-  | CompleteExecutionerBriefingPhaseError
-  | NightActionCollectionError
-  | InvalidActiveAppSessionStageError
+  ExecutionerBriefingError | CompleteExecutionerBriefingPhaseError | NightActionCollectionError
 > {
-  if (session.stage !== 'executioner-briefing') {
-    return invalidStage('complete-executioner-briefings', session.stage)
-  }
   const readinessResult = validateExecutionerBriefingsReadyForCompletion(
     session.game,
     session.workflow,

@@ -37,13 +37,9 @@ export function RoleDistribution({
   if (workflow.status === 'confirmed') {
     return (
       <section className="distribution-complete" aria-labelledby="distribution-complete-heading">
-        <p className="distribution-complete__eyebrow">Restored completed delivery</p>
-        <h2 id="distribution-complete-heading">Role-card delivery complete</h2>
-        <p className="distribution-complete__lead">Ready to begin the first night</p>
-        <p>
-          This legacy save already recorded every role card as delivered. Continue once to assign
-          any required Executioner targets without reassigning roles.
-        </p>
+        <p className="distribution-complete__eyebrow">Role cards</p>
+        <h2 id="distribution-complete-heading">Role cards delivered</h2>
+        <p className="distribution-complete__lead">Ready for Night 1</p>
 
         {error === null ? null : <DistributionError error={error} />}
         {beginNightErrorMessage === null ? null : (
@@ -54,7 +50,7 @@ export function RoleDistribution({
 
         <div className="distribution-complete__actions">
           <button type="button" className="button button--prepare" onClick={onBeginFirstNight}>
-            Continue to First Night
+            Continue
           </button>
         </div>
       </section>
@@ -69,7 +65,7 @@ export function RoleDistribution({
     <section className="role-distribution" aria-labelledby="role-distribution-heading">
       <div className="role-distribution__heading">
         <div>
-          <p className="role-distribution__eyebrow">Private host view</p>
+          <p className="role-distribution__eyebrow">Role cards</p>
           <h2 id="role-distribution-heading">Distribute physical role cards</h2>
           <p>
             Privately hand every participating player the card shown beside their name. Confirm only
@@ -78,10 +74,6 @@ export function RoleDistribution({
         </div>
       </div>
 
-      <p className="role-distribution__privacy-warning">
-        <strong>HOST-ONLY VIEW</strong> — keep role assignments hidden from players.
-      </p>
-
       {error === null ? null : <DistributionError error={error} />}
       {beginNightErrorMessage === null ? null : (
         <p className="distribution-error" role="alert">
@@ -89,30 +81,53 @@ export function RoleDistribution({
         </p>
       )}
 
-      <ul className="assignment-list" aria-label="Private role assignments">
-        {rows.map((row) => (
-          <li className={`assignment-card assignment-card--${row.faction}`} key={row.playerId}>
-            <div className="assignment-card__player">
-              <span>Player</span>
-              <h3>{row.playerName}</h3>
-              {duplicateNames.has(row.playerName) ? (
-                <small>
-                  Player{' '}
-                  {String(
-                    workflow.game.players.findIndex((player) => player.playerId === row.playerId) +
-                      1,
-                  )}
-                </small>
-              ) : null}
-            </div>
-            <div className="assignment-card__role">
-              <span className="assignment-card__faction">{formatFaction(row.faction)}</span>
-              <strong>{row.roleDisplayName}</strong>
-              <p>{row.description}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="assignment-groups" aria-label="Private role assignments">
+        {(['mafia', 'town', 'neutral'] as const).map((faction) => {
+          const factionRows = rows.filter((row) => row.faction === faction)
+          return (
+            <section
+              className={`assignment-group assignment-group--${faction}`}
+              aria-labelledby={`assignment-${faction}-heading`}
+              key={faction}
+            >
+              <h3 id={`assignment-${faction}-heading`}>{formatFaction(faction)}</h3>
+              {factionRows.length === 0 ? (
+                <p className="assignment-group__empty">No assigned players.</p>
+              ) : (
+                <ul className="assignment-list">
+                  {factionRows.map((row) => (
+                    <li
+                      className={`assignment-card assignment-card--${row.faction}`}
+                      key={row.playerId}
+                    >
+                      <div className="assignment-card__player">
+                        <span>Player</span>
+                        <h4>{row.playerName}</h4>
+                        {duplicateNames.has(row.playerName) ? (
+                          <small>
+                            Player{' '}
+                            {String(
+                              workflow.game.players.findIndex(
+                                (player) => player.playerId === row.playerId,
+                              ) + 1,
+                            )}
+                          </small>
+                        ) : null}
+                      </div>
+                      <div className="assignment-card__role">
+                        <span className="assignment-card__faction">
+                          {formatFaction(row.faction)}
+                        </span>
+                        <strong>{row.roleDisplayName}</strong>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )
+        })}
+      </div>
 
       <div className="role-distribution__actions">
         <button

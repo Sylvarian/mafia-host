@@ -250,6 +250,157 @@ function toPhase7DNeutralGame(game: PersistedGameV2): Readonly<Record<string, un
 }
 
 describe('persisted sequential session V2', () => {
+  it.each([false, true])(
+    'migrates a pre-7F.3 first-night Doctor %s action without retaining the omitted actor',
+    (doctorActionRecorded) => {
+      let workflow = continueSuccessfully(
+        startedWorkflow(
+          [
+            { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+            { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+            { roleId: ROLE_IDS.citizen, name: 'Target' },
+          ],
+          1,
+        ),
+      )
+      if (doctorActionRecorded) {
+        workflow = confirmSuccessfully(workflow, 2)
+      }
+      if (workflow.status === 'complete') {
+        throw new Error('Expected historical sequential progress.')
+      }
+      const legacyEnvelope = JSON.parse(
+        JSON.stringify(
+          createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+        ),
+      ) as {
+        session: { game: { settings: { allowFirstNightKills: boolean } } }
+      }
+      legacyEnvelope.session.game.settings.allowFirstNightKills = false
+
+      const restored = restorePersistedSessionEnvelopeV2(legacyEnvelope)
+      expect(restored.ok).toBe(true)
+      if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+        throw new Error('Expected migrated sequential Night 1.')
+      }
+      const migrated = restored.value.session.workflow
+      const currentStep = migrated.steps[migrated.currentStepIndex]
+      expect(currentStep).toMatchObject({ type: 'actor-action' })
+      if (currentStep?.type !== 'actor-action') throw new Error('Expected Sheriff turn.')
+      expect(
+        migrated.game.players.find((player) => player.playerId === currentStep.actorPlayerId)?.role
+          .roleId,
+      ).toBe(ROLE_IDS.sheriff)
+      expect(migrated.completedSteps).toHaveLength(0)
+      expect(
+        migrated.steps.some(
+          (step) =>
+            step.type === 'actor-action' &&
+            migrated.game.players.find((player) => player.playerId === step.actorPlayerId)?.role
+              .roleId === ROLE_IDS.doctor,
+        ),
+      ).toBe(false)
+      if (doctorActionRecorded) {
+        expect(restored.value.writeBackEnvelope?.session).toEqual(
+          toPersistedAppSessionV2(restored.value.session),
+        )
+      } else {
+        expect(restored.value.writeBackEnvelope).toBeUndefined()
+      }
+    },
+  )
+
+  it('migrates a pre-7F.3 blocked Doctor turn directly to the next required actor', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow(
+        [
+          { roleId: ROLE_IDS.consort, name: 'Consort' },
+          { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+          { roleId: ROLE_IDS.sheriff, name: 'Sheriff' },
+          { roleId: ROLE_IDS.citizen, name: 'Target' },
+        ],
+        1,
+      ),
+    )
+    workflow = confirmSuccessfully(workflow, 1)
+    if (workflow.status !== 'awaiting-outcome-acknowledgement') {
+      throw new Error('Expected historical blocked Doctor outcome.')
+    }
+    const legacyEnvelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2({ stage: 'sequential-night', workflow }, SAVED_AT),
+      ),
+    ) as {
+      session: { game: { settings: { allowFirstNightKills: boolean } } }
+    }
+    legacyEnvelope.session.game.settings.allowFirstNightKills = false
+
+    const restored = restorePersistedSessionEnvelopeV2(legacyEnvelope)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+      throw new Error('Expected migrated sequential Night 1.')
+    }
+    const migrated = restored.value.session.workflow
+    expect(migrated.status).toBe('collecting')
+    if (migrated.status !== 'collecting') throw new Error('Expected Sheriff collection.')
+    const currentStep = migrated.steps[migrated.currentStepIndex]
+    if (currentStep?.type !== 'actor-action') throw new Error('Expected Sheriff turn.')
+    expect(
+      migrated.game.players.find((player) => player.playerId === currentStep.actorPlayerId)?.role
+        .roleId,
+    ).toBe(ROLE_IDS.sheriff)
+    expect(
+      migrated.steps.some(
+        (step) =>
+          step.type === 'actor-action' &&
+          migrated.game.players.find((player) => player.playerId === step.actorPlayerId)?.role
+            .roleId === ROLE_IDS.doctor,
+      ),
+    ).toBe(false)
+    expect(restored.value.writeBackEnvelope?.session).toEqual(
+      toPersistedAppSessionV2(restored.value.session),
+    )
+  })
+
+  it('migrates a pre-7F.3 ready-for-Dawn Doctor action to the canonical empty Night 1 batch', () => {
+    let workflow = continueSuccessfully(
+      startedWorkflow(
+        [
+          { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+          { roleId: ROLE_IDS.citizen, name: 'Target' },
+        ],
+        1,
+      ),
+    )
+    workflow = confirmSuccessfully(workflow, 1)
+    if (workflow.status !== 'complete') throw new Error('Expected historical Doctor completion.')
+    const ready = beginFinalNightResolution(workflow)
+    if (!ready.ok) throw new Error('Expected historical ready-for-Dawn state.')
+    const legacyEnvelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(
+          { stage: 'night-resolution', workflow: ready.value },
+          SAVED_AT,
+        ),
+      ),
+    ) as {
+      session: { game: { settings: { allowFirstNightKills: boolean } } }
+    }
+    legacyEnvelope.session.game.settings.allowFirstNightKills = false
+
+    const restored = restorePersistedSessionEnvelopeV2(legacyEnvelope)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'night-resolution') {
+      throw new Error('Expected migrated ready-for-Dawn state.')
+    }
+    expect(restored.value.session.workflow.collectedActions.actions).toEqual([])
+    expect(restored.value.session.workflow.resolution.protections).toEqual([])
+    expect(restored.value.session.workflow.resolution.finalVisits).toEqual([])
+    expect(restored.value.writeBackEnvelope?.session).toEqual(
+      toPersistedAppSessionV2(restored.value.session),
+    )
+  })
+
   it.each(['blocked', 'sheriff', 'investigator', 'detective'] as const)(
     'restores the exact current %s outcome without recomputation or private prose',
     (kind) => {
@@ -790,6 +941,98 @@ describe('persisted sequential session V2', () => {
       error: {
         type: 'INVALID_DAWN_SESSION',
         reason: 'invalid-game',
+      },
+    })
+  })
+})
+
+describe('Phase 7F.3 Executioner confirmation compatibility', () => {
+  it('migrates a fully acknowledged obsolete ready stage directly into Night 1', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner, name: 'Executioner' },
+        { roleId: ROLE_IDS.citizen, name: 'Target' },
+        { roleId: ROLE_IDS.godfather, name: 'Mafia' },
+      ],
+      {
+        phase: 'executioner-briefing',
+        nightNumber: 1,
+        executionerBriefingStatus: 'pending',
+      },
+    )
+    const workflow = createExecutionerBriefingWorkflow(fixture.game)
+    if (!workflow.ok) throw new Error('Expected briefing workflow.')
+    const persisted = createPersistedSessionEnvelopeV2(
+      {
+        stage: 'executioner-briefing',
+        game: fixture.game,
+        participants: fixture.participants,
+        workflow: workflow.value,
+      },
+      SAVED_AT,
+    )
+    const obsolete = JSON.parse(JSON.stringify(persisted)) as {
+      session: { workflowStatus: string; acknowledgedBriefingIds: string[] }
+    }
+    obsolete.session.workflowStatus = 'ready'
+    obsolete.session.acknowledgedBriefingIds = workflow.value.briefings.map(
+      (briefing) => briefing.id,
+    )
+
+    const restored = restorePersistedSessionEnvelopeV2(obsolete)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+      throw new Error('Expected direct Night 1 migration.')
+    }
+    expect(restored.value.session.workflow.game.executionerTargets).toEqual(
+      fixture.game.executionerTargets,
+    )
+    expect(restored.value.writeBackEnvelope?.session.stage).toBe('sequential-night')
+  })
+
+  it('fails closed on an obsolete ready stage whose position does not prove the final briefing', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner, name: 'Executioner 1' },
+        { roleId: ROLE_IDS.executioner, name: 'Executioner 2' },
+        { roleId: ROLE_IDS.citizen, name: 'Target' },
+        { roleId: ROLE_IDS.godfather, name: 'Mafia' },
+      ],
+      {
+        phase: 'executioner-briefing',
+        nightNumber: 1,
+        executionerBriefingStatus: 'pending',
+      },
+    )
+    const workflow = createExecutionerBriefingWorkflow(fixture.game)
+    if (!workflow.ok) throw new Error('Expected briefing workflow.')
+    const persisted = createPersistedSessionEnvelopeV2(
+      {
+        stage: 'executioner-briefing',
+        game: fixture.game,
+        participants: fixture.participants,
+        workflow: workflow.value,
+      },
+      SAVED_AT,
+    )
+    const malformed = JSON.parse(JSON.stringify(persisted)) as {
+      session: {
+        workflowStatus: string
+        currentBriefingIndex: number
+        acknowledgedBriefingIds: string[]
+      }
+    }
+    malformed.session.workflowStatus = 'ready'
+    malformed.session.currentBriefingIndex = 0
+    malformed.session.acknowledgedBriefingIds = workflow.value.briefings.map(
+      (briefing) => briefing.id,
+    )
+
+    expect(restorePersistedSessionEnvelopeV2(malformed)).toEqual({
+      ok: false,
+      error: {
+        type: 'INVALID_EXECUTIONER_BRIEFING_SESSION',
+        reason: 'restored-briefing-session-mismatch',
       },
     })
   })

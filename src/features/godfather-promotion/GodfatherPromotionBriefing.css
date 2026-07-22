@@ -27,26 +27,29 @@
 .godfather-promotion h2 {
   color: var(--text-strong);
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(2rem, 7vw, 3.5rem);
+  font-size: clamp(3rem, 10vw, 5.75rem);
+  line-height: 0.92;
+  text-transform: uppercase;
 }
 
-.godfather-promotion__warning,
 .godfather-promotion__message,
 .godfather-promotion__error {
   padding: 0.9rem;
   border-radius: var(--radius-small);
 }
 
-.godfather-promotion__warning {
-  border: 2px solid var(--danger-border);
-  color: var(--danger-strong);
-  background: var(--danger-soft);
+.godfather-promotion__actor {
+  color: var(--text-muted);
+  font-size: clamp(1rem, 3vw, 1.3rem);
+  font-weight: 750;
 }
 
 .godfather-promotion__message {
-  border-left: 5px solid var(--mafia);
-  background: var(--faction-mafia-soft);
-  font-size: 1.1rem;
+  padding: 0;
+  color: var(--text-strong);
+  font-size: clamp(1.65rem, 5vw, 2.75rem);
+  font-weight: 850;
+  line-height: 1.12;
 }
 
 .godfather-promotion__error {
@@ -56,8 +59,10 @@
 }
 
 .godfather-promotion .button {
-  min-height: 2.75rem;
+  min-height: 3.5rem;
+  min-width: min(100%, 12rem);
   justify-self: start;
+  font-size: 1.05rem;
 }
 
 @media (max-width: 24.375rem) {

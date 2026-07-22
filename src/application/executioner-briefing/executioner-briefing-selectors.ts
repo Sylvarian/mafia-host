@@ -7,7 +7,8 @@ import type {
 } from './executioner-briefing-workflow.ts'
 
 export type ExecutionerBriefingView = Readonly<{
-  status: 'briefing' | 'ready'
+  alignment: 'neutral'
+  alignmentDisplayName: 'Neutral'
   currentBriefingIndex: number
   briefingCount: number
   acknowledgedCount: number
@@ -49,7 +50,8 @@ export function selectExecutionerBriefingView(
 
   const duplicateNames = getDuplicateNames(participants.map((participant) => participant.name))
   return Object.freeze({
-    status: workflow.status,
+    alignment: 'neutral',
+    alignmentDisplayName: 'Neutral',
     currentBriefingIndex: workflow.currentBriefingIndex,
     briefingCount: workflow.briefings.length,
     acknowledgedCount: workflow.acknowledgedBriefingIds.length,

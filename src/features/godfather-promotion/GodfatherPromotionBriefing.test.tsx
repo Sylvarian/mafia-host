@@ -10,20 +10,26 @@ describe('private Godfather promotion briefing', () => {
     const onContinue = vi.fn()
     render(
       <GodfatherPromotionBriefing
-        view={{ nightNumber: 2, promotedPlayerDisplayLabel: 'Alex (Player 2)' }}
+        view={{
+          nightNumber: 2,
+          roleDisplayName: 'Godfather',
+          alignment: 'mafia',
+          alignmentDisplayName: 'Mafia',
+          promotedPlayerDisplayLabel: 'Alex (Player 2)',
+        }}
         errorMessage={null}
         onContinue={onContinue}
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'New Godfather' })).toHaveFocus()
-    expect(screen.getByText(/Private host-only screen/)).toBeVisible()
-    expect(screen.getByText(/keep this screen hidden from players/)).toBeVisible()
-    const section = screen.getByRole('heading', { name: 'New Godfather' }).closest('section')
-    expect(section).toHaveTextContent('Alex (Player 2) has been promoted to Godfather.')
-    expect(section).toHaveTextContent('Privately tell Alex (Player 2) before continuing.')
+    expect(screen.getByRole('heading', { name: 'Godfather' })).toHaveFocus()
+    expect(screen.getByText('Night 2 · Mafia')).toBeVisible()
+    const section = screen.getByRole('heading', { name: 'Godfather' }).closest('section')
+    expect(section).toHaveClass('turn-surface--mafia')
+    expect(section).toHaveTextContent('Alex (Player 2)')
+    expect(section).toHaveTextContent('Tell Alex (Player 2) they are the new Godfather.')
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    screen.getByRole('button', { name: 'Continue after briefing' }).click()
+    screen.getByRole('button', { name: 'Continue' }).click()
     expect(onContinue).toHaveBeenCalledOnce()
   })
 
@@ -34,7 +40,7 @@ describe('private Godfather promotion briefing', () => {
     )
 
     expect(css).toContain('@media (max-width: 24.375rem)')
-    expect(css).toContain('min-height: 2.75rem')
+    expect(css).toContain('min-height: 3.5rem')
     expect(css).toContain('overflow-wrap: anywhere')
   })
 })

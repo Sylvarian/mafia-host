@@ -141,6 +141,18 @@ button:disabled {
   background: var(--danger-soft);
 }
 
+.turn-surface.turn-surface--mafia {
+  background: var(--faction-mafia-soft);
+}
+
+.turn-surface.turn-surface--town {
+  background: var(--faction-town-soft);
+}
+
+.turn-surface.turn-surface--neutral {
+  background: var(--faction-neutral-soft);
+}
+
 ::selection {
   color: #fff;
   background: var(--accent);

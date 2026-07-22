@@ -20,6 +20,11 @@
   color: var(--text-strong);
 }
 
+.app-header__brand h1 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .app-header__brand > span {
   display: grid;
   width: 2.4rem;
@@ -34,96 +39,8 @@
   letter-spacing: 0.04em;
 }
 
-.app-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
 .app-main {
   width: min(74rem, calc(100% - 2rem));
   margin-inline: auto;
-  padding-block: clamp(2rem, 5vw, 4.5rem);
-}
-
-.app-intro {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1rem 2rem;
-  align-items: end;
-  margin-bottom: clamp(2rem, 5vw, 3.5rem);
-}
-
-.app-intro__eyebrow {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.app-intro h1 {
-  margin: 0;
-  color: var(--text-strong);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(2.8rem, 8vw, 5.8rem);
-  line-height: 0.9;
-  letter-spacing: -0.055em;
-}
-
-.app-intro > p:not(.app-intro__eyebrow) {
-  grid-column: 1;
-  max-width: 46rem;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: clamp(1rem, 2vw, 1.2rem);
-}
-
-.app-intro__boundary {
-  grid-column: 2;
-  grid-row: 2 / 4;
-  display: grid;
-  gap: 0.25rem;
-  max-width: 18rem;
-  padding: 1rem;
-  border-left: 4px solid var(--accent);
-  border-radius: 0 var(--radius-small) var(--radius-small) 0;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-}
-
-.app-intro__boundary span {
-  font-size: 0.82rem;
-}
-
-.app-footer {
-  width: min(74rem, calc(100% - 2rem));
-  margin-inline: auto;
-  padding: 1.5rem 0 2.5rem;
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  text-align: center;
-}
-
-@media (max-width: 48rem) {
-  .app-intro {
-    grid-template-columns: 1fr;
-  }
-
-  .app-intro__boundary {
-    grid-column: 1;
-    grid-row: auto;
-    max-width: none;
-  }
-}
-
-@media (max-width: 32rem) {
-  .app-header p {
-    display: none;
-  }
+  padding-block: clamp(1rem, 3vw, 2.5rem);
 }

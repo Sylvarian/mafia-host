@@ -2,10 +2,9 @@
   min-width: 0;
   overflow-wrap: anywhere;
   padding: clamp(1rem, 4vw, 2.25rem);
-  border: 2px solid #765429;
+  border: 2px solid var(--neutral);
   border-radius: var(--radius-large);
-  color: #fff8ec;
-  background: linear-gradient(145deg, #211b14, #372916);
+  color: var(--text);
   box-shadow: var(--shadow-card);
 }
 
@@ -16,10 +15,9 @@
   gap: 1rem;
 }
 
-.executioner-briefing__eyebrow,
-.executioner-briefing-dialog__eyebrow {
+.executioner-briefing__eyebrow {
   margin: 0 0 0.45rem;
-  color: #e9bc78;
+  color: var(--neutral);
   font-size: 0.74rem;
   font-weight: 900;
   letter-spacing: 0.14em;
@@ -28,37 +26,34 @@
 
 .executioner-briefing h2 {
   margin: 0;
+  color: var(--text-strong);
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(1.65rem, 5vw, 3rem);
-  line-height: 1.05;
+  font-size: clamp(3rem, 10vw, 5.75rem);
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.executioner-briefing__actor {
+  margin: 0.65rem 0 0;
+  color: var(--text-muted);
+  font-size: clamp(1rem, 3vw, 1.3rem);
+  font-weight: 750;
 }
 
 .executioner-briefing__progress {
-  display: grid;
   flex: 0 0 auto;
-  gap: 0.1rem;
-  min-width: 10rem;
-  padding: 0.65rem 0.85rem;
-  border: 1px solid #86683d;
-  border-radius: var(--radius-medium);
-  color: #ffe2b4;
-  background: #44331f;
-  text-align: center;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
-.executioner-briefing__progress span {
-  font-size: 0.75rem;
-}
-
-.executioner-briefing__privacy {
-  display: grid;
-  gap: 0.25rem;
-  margin-top: 1.25rem;
-  padding: 1rem;
-  border: 2px solid #e0a64e;
-  border-radius: var(--radius-medium);
-  color: #fff2d7;
-  background: #503819;
+.executioner-briefing__prompt {
+  margin: clamp(1.5rem, 4vw, 2.5rem) 0 0;
+  color: var(--text-strong);
+  font-size: clamp(1.65rem, 5vw, 2.75rem);
+  font-weight: 850;
+  line-height: 1.12;
 }
 
 .executioner-briefing__card {
@@ -66,9 +61,9 @@
   gap: 0.8rem;
   margin-top: 1.25rem;
   padding: clamp(1rem, 4vw, 1.75rem);
-  border: 1px solid #86683d;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-medium);
-  background: #15120e;
+  background: var(--surface-raised);
 }
 
 .executioner-briefing__card p {
@@ -76,26 +71,27 @@
 }
 
 .executioner-briefing__target {
-  color: #fff;
-  font-size: clamp(1.35rem, 5vw, 2.2rem);
+  color: var(--text-strong);
+  font-size: clamp(2rem, 7vw, 3.5rem);
   font-weight: 900;
 }
 
-.executioner-briefing__card small {
-  color: #d5c7ae;
+.executioner-briefing__card > span,
+.executioner-briefing__card > p:last-child {
+  color: var(--text-muted);
 }
 
-.executioner-briefing__actions,
-.executioner-briefing-dialog__actions {
+.executioner-briefing__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.5rem;
 }
 
-.executioner-briefing .button,
-.executioner-briefing-dialog .button {
-  min-height: 2.75rem;
+.executioner-briefing .button {
+  min-height: 3.5rem;
+  padding-inline: 1.25rem;
+  font-size: 1.05rem;
 }
 
 .executioner-briefing__error {
@@ -103,40 +99,9 @@
   padding: 0.8rem;
   border: 1px solid var(--danger-border);
   border-radius: var(--radius-small);
-  color: #ffd6dc;
-  background: #551f29;
+  color: var(--danger-strong);
+  background: var(--danger-soft);
   font-weight: 750;
-}
-
-.executioner-briefing-dialog__backdrop {
-  position: fixed;
-  z-index: 50;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgb(8 8 10 / 82%);
-}
-
-.executioner-briefing-dialog {
-  width: min(100%, 34rem);
-  padding: clamp(1.25rem, 4vw, 2rem);
-  border: 1px solid var(--warning-border);
-  border-radius: var(--radius-large);
-  color: var(--text);
-  background: var(--surface-raised);
-  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 45%);
-}
-
-.executioner-briefing-dialog h3 {
-  margin: 0;
-  color: var(--text-strong);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 1.75rem;
-}
-
-.executioner-briefing-dialog > p:not(.executioner-briefing-dialog__eyebrow) {
-  color: var(--text-muted);
 }
 
 @media (max-width: 32rem) {
@@ -148,8 +113,7 @@
     justify-self: stretch;
   }
 
-  .executioner-briefing__actions > .button,
-  .executioner-briefing-dialog__actions > .button {
+  .executioner-briefing__actions > .button {
     width: 100%;
   }
 }

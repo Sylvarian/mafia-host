@@ -133,7 +133,7 @@ export function DayDiscussion({
           Day discussion
         </h2>
 
-        <aside className="host-role-control" aria-label="Host-only role visibility">
+        <aside className="host-role-control" aria-label="Role visibility">
           <button
             type="button"
             className="button button--secondary"
@@ -144,13 +144,10 @@ export function DayDiscussion({
               setShowHostRoles((visible) => !visible)
             }}
           >
-            {showHostRoles ? 'Hide host-only roles' : 'Show host-only roles'}
+            {showHostRoles ? 'Hide roles' : 'Show roles'}
           </button>
           {showHostRoles ? (
             <div id="host-role-view" className="host-role-view">
-              <p className="host-role-view__warning" role="alert">
-                <strong>HOST-ONLY VIEW</strong> — hide roles before showing this screen to players.
-              </p>
               {hostRoleResult === null ? (
                 <p className="host-role-view__error" role="alert">
                   Host roles are unavailable.
@@ -199,7 +196,7 @@ export function DayDiscussion({
 
         <aside className="day-discussion__mayor-control" aria-label="Private host controls">
           <div>
-            <strong>Host-only Mayor confirmation</strong>
+            <strong>Mayor reveal</strong>
             <span>Open only when a player has verbally asked to reveal as Mayor.</span>
           </div>
           <button
@@ -255,7 +252,7 @@ export function DayDiscussion({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="private-day-dialog-heading"
-            aria-describedby="private-day-dialog-warning"
+            aria-describedby={dialog === 'no-execution' ? 'private-day-dialog-warning' : undefined}
             tabIndex={-1}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -264,14 +261,12 @@ export function DayDiscussion({
               }
             }}
           >
-            <p className="mayor-reveal__eyebrow">Private host-only screen</p>
+            <p className="mayor-reveal__eyebrow">
+              {dialog === 'mayor' ? 'Mayor reveal' : 'Final day outcome'}
+            </p>
             {dialog === 'mayor' ? (
               <>
                 <h3 id="private-day-dialog-heading">Confirm a Mayor’s public reveal</h3>
-                <p id="private-day-dialog-warning" className="mayor-reveal__warning">
-                  Privacy warning: this list identifies living, unrevealed Mayors. Keep it hidden
-                  from players until the selected reveal is confirmed.
-                </p>
                 <CandidateList
                   legend="Select the player who verbally revealed"
                   name="mayor-reveal-candidate"
@@ -320,13 +315,7 @@ export function DayDiscussion({
             ) : dialog === 'execution' ? (
               <>
                 <h3 id="private-day-dialog-heading">Execute a player</h3>
-                <p id="private-day-dialog-warning" className="mayor-reveal__warning">
-                  Host-only warning: keep this selection hidden while you deliberately record the
-                  public result. Only the information needed to record the execution is shown here.
-                </p>
-                <CandidateList
-                  legend="Select the living player who was executed"
-                  name="execution-candidate"
+                <ExecutionCandidateGroups
                   candidates={privateExecutionCandidates}
                   selectedPlayerId={selectedExecutionPlayerId}
                   onSelect={(playerId) => {
@@ -550,6 +539,64 @@ function CandidateList({
         </label>
       ))}
     </fieldset>
+  )
+}
+
+function ExecutionCandidateGroups({
+  candidates,
+  selectedPlayerId,
+  onSelect,
+}: Readonly<{
+  candidates: readonly DayExecutionCandidateView[]
+  selectedPlayerId: PlayerId | null
+  onSelect: (playerId: PlayerId) => void
+}>) {
+  const groups = (['mafia', 'town', 'neutral'] as const).map((alignment) => ({
+    alignment,
+    label: alignment === 'mafia' ? 'MAFIA' : alignment === 'town' ? 'TOWN' : 'NEUTRAL',
+    candidates: candidates.filter((candidate) => candidate.alignment === alignment),
+  }))
+
+  return (
+    <div
+      className="execution-candidate-groups"
+      aria-label="Select the living player who was executed"
+    >
+      {groups.map((group) => (
+        <fieldset
+          className={`execution-candidate-group execution-candidate-group--${group.alignment}`}
+          key={group.alignment}
+        >
+          <legend>{group.label}</legend>
+          {group.candidates.length === 0 ? (
+            <p>No living players.</p>
+          ) : (
+            group.candidates.map((candidate) => (
+              <label
+                className={`mayor-reveal__candidate mayor-reveal__candidate--${candidate.alignment}`}
+                key={candidate.playerId}
+              >
+                <input
+                  type="radio"
+                  name="execution-candidate"
+                  checked={selectedPlayerId === candidate.playerId}
+                  onChange={() => {
+                    onSelect(candidate.playerId)
+                  }}
+                />
+                <span>{candidate.playerDisplayLabel}</span>
+                <small>
+                  {candidate.activeRoleDisplayName} · {candidate.alignmentDisplayName}
+                  {candidate.originallyAssignedRoleDisplayName === null
+                    ? ''
+                    : ` · Originally assigned: ${candidate.originallyAssignedRoleDisplayName}`}
+                </small>
+              </label>
+            ))
+          )}
+        </fieldset>
+      ))}
+    </div>
   )
 }
 

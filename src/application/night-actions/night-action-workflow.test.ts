@@ -388,12 +388,13 @@ describe('sequential night workflow', () => {
     ])
   })
 
-  it('does not create first-night killer steps, actions, visits, or outcomes', () => {
+  it('does not create disabled first-night Doctor or killer steps, actions, visits, or outcomes', () => {
     let workflow: ActiveNightActionCollectionWorkflow = advancePastOverview(
       start(
         [
           { roleId: ROLE_IDS.godfather },
           { roleId: ROLE_IDS.serialKiller },
+          { roleId: ROLE_IDS.doctor },
           { roleId: ROLE_IDS.sheriff },
           { roleId: ROLE_IDS.citizen },
         ],
@@ -401,8 +402,8 @@ describe('sequential night workflow', () => {
       ),
     )
     expect(workflow.steps).toHaveLength(2)
-    expect(workflow.game.players[2]?.role.roleId).toBe(ROLE_IDS.sheriff)
-    const sheriff = confirmSuccessfully(workflow, getPlayerId(workflow, 3))
+    expect(workflow.game.players[3]?.role.roleId).toBe(ROLE_IDS.sheriff)
+    const sheriff = confirmSuccessfully(workflow, getPlayerId(workflow, 4))
     workflow = continueSuccessfully(sheriff)
     if (workflow.status !== 'complete') throw new Error('Expected first-night completion.')
 
@@ -426,6 +427,7 @@ describe('sequential night workflow', () => {
       [
         { roleId: ROLE_IDS.godfather },
         { roleId: ROLE_IDS.serialKiller },
+        { roleId: ROLE_IDS.doctor },
         { roleId: ROLE_IDS.citizen },
       ],
       { settings: { allowFirstNightKills: false } },

@@ -366,7 +366,7 @@ export type PersistedAppSessionV2 =
     }>
   | Readonly<{
       stage: 'executioner-briefing'
-      workflowStatus: 'briefing' | 'ready'
+      workflowStatus: 'briefing'
       game: PersistedGameV2
       participants: readonly PersistedPlayerV2[]
       currentBriefingIndex: number
@@ -530,7 +530,7 @@ export function toPersistedAppSessionV2(session: ActiveAppSession): PersistedApp
     case 'executioner-briefing':
       return deepFreeze({
         stage: 'executioner-briefing',
-        workflowStatus: session.workflow.status,
+        workflowStatus: 'briefing',
         game: copyGame(session.game),
         participants: session.participants.map(copyPlayer),
         currentBriefingIndex: session.workflow.currentBriefingIndex,

@@ -4,25 +4,39 @@
   max-width: 44rem;
   margin: 0 auto;
   padding: clamp(1rem, 4vw, 2rem);
-  border: 1px solid var(--border);
+  border: 2px solid var(--neutral);
   border-radius: 1rem;
-  background: var(--surface-raised);
 }
 
-.revenge-resolution__eyebrow,
-.revenge-resolution__selection span {
-  color: var(--muted);
+.revenge-resolution__eyebrow {
+  margin: 0;
+  color: var(--neutral);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.revenge-resolution__warning,
 .revenge-resolution__error {
   padding: 0.85rem;
   border-radius: 0.75rem;
 }
 
-.revenge-resolution__warning {
-  border: 1px solid var(--warning-border);
-  background: var(--warning-soft);
+.revenge-resolution h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(3rem, 10vw, 5.75rem);
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.revenge-resolution__prompt {
+  margin: 0.5rem 0 0;
+  color: var(--text-strong);
+  font-size: clamp(1.65rem, 5vw, 2.75rem);
+  font-weight: 850;
+  line-height: 1.12;
 }
 
 .revenge-resolution__error {
@@ -35,9 +49,15 @@
   gap: 0.25rem;
   padding: 1rem;
   border-radius: 0.75rem;
-  background: var(--surface-soft);
+  background: var(--surface-raised);
+}
+
+.revenge-resolution__selection strong {
+  color: var(--text-strong);
+  font-size: clamp(2rem, 7vw, 3.5rem);
 }
 
 .revenge-resolution .button {
-  min-height: 44px;
+  min-height: 3.5rem;
+  font-size: 1.05rem;
 }

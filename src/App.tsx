@@ -13,7 +13,6 @@ import {
 } from '@/application/day-outcome/index.ts'
 import {
   selectExecutionerBriefingView,
-  type CompleteExecutionerBriefingPhaseError,
   type ExecutionerBriefingError,
   type ExecutionerBriefingId,
   type FinalizeRoleDistributionError,
@@ -47,7 +46,6 @@ import {
   beginSessionDayDiscussion,
   beginSessionFirstNight,
   beginSessionNextNight,
-  completeSessionExecutionerBriefings,
   confirmSessionNightTarget,
   confirmSessionMayorReveal,
   confirmAllSessionRoleCardsDelivered,
@@ -513,7 +511,7 @@ export default function App({
                   if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
                     handleInvalidStage(result.error)
                   }
-                  setBriefingErrorMessage(getExecutionerBriefingErrorMessage(result.error))
+                  setBriefingErrorMessage(getFirstNightTransitionErrorMessage(result.error))
                   return false
                 }
                 setBriefingErrorMessage(null)
@@ -530,21 +528,6 @@ export default function App({
               runBriefingOperation(() =>
                 applyExecutionerBriefingResult(nextSessionExecutionerBriefing(session)),
               )
-            }}
-            onBeginNight={() => {
-              runBriefingOperation(() => {
-                const result = completeSessionExecutionerBriefings(session)
-                if (!result.ok) {
-                  if (result.error.type === 'INVALID_ACTIVE_APP_SESSION_STAGE') {
-                    handleInvalidStage(result.error)
-                  }
-                  setBriefingErrorMessage(getBriefingCompletionErrorMessage(result.error))
-                  return false
-                }
-                clearErrors()
-                setActiveSession(result.value)
-                return true
-              })
             }}
           />
         )
@@ -1033,28 +1016,11 @@ export default function App({
       <header className="app-header">
         <div className="app-header__brand" aria-label="Mafia Host">
           <span aria-hidden="true">MH</span>
-          <strong>Mafia Host</strong>
+          <h1>Mafia Host</h1>
         </div>
-        <p>Phase 7F.2 · Opposing final-two draw</p>
       </header>
 
       <main className="app-main">
-        <section className="app-intro" aria-labelledby="page-heading">
-          <p className="app-intro__eyebrow">Run the table safely</p>
-          <h1 id="page-heading">Run the game from setup to a safe final result</h1>
-          <p>
-            This host-only app keeps one active session locally in this browser so a refresh can
-            resume at the exact authoritative stage.
-          </p>
-          <div className="app-intro__boundary">
-            <strong>Host-only workflow</strong>
-            <span>
-              The local save is not encrypted. Anyone with access to this browser profile and its
-              developer tools can inspect secret game information.
-            </span>
-          </div>
-        </section>
-
         {appState.mode === 'saved-session-found' ? (
           <SessionRecovery
             state="saved"
@@ -1106,11 +1072,6 @@ export default function App({
           </>
         )}
       </main>
-
-      <footer className="app-footer">
-        The save stays on this browser profile and device. Use one host tab; there is no cloud sync
-        or backup.
-      </footer>
     </div>
   )
 }
@@ -1306,11 +1267,4 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'GODFATHER_PROMOTION_APPLICATION_REJECTED':
       return getNightActionCollectionErrorMessage(error)
   }
-}
-
-function getBriefingCompletionErrorMessage(
-  error:
-    ExecutionerBriefingError | CompleteExecutionerBriefingPhaseError | NightActionCollectionError,
-): string {
-  return getFirstNightTransitionErrorMessage(error)
 }

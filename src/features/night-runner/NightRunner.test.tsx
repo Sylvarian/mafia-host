@@ -90,7 +90,7 @@ function actorWorkflow(
 }
 
 describe('sequential Night Runner UI', () => {
-  it('shows host-safe player, role, faction, availability, and faction treatments', () => {
+  it('keeps active-role context prominent while ordinary targets remain names-only', () => {
     const workflow = actorWorkflow(
       startedWorkflow([
         { roleId: ROLE_IDS.doctor, name: 'Host Doctor' },
@@ -111,27 +111,45 @@ describe('sequential Night Runner UI', () => {
 
     const group = screen.getByRole('group', { name: 'Targets for Doctor' })
     const mafia = within(group).getByRole('button', {
-      name: /Alex \(Player 2\), Godfather, Mafia, alive, available/,
+      name: 'Alex (Player 2), alive, available',
     })
     const town = within(group).getByRole('button', {
-      name: /Alex \(Player 3\), Citizen, Town, alive, available/,
+      name: 'Alex (Player 3), alive, available',
     })
     const neutral = within(group).getByRole('button', {
-      name: /Neutral target, Serial Killer, Neutral, alive, available/,
+      name: 'Neutral target, alive, available',
     })
 
-    expect(mafia).toHaveClass('target-button--mafia')
-    expect(town).toHaveClass('target-button--town')
-    expect(neutral).toHaveClass('target-button--neutral')
-    expect(within(mafia).getByText('Godfather · Mafia')).toBeVisible()
-    expect(within(town).getByText('Citizen · Town')).toBeVisible()
-    expect(within(neutral).getByText('Serial Killer · Neutral')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Doctor' })).toHaveFocus()
+    expect(screen.getByText('Night 2 · Town')).toBeVisible()
+    expect(screen.getByText('4 of 4')).toBeVisible()
+    expect(screen.getByText('Who do you want to protect?')).toBeVisible()
+    expect(document.querySelector('.night-runner')).toHaveClass('turn-surface--town')
+    expect(group).not.toHaveTextContent('Godfather')
+    expect(group).not.toHaveTextContent('Citizen')
+    expect(group).not.toHaveTextContent('Serial Killer')
+    expect(group).not.toHaveTextContent('Mafia')
+    expect(group).not.toHaveTextContent('Town')
+    expect(within(group).queryByText('Neutral')).toBeNull()
+    expect([mafia, town, neutral].every((target) => target.className === 'target-button')).toBe(
+      true,
+    )
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((target) => target.textContent),
+    ).toEqual([
+      'Host DoctorAvailable',
+      'Alex (Player 2)Available',
+      'Alex (Player 3)Available',
+      'Neutral targetAvailable',
+    ])
     expect(screen.queryByText(/role-instance-|night-fixture-game/)).toBeNull()
 
     fireEvent.click(town)
     expect(town).toHaveClass('is-selected')
     expect(town).toHaveAttribute('aria-pressed', 'true')
-    expect(within(town).getByText('Alive — selected')).toBeVisible()
+    expect(within(town).getByText('Selected')).toBeVisible()
   })
 
   it('keeps target rows responsive at 320px and 390px with 44px-plus touch controls', () => {
@@ -140,14 +158,14 @@ describe('sequential Night Runner UI', () => {
     expect(css).toMatch(
       /\.target-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*12rem\),\s*1fr\)\)/,
     )
-    expect(css).toMatch(/\.target-button\s*\{[\s\S]*?min-height:\s*4\.5rem;/)
-    expect(4.5 * 16).toBeGreaterThanOrEqual(44)
+    expect(css).toMatch(/\.target-button\s*\{[\s\S]*?min-height:\s*4\.75rem;/)
+    expect(4.75 * 16).toBeGreaterThanOrEqual(44)
     expect(css).toMatch(/@media \(max-width:\s*24\.5rem\)/)
     expect(320).toBeLessThanOrEqual(24.5 * 16)
     expect(390).toBeLessThanOrEqual(24.5 * 16)
   })
 
-  it('keeps unavailable targets visible with their role and faction', () => {
+  it('keeps unavailable targets visible without exposing their role or alignment', () => {
     const workflow = actorWorkflow(
       startedWorkflow([
         { roleId: ROLE_IDS.doctor, name: 'Doctor' },
@@ -166,12 +184,14 @@ describe('sequential Night Runner UI', () => {
     )
 
     const unavailable = screen.getByRole('button', {
-      name: /Dead target, Citizen 1, Town, dead, unavailable/,
+      name: 'Dead target, dead, unavailable',
     })
     expect(unavailable).toBeDisabled()
-    expect(unavailable).toHaveClass('target-button--town')
-    expect(within(unavailable).getByText('Citizen 1 · Town')).toBeVisible()
-    expect(within(unavailable).getByText('Dead — unavailable')).toBeVisible()
+    expect(unavailable).toHaveClass('target-button')
+    expect(unavailable).not.toHaveClass('target-button--town')
+    expect(within(unavailable).getByText('Dead')).toBeVisible()
+    expect(unavailable).not.toHaveTextContent('Citizen')
+    expect(unavailable).not.toHaveTextContent('Town')
   })
 
   it('keeps target selection temporary until explicit confirmation', () => {
@@ -192,7 +212,7 @@ describe('sequential Night Runner UI', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen, Town/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
     expect(onConfirmTarget).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(onConfirmTarget).toHaveBeenCalledTimes(1)
@@ -210,10 +230,10 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen, Town/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target and continue' }))
 
-    expect(screen.getByRole('heading', { name: /Wake Sheriff/ })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
     expect(screen.queryByText('Action recorded')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
     expect(screen.queryByText('Outcome acknowledged')).toBeNull()
@@ -229,19 +249,19 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
-    const resultHeading = screen.getByRole('heading', { name: 'Sheriff result' })
+    const resultHeading = screen.getByRole('heading', { name: 'Sheriff' })
     expect(resultHeading).toHaveFocus()
-    expect(screen.getByText('Not suspicious')).toBeVisible()
-    expect(screen.getByText(/Private screen/)).toBeVisible()
+    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
+    expect(document.querySelector('.immediate-outcome')).toHaveClass('turn-surface--town')
     expect(screen.queryByText('Action recorded')).toBeNull()
 
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to next actor' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByRole('heading', { name: 'Final night resolution prepared' })).toHaveFocus()
-    expect(screen.queryByText('Not suspicious')).toBeNull()
+    expect(screen.queryByText('NOT SUSPICIOUS')).toBeNull()
     expect(screen.queryByText('Target: Target')).toBeNull()
     expect(screen.queryByText('Outcome acknowledged')).toBeNull()
   })
@@ -256,12 +276,14 @@ describe('sequential Night Runner UI', () => {
     )
     render(<NightHarness initialWorkflow={workflow} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
 
-    expect(screen.getByRole('heading', { name: 'Investigator result' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Investigator' })).toHaveFocus()
     expect(screen.getByText('Group D')).toBeVisible()
-    expect(screen.getByText('Consigliere · Serial Killer · Jester · Citizen')).toBeVisible()
+    expect(
+      screen.getByText('Possible roles: Consigliere · Serial Killer · Jester · Citizen'),
+    ).toBeVisible()
     expect(screen.queryByText(/actual role|framed/i)).toBeNull()
   })
 
@@ -293,11 +315,12 @@ describe('sequential Night Runner UI', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'BLOCKED' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Doctor' })).toHaveFocus()
+    expect(screen.getByText('BLOCKED')).toBeVisible()
     expect(screen.getByText('Your action cannot be performed tonight.')).toBeVisible()
     expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
     expect(screen.queryByText(/No result/i)).toBeNull()
-    expect(screen.getByRole('button', { name: 'Continue to next actor' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
   })
 })

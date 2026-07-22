@@ -22,27 +22,27 @@ export function GodfatherPromotionBriefing({
   }, [])
 
   return (
-    <section className="godfather-promotion" aria-labelledby="godfather-promotion-heading">
+    <section
+      className={`godfather-promotion turn-surface turn-surface--${view.alignment}`}
+      aria-labelledby="godfather-promotion-heading"
+    >
       <p className="godfather-promotion__eyebrow">
-        Night {view.nightNumber} · Private host-only screen
+        Night {view.nightNumber} · {view.alignmentDisplayName}
       </p>
       <h2 id="godfather-promotion-heading" ref={headingRef} tabIndex={-1}>
-        New Godfather
+        {view.roleDisplayName}
       </h2>
-      <p className="godfather-promotion__warning">
-        <strong>HOST-ONLY — keep this screen hidden from players.</strong>
-      </p>
+      <p className="godfather-promotion__actor">{view.promotedPlayerDisplayLabel}</p>
       <p className="godfather-promotion__message">
-        <strong>{view.promotedPlayerDisplayLabel}</strong> has been promoted to Godfather.
+        Tell {view.promotedPlayerDisplayLabel} they are the new Godfather.
       </p>
-      <p>Privately tell {view.promotedPlayerDisplayLabel} before continuing.</p>
       {errorMessage === null ? null : (
         <p className="godfather-promotion__error" role="alert">
           {errorMessage}
         </p>
       )}
       <button type="button" className="button button--primary" onClick={onContinue}>
-        Continue after briefing
+        Continue
       </button>
     </section>
   )

@@ -229,18 +229,64 @@ export function isNightActionRequiredForPlayer(game: GameState, actorPlayerId: P
     return false
   }
 
-  const isSkippedFirstNightKillingRole =
+  const isOmittedFirstNightRole =
     game.nightNumber === 1 &&
     !game.settings.allowFirstNightKills &&
-    (activeRoleId === ROLE_IDS.godfather || activeRoleId === ROLE_IDS.serialKiller)
+    (activeRoleId === ROLE_IDS.doctor ||
+      activeRoleId === ROLE_IDS.godfather ||
+      activeRoleId === ROLE_IDS.serialKiller)
 
-  return !isSkippedFirstNightKillingRole
+  return !isOmittedFirstNightRole
+}
+
+function isLegacyFirstNightActionRequiredForPlayer(
+  game: GameState,
+  actorPlayerId: PlayerId,
+): boolean {
+  if (game.nightNumber !== 1 || game.settings.allowFirstNightKills) {
+    return isNightActionRequiredForPlayer(game, actorPlayerId)
+  }
+
+  const activeRoleId = selectActiveRoleId(game, actorPlayerId)
+  return activeRoleId === ROLE_IDS.doctor || isNightActionRequiredForPlayer(game, actorPlayerId)
 }
 
 export function createCollectedNightActions(
   game: GameState,
   actions: readonly SubmittedNightAction[],
   previousTargets: readonly PreviousNightTarget[] = [],
+): DomainResult<CollectedNightActions, NightActionBatchError> {
+  return createCollectedNightActionsUsingRequirement(
+    game,
+    actions,
+    previousTargets,
+    isNightActionRequiredForPlayer,
+  )
+}
+
+/**
+ * Validates the one historical V2 action shape that existed before Phase 7F.3: on Night 1 with
+ * first-night kills disabled, Doctors acted while Godfathers and Serial Killers did not. This is
+ * intentionally recovery-only so current commands cannot reintroduce the retired rule.
+ */
+export function createLegacyFirstNightCollectedActionsForRecovery(
+  game: GameState,
+  actions: readonly SubmittedNightAction[],
+  previousTargets: readonly PreviousNightTarget[] = [],
+): DomainResult<CollectedNightActions, NightActionBatchError> {
+  return createCollectedNightActionsUsingRequirement(
+    game,
+    actions,
+    previousTargets,
+    isLegacyFirstNightActionRequiredForPlayer,
+  )
+}
+
+function createCollectedNightActionsUsingRequirement(
+  game: GameState,
+  actions: readonly SubmittedNightAction[],
+  previousTargets: readonly PreviousNightTarget[],
+  isActionRequired: (game: GameState, actorPlayerId: PlayerId) => boolean,
 ): DomainResult<CollectedNightActions, NightActionBatchError> {
   if (game.phase !== 'night-action-collection') {
     return fail({ type: 'ACTION_BATCH_GAME_MISMATCH', reason: 'game-phase' })
@@ -282,7 +328,7 @@ export function createCollectedNightActions(
       return actionResult
     }
 
-    if (!isNightActionRequiredForPlayer(game, actionResult.value.actorPlayerId)) {
+    if (!isActionRequired(game, actionResult.value.actorPlayerId)) {
       return fail({
         type: 'UNEXPECTED_ACTION',
         actorPlayerId: actionResult.value.actorPlayerId,
@@ -298,7 +344,7 @@ export function createCollectedNightActions(
   const blockedRoleInstanceIds = selectBlockedRoleInstanceIds(game, copiedActions)
   for (const player of game.players) {
     if (
-      isNightActionRequiredForPlayer(game, player.playerId) &&
+      isActionRequired(game, player.playerId) &&
       !blockedRoleInstanceIds.has(player.role.instanceId) &&
       !actorRoleInstanceIds.has(player.role.instanceId)
     ) {
@@ -368,6 +414,53 @@ export function validateCollectedNightActions(
 
   const validationResult = createCollectedNightActions(game, batch.actions, previousTargets)
   return validationResult
+}
+
+export function validateLegacyFirstNightCollectedActionsForRecovery(
+  game: GameState,
+  batch: CollectedNightActions,
+  previousTargets: readonly PreviousNightTarget[] = [],
+): DomainResult<CollectedNightActions, NightActionBatchError> {
+  const shapeResult = validateCollectedNightActionShape(game, batch)
+  return shapeResult.ok
+    ? createLegacyFirstNightCollectedActionsForRecovery(game, batch.actions, previousTargets)
+    : shapeResult
+}
+
+function validateCollectedNightActionShape(
+  game: GameState,
+  batch: CollectedNightActions,
+): DomainResult<true, NightActionBatchError> {
+  const batchCandidate: unknown = batch
+  if (
+    !isUnknownRecord(batchCandidate) ||
+    typeof batchCandidate.gameId !== 'string' ||
+    !Number.isSafeInteger(batchCandidate.nightNumber) ||
+    !isUnknownArray(batchCandidate.actions)
+  ) {
+    return fail({ type: 'INVALID_ACTION_BATCH', reason: 'invalid-batch' })
+  }
+
+  for (const [index, action] of batchCandidate.actions.entries()) {
+    if (
+      !isUnknownRecord(action) ||
+      typeof action.actorPlayerId !== 'string' ||
+      typeof action.actorRoleInstanceId !== 'string' ||
+      typeof action.actorRoleId !== 'string' ||
+      typeof action.actionKind !== 'string' ||
+      typeof action.targetPlayerId !== 'string'
+    ) {
+      return fail({ type: 'INVALID_ACTION_BATCH', reason: 'invalid-action', index })
+    }
+  }
+
+  if (batch.gameId !== game.id) {
+    return fail({ type: 'ACTION_BATCH_GAME_MISMATCH', reason: 'game-id' })
+  }
+  if (batch.nightNumber !== game.nightNumber) {
+    return fail({ type: 'ACTION_BATCH_GAME_MISMATCH', reason: 'night-number' })
+  }
+  return succeed(true)
 }
 
 export function validatePreviousNightTargets(

@@ -35,10 +35,6 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.session-recovery__privacy {
-  color: #ffd180;
-}
-
 .session-recovery__actions,
 .session-confirmation__actions {
   display: flex;

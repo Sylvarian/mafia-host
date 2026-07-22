@@ -27,6 +27,9 @@ export type NightCompletionView =
 
 export type RevengeResolutionView = Readonly<{
   nightNumber: number
+  roleDisplayName: 'Jester'
+  alignment: 'neutral'
+  alignmentDisplayName: 'Neutral'
   victimDisplayLabel: string
 }>
 
@@ -92,6 +95,9 @@ export function selectRevengeResolutionView(
 ): RevengeResolutionView {
   return Object.freeze({
     nightNumber: workflow.game.nightNumber,
+    roleDisplayName: 'Jester',
+    alignment: 'neutral',
+    alignmentDisplayName: 'Neutral',
     victimDisplayLabel: selectPlayerDisplayLabel(
       workflow.participants,
       workflow.selectedRevenge.victimPlayerId,

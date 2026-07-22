@@ -350,10 +350,11 @@ describe('night-action structural validation', () => {
     ).toMatchObject({ ok: false, error: { type: 'ROLE_HAS_NO_NIGHT_ACTION' } })
   })
 
-  it('excludes first-night killing roles from batch requirements and rejects fabricated actions', () => {
+  it('excludes Doctor and first-night killing roles from batch requirements and rejects fabricated actions', () => {
     const roles = [
       { roleId: ROLE_IDS.godfather },
       { roleId: ROLE_IDS.serialKiller },
+      { roleId: ROLE_IDS.doctor },
       { roleId: ROLE_IDS.citizen },
     ]
     const disabledFirstNight = createNightFixture(roles, {
@@ -385,6 +386,14 @@ describe('night-action structural validation', () => {
       ok: false,
       error: { type: 'UNEXPECTED_ACTION', actorRoleInstanceId: 'role-instance-2' },
     })
+    expect(
+      createCollectedNightActions(disabledFirstNight.game, [
+        actionFor(disabledFirstNight, 2, 3, 'protect'),
+      ]),
+    ).toMatchObject({
+      ok: false,
+      error: { type: 'UNEXPECTED_ACTION', actorRoleInstanceId: 'role-instance-3' },
+    })
 
     for (const fixture of [
       createNightFixture(roles, {
@@ -398,12 +407,16 @@ describe('night-action structural validation', () => {
         settings: { allowFirstNightKills: false },
       }),
     ]) {
-      const actions = [actionFor(fixture, 0, 1, 'attack'), actionFor(fixture, 1, 0, 'attack')]
+      const actions = [
+        actionFor(fixture, 0, 1, 'attack'),
+        actionFor(fixture, 1, 0, 'attack'),
+        actionFor(fixture, 2, 3, 'protect'),
+      ]
 
       expect(createCollectedNightActions(fixture.game, actions).ok).toBe(true)
-      expect(createCollectedNightActions(fixture.game, actions.slice(0, 1))).toMatchObject({
+      expect(createCollectedNightActions(fixture.game, actions.slice(0, 2))).toMatchObject({
         ok: false,
-        error: { type: 'MISSING_REQUIRED_ACTION', actorRoleInstanceId: 'role-instance-2' },
+        error: { type: 'MISSING_REQUIRED_ACTION', actorRoleInstanceId: 'role-instance-3' },
       })
     }
   })

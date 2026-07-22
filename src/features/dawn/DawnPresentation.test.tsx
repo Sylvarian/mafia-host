@@ -21,11 +21,7 @@ describe('public Dawn presentation', () => {
 
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
     expect(screen.queryByText(/died during the night/i)).toBeNull()
-    expect(
-      screen.getByText(
-        'Keep every player’s eyes closed while all Dawn effects are finalized. The next screen may remain host-only.',
-      ),
-    ).toBeVisible()
+    expect(screen.getByText('Keep every player’s eyes closed, then finalize Dawn.')).toBeVisible()
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Finalize Dawn' }))

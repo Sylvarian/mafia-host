@@ -164,7 +164,7 @@ describe('Executioner briefing workflow', () => {
     expect(acknowledged.value.acknowledgedBriefingIds).toHaveLength(1)
   })
 
-  it('requires every acknowledgement and rejects forged readiness at completion', () => {
+  it('derives completion readiness from acknowledgements and rejects legacy status flags', () => {
     const fixture = duplicateExecutionerFixture()
     const workflow = requireWorkflow(fixture.game)
     const first = workflow.briefings[0]
@@ -191,14 +191,14 @@ describe('Executioner briefing workflow', () => {
     const next = nextExecutionerBriefing(fixture.game, firstAcknowledged.value)
     if (!next.ok) throw new Error('Expected the second briefing.')
     const ready = acknowledgeExecutionerBriefing(fixture.game, next.value, second.id)
-    if (!ready.ok) throw new Error('Expected the workflow to become ready.')
-    expect(ready.value.status).toBe('ready')
+    if (!ready.ok) throw new Error('Expected the final acknowledgement to succeed.')
+    expect(ready.value.status).toBe('briefing')
 
     expect(validateExecutionerBriefingsReadyForCompletion(fixture.game, ready.value)).toEqual({
       ok: true,
       value: true,
     })
-    expect(ready.value.status).toBe('ready')
+    expect(ready.value.acknowledgedBriefingIds).toHaveLength(ready.value.briefings.length)
     expect(fixture.game.executionerBriefingStatus).toBe('pending')
   })
 

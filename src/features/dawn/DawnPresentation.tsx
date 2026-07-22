@@ -73,15 +73,11 @@ export function DawnPresentation({
   return (
     <section className="dawn-ready" aria-labelledby="dawn-ready-heading">
       <div className="dawn-ready__content">
-        <p className="dawn-ready__eyebrow">Host-only Dawn boundary</p>
+        <p className="dawn-ready__eyebrow">Dawn</p>
         <h2 id="dawn-ready-heading" ref={headingRef} tabIndex={-1}>
           Night resolution complete
         </h2>
-        <p>Ordinary deaths have not been announced.</p>
-        <p className="dawn-ready__guidance">
-          Keep every player’s eyes closed while all Dawn effects are finalized. The next screen may
-          remain host-only.
-        </p>
+        <p className="dawn-ready__guidance">Keep every player’s eyes closed, then finalize Dawn.</p>
         {error === null ? null : (
           <p className="dawn-error" role="alert">
             {getNightCompletionErrorMessage(error)}

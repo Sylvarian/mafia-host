@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012, Godfather succession, and the opposing killing-role final-two draw; implementation complete through Phase 7F.2<br>
+**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.3 first-night wake rule; implementation complete through Phase 7F.3<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -163,6 +163,14 @@ recorded restore to the completed boundary; zero or partial lists restore to one
 boundary. Duplicate or unknown legacy records and mixed old/new authority fail closed. Existing
 assignments and Executioner targets are never rerolled during restoration.
 
+Phase 7F.3 also keeps schema V2 and neutral-state sub-version `4`. Exact disabled-first-night V2
+saves produced under the earlier Doctor-wake rule are revalidated against that narrow historical
+rule, then canonicalized without the Doctor step/action and written back only when the payload
+changes. An obsolete Executioner `ready` save is accepted only when every canonical briefing ID is
+acknowledged; it enters Night 1 directly and is written back as the canonical next stage. Missing,
+duplicate, unknown, or partially acknowledged evidence fails closed. Neither migration consumes
+randomness, rerolls targets, nor replays private information.
+
 The separate `mafia-host:next-game-setup-template:v1` payload contains exactly ordered setup-only
 `roster` entries with string `name` and boolean `playing`, canonical `roleCounts`, and exact
 `settings`. It never contains player IDs and never enters the active-session envelope or recovery
@@ -314,13 +322,13 @@ When disabled, the host still sees the actual role, but the public announcement 
 
 When disabled on night one:
 
-- Every living Godfather and Serial Killer is skipped.
+- Every living Doctor, Godfather, and Serial Killer is omitted.
 - They are not woken, receive no actor-action step, select no target, submit no action, appear in no action review, and are not required by final batch validation.
-- They make no visit and produce no attack attempt.
+- They make no visit and produce no protection or attack attempt.
 - Living Godfathers remain visible in the private Mafia overview.
-- Framer, Consort, Consigliere, and all applicable Town roles continue acting normally.
+- Consort, Framer, Consigliere, Sheriff, Investigator, and Detective continue acting normally.
 
-On night two and later, Godfather and Serial Killer act normally regardless of this setting. When enabled, they also act normally on night one. No fake skipped action or null-target action is created.
+On night two and later, Doctor, Godfather, and Serial Killer act normally regardless of this setting. When enabled, they also act normally on night one. No fake skipped action or null-target action is created.
 
 ---
 
@@ -614,8 +622,9 @@ When the host prepares, distributes, and confirms a game:
     physically delivered. There are no per-player delivery controls or intermediate
     acknowledgement screen.
 11. Assign one eligible Town target to every Executioner from the final assignments.
-12. If Executioners exist, complete the private briefing one Executioner at a time.
-13. Enter Night 1 action collection.
+12. If Executioners exist, complete the private briefing one Executioner at a time; delivery of
+    the final target immediately enters Night 1 with no ready screen or second confirmation.
+13. If no Executioner exists, enter Night 1 action collection immediately.
 
 Role assignments must use a testable injected random source rather than calling `Math.random()` throughout the domain.
 
@@ -675,11 +684,13 @@ After Executioner targets have been assigned and before ordinary first-night act
 2. If one or more Executioners exist, call each Executioner separately.
 3. The app shows the host that Executioner's target.
 4. The host privately communicates the target.
-5. Host confirms and continues.
+5. Host marks the target delivered. The final delivery immediately begins Night 1.
 
 The briefing model contains only stable Executioner/target identities and duplicate-role ordinal.
 It does not contain the target's role or faction. Games with no Executioner proceed directly to
-Night 1 without creating an empty briefing workflow.
+Night 1 without creating an empty briefing workflow. There is no `ready` UI state and no final
+“Begin Night 1?” confirmation. Rapid operations, Strict Mode, save retry, and recovery may create
+the Night 1 workflow only once and may not reroll or replay a delivered target.
 
 ## 11.2 Canonical sequential wake order
 
@@ -702,22 +713,30 @@ role-instance ordinal with participating roster order as the tie-breaker. Displa
 array order, and randomness never affect wake order. Physical order remains distinct from final
 ordinary resolution priority.
 
-When first-night killing is disabled, every living Godfather and Serial Killer step is omitted
-entirely on Night 1. Those players do not wake, choose a target, create an action, visit, or receive
-an immediate confirmation. Living Godfathers remain visible in the private Mafia overview.
+When first-night killing is disabled, every living Doctor, Godfather, and Serial Killer step is
+omitted entirely on Night 1. Those players do not wake, choose a target, create an action, visit,
+produce a protection or attack, or receive an immediate confirmation. Living Godfathers remain
+visible in the private Mafia overview. The actor indexes close around omitted copies without gaps.
+Night 2+ and enabled Night 1 sequences retain all three roles.
 
 ## 11.3 Sequential actor flow and blocking
 
-For each actor, the application privately shows the actor identity, role, and valid targets. Each
-target row shows a stable human-readable player label, assigned role, faction text, and
-alive/availability state. Duplicate names use roster positions such as `Alex (Player 1)` and never
-display raw technical IDs. Faction color is a secondary cue only.
+For each actor, the application privately makes the active role the primary heading, follows it
+with the concise authoritative host prompt, and then shows legal targets and one main action. The
+dominant turn surface uses the active alignment: light red Mafia, light green Town, or light grey
+Neutral, with textual alignment context so colour is not the only cue. Promoted Godfathers and
+converted roles use the canonical active role/alignment.
+
+Ordinary target rows contain only stable human-readable player labels and availability state.
+Duplicate names use roster positions such as `Alex (Player 1)` and never display raw technical
+IDs. They never expose or encode target role/alignment through text, grouping, DOM order, CSS
+classes, ARIA, hidden attributes, or disabled controls.
 
 Target selection is temporary React state. It does not commit, resolve, autosave, consume
 randomness, or affect later actors. For Consort, Framer, Godfather, Serial Killer, and Doctor,
 **Confirm target and continue** atomically records and seals the action and makes the next actor
 current. For Sheriff, Investigator, Consigliere, and Detective, **Confirm target** records the
-action and its private result; the single **Continue to next actor** operation seals that result
+action and its private result; the single **Continue** operation seals that result
 and advances atomically. Earlier actors cannot be edited after later private information may
 depend on them.
 
@@ -735,7 +754,7 @@ result, or Doctor previous-target record. Consorts never receive this blocked ou
 are immune. Multiple Consorts targeting one non-Consort create one blocked state; mutual
 Consort-on-Consort targeting produces two visits and both Consorts act.
 
-The blocked screen has exactly one **Continue to next actor** control. It has no target selection,
+The blocked screen has exactly one **Continue** control. It has no target selection,
 fabricated action, or second acknowledgement screen.
 
 ## 11.4 Immediate outcomes and Detective timing
@@ -751,9 +770,9 @@ Only these immediate outcome categories exist:
 Consort, Framer, Godfather, Serial Killer, and Doctor receive no private result screen. Attacks,
 protection success, immunity, collisions, and ordinary deaths are not revealed. Sheriff and
 permanent investigation groups use frames already confirmed earlier in the same sequence. The host
-sees exactly one current private result and one **Continue to next actor** control. Continuing
+sees exactly one current private result and one **Continue** control. Continuing
 removes the result from the rendered DOM and advances; there is no `Outcome acknowledged` screen.
-The current heading receives focus and the privacy warning remains visible.
+The role remains the primary heading, the result is large, and the current heading receives focus.
 
 All Detectives act after every other actionable role. A Detective immediately sees the target's
 confirmed non-Detective visit, or “visited nobody.” Trackable visits include Consort, Framer,
@@ -889,7 +908,7 @@ It was a quiet night. Nobody died.
 
 The source text contained “quiet now”; this specification assumes “quiet night.”
 
-If first-night kills are disabled, no Godfather or Serial Killer action exists on night one, so dawn cannot report a death from either role for that night.
+If first-night kills are disabled, no Doctor, Godfather, or Serial Killer action exists on night one, so no protection or killing effect from those roles can exist for that night.
 
 The explicit **Continue to Day N** operation validates the authoritative current
 Dawn/game/night match, increments only the day counter, drops Dawn/night workflow authority, and
@@ -915,7 +934,7 @@ During day discussion, the public-safe screen shows every player with:
 Available controls:
 
 - Deliberately confirm a Mayor's verbal public reveal.
-- Show or hide a temporary host-only role list.
+- Show or hide a temporary role-bearing host list.
 - Execute a living participating player.
 - End the day without execution.
 
@@ -931,16 +950,18 @@ visible and returns canonical Mafia, Town, and Neutral groups with duplicate-saf
 alive/dead status, current active role/alignment, immutable original assignment where different,
 and legitimate public-role status. Converted Executioners display active Jester/original
 Executioner; promoted Mafia display active Godfather/original assignment. Executioner targets, personal wins, pending
-revenge, raw IDs, and other private neutral mechanics are excluded. A textual **HOST-ONLY VIEW**
-warning remains visible until the host hides the list. Each full player-card surface uses the
-current active alignment's light background: Mafia red, Town green, or Neutral grey. Textual
+revenge, raw IDs, and other private neutral mechanics are excluded. Each full player-card surface
+uses the current active alignment's light background: Mafia red, Town green, or Neutral grey. Textual
 alignment, alive/dead status, active role, and changed original assignment remain visible, so color
 is never the sole cue. These colors are feature-only and non-persistent.
 
-Both final controls use deliberate private host-only confirmations. The execution candidate list
-contains living duplicate-safe player labels plus current active role/alignment and an original
-assignment only when changed. It excludes targets, personal wins, pending revenge, and night data.
-Dialog state and temporary selection are not persisted.
+Both final controls use deliberate private confirmations. The execution candidate list is already
+authorized to show role/alignment, so it groups living candidates under Mafia, Town, and Neutral
+without changing canonical roster order inside each group. It contains duplicate-safe player
+labels, current active role/alignment, and an original assignment only when changed. It excludes
+targets, personal wins, pending revenge, and night data. Dialog state and temporary selection are
+not persisted. This grouping never applies to ordinary private target lists, which remain
+names-only and do not encode hidden alignment.
 
 ---
 
@@ -1156,7 +1177,7 @@ Minimum current correction support:
 - Before confirmation, the current actor's temporary target may change freely.
 - After non-informational confirmation, the action is sealed and the next actor becomes current.
 - After informational confirmation, the one current private result is authoritative until the host
-  selects **Continue to next actor**, which seals and advances atomically.
+  selects **Continue**, which seals and advances atomically.
 - A blocked actor is sealed and advanced by the same one-button operation.
 - A later actor cannot proceed while an informational or blocked private screen remains current.
 - Before confirming execution, the host can cancel or change the selected player.
@@ -1302,7 +1323,12 @@ Minimum scenarios:
 - Detective immediately sees each supported non-Detective confirmed visit.
 - Detective actions never appear in the trackable visit ledger.
 - Detectives tracking one another both see “visited nobody.”
-- First-night Godfather and Serial Killer actors are omitted when configured.
+- First-night Doctor, Godfather, and Serial Killer actors are omitted when configured; their
+  enabled-Night-1 and Night-2+ turns remain canonical.
+- Omitted actors create no step, action, placeholder, visit, protection, attack, recovery position,
+  or actor-index gap; an otherwise empty sequence reaches direct Dawn.
+- Final Executioner target delivery enters Night 1 exactly once without a second confirmation;
+  recovery migrates an obsolete fully acknowledged ready stage without reroll or replay.
 - Godfather and Serial mutual attack setting behaves correctly.
 - Mayor reveal remains public and reminds the host to count every vote as three.
 - Trial guidance derives the strict majority from living participants; Mayor weight does not change it.
@@ -1359,7 +1385,7 @@ final-two draw with precedence over ordinary faction predicates.
 
 ### R-002 — First-night killing disabled
 
-**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Godfather and Serial Killer actors are skipped entirely. They have no actor-action step, action, immediate outcome, visit, or attack attempt and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Other applicable roles continue acting. Killing roles act normally when the setting is enabled and on night two or later.
+**Status: Decided.** When `allowFirstNightKills` is disabled on night one, all living Doctor, Godfather, and Serial Killer actors are omitted entirely. They have no actor-action step, action, immediate outcome, visit, protection, attack attempt, recovery position, or placeholder and are not required in the final batch. Living Godfathers remain in the private Mafia overview. Consort, Framer, Consigliere, Sheriff, Investigator, and Detective continue acting in canonical order. Doctor, Godfather, and Serial Killer act normally when the setting is enabled and on night two or later.
 
 ### R-003 — Consort blocking
 

@@ -9,24 +9,33 @@ and physical-card screen. Phase 7F.1 shows every private role card with exactly 
 **Confirm all role cards delivered** action and no per-player delivery controls. The host remains
 responsible for privately handing out every card before pressing it; that one guarded action
 immediately enters the correct Executioner or Night 1 stage. Components do not shuffle roles,
-construct game state, or assign Executioner targets themselves.
+construct game state, or assign Executioner targets themselves. Because the private card list is
+already authorized to reveal roles, Phase 7F.3 groups it under Mafia, Town, and Neutral while
+preserving roster order inside each group.
 
 `executioner-briefing` renders exactly one Phase 7A private briefing at a time. It exposes the
 Executioner identity and target player name but not the target role. Focus and confirmation state
-are local; targets and acknowledgement evidence remain domain/application authority.
+are local; targets and acknowledgement evidence remain domain/application authority. Phase 7F.3
+makes Executioner the large role heading on a light Neutral surface. **Target delivered** advances
+between copies, and the final **Target delivered — begin Night 1** enters Night 1 immediately with
+no dialog, ready screen, or extra click.
 
 Phase 7C.1 streamlines the Phase 7A.1 Night Runner. `night-runner` renders the Mafia overview and
 one current actor boundary. Consort, Framer, Godfather, Serial Killer, and Doctor use **Confirm
 target and continue** with no intermediate result. Sheriff, Investigator, Consigliere, and
-Detective show exactly one private result with one **Continue to next actor** action. Target
-selection is temporary React state and is discarded unless confirmed. Target
-rows always show the stable player label, assigned role, faction text, and alive/availability state
-with accessible faction, selected, focus, and disabled treatments. Duplicate names use roster
-positions, never raw technical IDs.
+Detective show exactly one private result with one **Continue** action. Target selection is
+temporary React state and is discarded unless confirmed. Phase 7F.3 makes the active role the
+largest heading, shows the concise registry-owned host question next, and uses a dominant light
+red Mafia, light green Town, or light grey Neutral surface derived from the active-role selector.
+Target rows show only the stable player label and availability state. Duplicate names use roster
+positions, never raw technical IDs; role/alignment is absent from text, ARIA, grouping, ordering,
+classes, hidden DOM, and disabled-control metadata.
+When first-night kills are disabled, Doctor, Godfather, and Serial Killer are absent from the
+application workflow, so the feature renders no skipped/disabled card or placeholder for them.
 
 Blocked actors receive a strong text-labelled **BLOCKED** screen with no target controls. Only the
-current private outcome exists in the DOM. Its heading receives focus, the privacy warning remains
-visible, and its only **Continue to next actor** operation removes the private content and advances.
+current private outcome exists in the DOM. Its role heading receives focus, and its only
+**Continue** operation removes the private content and advances.
 There is no `Action recorded` or `Outcome acknowledged` production screen. React does
 not construct actions, calculate blocks, frames, visits, investigations, attacks, or deaths. The
 coordinating app guards rapid repeated operations and saves each canonical transition once.
@@ -45,8 +54,8 @@ each living revealed Mayor. Phase 7C adds only **Execute a player** and **End da
 execution** as final controls; it still contains no nomination, vote, winner, revenge-resolution,
 or next-night controls.
 
-Phase 7C.1 adds **Show host-only roles** / **Hide host-only roles** only to editable day discussion.
-The list and prominent textual warning are absent by default. The component requests the separate
+Phase 7F.3 exposes **Show roles** / **Hide roles** only to editable day discussion. The list is
+absent by default. The component requests the separate
 sanitized host-role selector only while visible, and toggle state never autosaves or enters the
 application session. Rows are grouped under accessible Mafia, Town, and Neutral headings. Each
 entire player card uses a light red, green, or grey background derived from active alignment while
@@ -57,14 +66,16 @@ Godfather/original assignment; targets, wins, pending revenge, and raw IDs never
 DOM. Hiding, refresh, recovery, and new-day entry all return to the public-safe view. Controls retain
 44px minimum targets, and the owned grid avoids horizontal overflow at 320px and 390px.
 
-Opening **Confirm Mayor reveal** makes the public background inert and enters a host-only dialog
-with a strong privacy warning. The dialog receives only sanitized candidate IDs and duplicate-safe
+Opening **Confirm Mayor reveal** makes the public background inert and enters a focused dialog.
+The dialog receives only sanitized candidate IDs and duplicate-safe
 labels, never a game, role map, faction, or Executioner target. Radio selection, dialog openness,
 focus, and operation guards are temporary React state. Escape and Cancel restore focus; rapid
 confirmation is guarded.
 
-The execution control opens a host-only alert dialog containing living duplicate-safe player
-labels, current active roles, textual alignments, and an optional changed original assignment. It
+The execution control opens an alert dialog grouped under Mafia, Town, and Neutral because that
+list is already authorized to contain living duplicate-safe player labels, current active roles,
+textual alignments, and an optional changed original assignment. Canonical roster order is retained
+inside each group. It
 never shows Executioner targets, personal wins, pending revenge, or predicted neutral effects. The
 no-execution control has its own irreversible confirmation. Both make the background inert,
 support Escape/cancel and focus restoration, keep selection and guards in React only, and guard
@@ -91,7 +102,7 @@ revenge, personal wins, and raw IDs never enter its props or DOM. The feature ha
 revenge, or role-reveal control and remains usable without horizontal overflow at 320px and 390px.
 Both final-two branches arrive as terminal application authority, so the feature offers no target
 collection or next-night action. Existing private personal wins remain outside its props and DOM.
-The private promotion feature uses the neutral label **Continue after briefing** because its
+The private promotion feature uses the label **Continue** because its
 acknowledgement may either enter the ordinary wake sequence or settle an eligible final two first.
 
 Waiting recovery remains generic `Day complete` even when private pending revenge exists. Game-over
@@ -100,15 +111,15 @@ time before Continue.
 
 Phase 7E gives a non-terminal day summary one deliberate **Begin Night N** control. Later nights
 reuse `night-runner`; only living actionable active roles appear, and prior actions/results are
-absent. `revenge-resolution` is a focused host-only Dawn screen shown only after recovery Continue.
-It names the already-selected random victim, warns the host to keep the screen private, and applies
+absent. `revenge-resolution` is a focused Neutral Jester Dawn screen shown only after recovery Continue.
+It names the already-selected random victim and applies
 the unavoidable death once. The public Dawn then combines only current ordinary/revenge deaths
 without causes, or the app goes directly to public-safe Game Over. **Continue to Day N** and the
 existing day controls repeat for later cycles; host-role visibility resets hidden on each entry
 and recovery.
 
-Phase 7F adds `godfather-promotion`, a focused host-only screen before a newly promoted player's
-first later-night action. Its heading receives focus, its warning and duplicate-safe identity wrap
+Phase 7F adds `godfather-promotion`, a focused Mafia screen before a newly promoted player's
+first later-night action. Its large Godfather heading receives focus and its duplicate-safe identity wraps
 at 320px/390px, and its only 44px control continues to night actions. It cannot be dismissed with
 Escape. Save failure leaves the same briefing visible.
 

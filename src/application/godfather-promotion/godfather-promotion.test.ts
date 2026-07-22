@@ -28,6 +28,9 @@ describe('Godfather promotion briefing selector', () => {
       ok: true,
       value: {
         nightNumber: 2,
+        roleDisplayName: 'Godfather',
+        alignment: 'mafia',
+        alignmentDisplayName: 'Mafia',
         promotedPlayerDisplayLabel: 'Alex (Player 2)',
       },
     })

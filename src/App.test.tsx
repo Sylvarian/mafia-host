@@ -617,19 +617,19 @@ describe('Phase 7F Godfather promotion briefing', () => {
     expect(container).not.toHaveTextContent('Secret promoted player')
     expect(container).not.toHaveTextContent('Godfather')
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('heading', { name: 'New Godfather' })).toHaveFocus()
-    expect(
-      screen.getByRole('heading', { name: 'New Godfather' }).closest('section'),
-    ).toHaveTextContent('Secret promoted player has been promoted to Godfather.')
+    expect(screen.getByRole('heading', { name: 'Godfather' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Godfather' }).closest('section')).toHaveTextContent(
+      'Tell Secret promoted player they are the new Godfather.',
+    )
 
-    const continueButton = screen.getByRole('button', { name: 'Continue after briefing' })
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
     act(() => {
       continueButton.click()
       continueButton.click()
     })
 
     expect(store.saveCount).toBe(1)
-    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
     expect(randomNext).not.toHaveBeenCalled()
   })
 
@@ -639,15 +639,15 @@ describe('Phase 7F Godfather promotion briefing', () => {
     renderLoaded(godfatherPromotionBriefingSession(), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue after briefing' }))
-    expect(screen.getByRole('heading', { name: 'New Godfather' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('heading', { name: 'Godfather' })).toBeVisible()
     expect(screen.getByText(/promotion is preserved/)).toBeVisible()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
 
     store.failSave = false
-    fireEvent.click(screen.getByRole('button', { name: 'Continue after briefing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
-    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
   })
 
   it.each([
@@ -660,12 +660,12 @@ describe('Phase 7F Godfather promotion briefing', () => {
       renderLoaded(finalTwoGodfatherPromotionBriefingSession(setting), store)
       fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
 
-      fireEvent.click(screen.getByRole('button', { name: 'Continue after briefing' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
       expect(screen.getByRole('heading', { name: 'Game over' })).toHaveFocus()
       expect(screen.getByText('Draw')).toBeVisible()
       expect(screen.getByText(explanation)).toBeVisible()
-      expect(screen.queryByRole('heading', { name: 'Living Mafia overview' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Mafia' })).toBeNull()
       expect(screen.queryByRole('button', { name: /night/i })).toBeNull()
       expect(store.lastSuccessfulEnvelope?.session).toMatchObject({ stage: 'game-over' })
       if (store.lastSuccessfulEnvelope?.session.stage !== 'game-over') {
@@ -681,13 +681,13 @@ describe('Phase 7F Godfather promotion briefing', () => {
     renderLoaded(finalTwoGodfatherPromotionBriefingSession(true), store)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue after briefing' }))
-    expect(screen.getByRole('heading', { name: 'New Godfather' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('heading', { name: 'Godfather' })).toBeVisible()
     expect(screen.getByText(/promotion and final draw are preserved/)).toBeVisible()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
 
     store.failSave = false
-    fireEvent.click(screen.getByRole('button', { name: 'Continue after briefing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(screen.getByRole('heading', { name: 'Game over' })).toBeVisible()
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
@@ -722,8 +722,21 @@ describe('Phase 7A.1 App integration', () => {
       bulkButton.click()
     })
     expect(store.saveCount).toBe(1)
-    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
     expect(JSON.stringify(store.lastSuccessfulEnvelope)).not.toContain('deliveredPlayerIds')
+
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
+    act(() => {
+      continueButton.click()
+      continueButton.click()
+    })
+    expect(store.saveCount).toBe(2)
+    expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toHaveFocus()
+    expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
+    if (store.lastSuccessfulEnvelope?.session.stage !== 'night-resolution') {
+      throw new Error('Expected direct ready-for-Dawn persistence.')
+    }
+    expect(store.lastSuccessfulEnvelope.session.collectedActions).toEqual([])
   })
 
   it('transitions directly to Executioner briefing and retries the identical post-delivery save without rerolling', () => {
@@ -745,7 +758,7 @@ describe('Phase 7A.1 App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm all role cards delivered' }))
 
-    expect(screen.getByRole('heading', { name: 'Executioner — Executioner' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Executioner' })).toBeVisible()
     expect(randomNext).toHaveBeenCalledTimes(1)
     const failedPayload = JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)
 
@@ -753,6 +766,63 @@ describe('Phase 7A.1 App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
     expect(JSON.stringify(store.attemptedEnvelopes.at(-1)?.session)).toBe(failedPayload)
     expect(randomNext).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts Night 1 once from the final Executioner acknowledgement and retries the same save', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.executioner, name: 'Executioner' },
+        { roleId: ROLE_IDS.citizen, name: 'Target' },
+        { roleId: ROLE_IDS.godfather, name: 'Mafia' },
+      ],
+      {
+        phase: 'executioner-briefing',
+        nightNumber: 1,
+        executionerBriefingStatus: 'pending',
+      },
+    )
+    const workflow = createExecutionerBriefingWorkflow(fixture.game)
+    if (!workflow.ok) throw new Error('Expected Executioner briefing.')
+    const store = new MemorySessionStore()
+    const randomNext = vi.fn(() => 0.75)
+    renderLoaded(
+      {
+        stage: 'executioner-briefing',
+        game: fixture.game,
+        participants: fixture.participants,
+        workflow: workflow.value,
+      },
+      store,
+      randomNext,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
+    store.failSave = true
+    const finalAcknowledgement = screen.getByRole('button', {
+      name: 'Target delivered — begin Night 1',
+    })
+    act(() => {
+      finalAcknowledgement.click()
+      finalAcknowledgement.click()
+    })
+
+    expect(store.saveCount).toBe(1)
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toHaveFocus()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.queryByText(/Final private check|Begin Night 1\?/i)).toBeNull()
+    const attemptedSession = store.attemptedEnvelopes[0]?.session
+    if (attemptedSession?.stage !== 'sequential-night') {
+      throw new Error('Expected one attempted Night 1 save.')
+    }
+    expect(attemptedSession.game.executionerTargets).toEqual(fixture.game.executionerTargets)
+    const failedPayload = JSON.stringify(attemptedSession)
+    expect(randomNext).not.toHaveBeenCalled()
+
+    store.failSave = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+    expect(store.saveCount).toBe(2)
+    expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
+    expect(randomNext).not.toHaveBeenCalled()
   })
 
   it('keeps recovery DOM, accessible labels, title, and URL public-safe until Continue', () => {
@@ -776,10 +846,10 @@ describe('Phase 7A.1 App integration', () => {
     expect(window.location.href).toBe(url)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Secret Sheriff' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
     expect(
       screen.getByRole('button', {
-        name: /Secret Neutral, Jester, Neutral, alive, available/,
+        name: 'Secret Neutral, alive, available',
       }),
     ).toBeVisible()
   })
@@ -812,7 +882,8 @@ describe('Phase 7A.1 App integration', () => {
     expect(container.innerHTML).not.toMatch(/executioner|role-instance|player-/i)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByText('Private Executioner briefing')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Executioner' })).toBeVisible()
+    expect(screen.getByText('Hidden Executioner')).toBeVisible()
   })
 
   it('preserves the exact immediate result after save failure and retry without rerandomizing', () => {
@@ -824,13 +895,13 @@ describe('Phase 7A.1 App integration', () => {
     const randomNext = vi.fn(() => 0.5)
     renderLoaded({ stage: 'sequential-night', workflow }, store, randomNext)
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: /Target, Jester, Neutral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target, alive, available' }))
     expect(store.saveCount).toBe(0)
 
     store.failSave = true
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(store.saveCount).toBe(1)
-    expect(screen.getByText('Not suspicious')).toBeVisible()
+    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
     expect(screen.getByText(/Unable to save locally/)).toBeVisible()
 
@@ -838,7 +909,7 @@ describe('Phase 7A.1 App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
     expect(store.saveCount).toBe(2)
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
-    expect(screen.getByText('Not suspicious')).toBeVisible()
+    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
     expect(randomNext).not.toHaveBeenCalled()
   })
 
@@ -865,14 +936,14 @@ describe('Phase 7A.1 App integration', () => {
     expect(screen.getByText('Night 2 — Night actions')).toBeVisible()
     expect(container).not.toHaveTextContent('Hidden Sheriff')
     expect(container).not.toHaveTextContent('Hidden Target')
-    expect(container).not.toHaveTextContent('Not suspicious')
+    expect(container).not.toHaveTextContent('NOT SUSPICIOUS')
     expect(container.innerHTML).not.toMatch(/sheriff-result|role-instance|player-2/)
     expect(document.title).toBe(title)
     expect(window.location.href).toBe(url)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('heading', { name: 'Sheriff result' })).toHaveFocus()
-    expect(screen.getByText('Not suspicious')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
+    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
     expect(screen.getByText('Target: Hidden Target')).toBeVisible()
   })
 
@@ -884,7 +955,7 @@ describe('Phase 7A.1 App integration', () => {
     ])
     const { store } = renderLoaded({ stage: 'sequential-night', workflow })
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
     store.failSave = true
     const confirmButton = screen.getByRole('button', { name: 'Confirm target and continue' })
     act(() => {
@@ -893,7 +964,7 @@ describe('Phase 7A.1 App integration', () => {
     })
 
     expect(store.saveCount).toBe(1)
-    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
     expect(screen.queryByText('Action recorded')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Acknowledge result' })).toBeNull()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
@@ -902,7 +973,7 @@ describe('Phase 7A.1 App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
     expect(store.saveCount).toBe(2)
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(failedPayload)
-    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toBeVisible()
   })
 
   it('guards one-button informational advancement and does not replay a result on retry', () => {
@@ -913,27 +984,27 @@ describe('Phase 7A.1 App integration', () => {
     ])
     const { store } = renderLoaded({ stage: 'sequential-night', workflow })
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: /Citizen, Citizen/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Citizen, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
     expect(store.saveCount).toBe(1)
-    expect(screen.getByRole('heading', { name: 'Sheriff result' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toBeVisible()
 
     store.failSave = true
-    const continueButton = screen.getByRole('button', { name: 'Continue to next actor' })
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
     act(() => {
       continueButton.click()
       continueButton.click()
     })
     expect(store.saveCount).toBe(2)
-    expect(screen.getByRole('heading', { name: 'Wake Investigator — Investigator' })).toHaveFocus()
-    expect(screen.queryByText('Not suspicious')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Investigator' })).toHaveFocus()
+    expect(screen.queryByText('NOT SUSPICIOUS')).toBeNull()
     const failedPayload = JSON.stringify(store.attemptedEnvelopes[1]?.session)
 
     store.failSave = false
     fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
     expect(store.saveCount).toBe(3)
     expect(JSON.stringify(store.attemptedEnvelopes[2]?.session)).toBe(failedPayload)
-    expect(screen.queryByText('Not suspicious')).toBeNull()
+    expect(screen.queryByText('NOT SUSPICIOUS')).toBeNull()
   })
 
   it('preserves one blocked screen through save failure and guards its direct continue', () => {
@@ -945,24 +1016,25 @@ describe('Phase 7A.1 App integration', () => {
     ])
     const { store } = renderLoaded({ stage: 'sequential-night', workflow })
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    fireEvent.click(screen.getByRole('button', { name: /Doctor, Doctor/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Doctor, alive, available' }))
     store.failSave = true
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target and continue' }))
     expect(store.saveCount).toBe(1)
-    expect(screen.getByRole('heading', { name: 'BLOCKED' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Doctor' })).toHaveFocus()
+    expect(screen.getByText('BLOCKED')).toBeVisible()
     expect(screen.queryByRole('group', { name: /Targets for/ })).toBeNull()
     const blockedPayload = JSON.stringify(store.attemptedEnvelopes[0]?.session)
 
     store.failSave = false
     fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
     expect(JSON.stringify(store.attemptedEnvelopes[1]?.session)).toBe(blockedPayload)
-    const continueButton = screen.getByRole('button', { name: 'Continue to next actor' })
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
     act(() => {
       continueButton.click()
       continueButton.click()
     })
     expect(store.saveCount).toBe(3)
-    expect(screen.getByRole('heading', { name: 'Wake Sheriff — Sheriff' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toHaveFocus()
   })
 
   it('guards direct Dawn, retains its failed in-memory save, and retries without reapplication', () => {
@@ -1009,13 +1081,13 @@ describe('Phase 7A.1 App integration', () => {
     renderLoaded({ stage: 'sequential-night', workflow })
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     const targets = screen.getByRole('group', { name: 'Targets for Sheriff' })
-    fireEvent.click(within(targets).getByRole('button', { name: /Citizen, Citizen/ }))
+    fireEvent.click(within(targets).getByRole('button', { name: 'Citizen, alive, available' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm target' }))
-    expect(screen.getByRole('heading', { name: 'Sheriff result' })).toBeVisible()
-    expect(screen.getByText('Not suspicious')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Sheriff' })).toBeVisible()
+    expect(screen.getByText('NOT SUSPICIOUS')).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to next actor' }))
-    expect(screen.queryByText('Not suspicious')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.queryByText('NOT SUSPICIOUS')).toBeNull()
     expect(screen.getByRole('heading', { name: 'Night resolution complete' })).toBeVisible()
     expect(screen.queryByText(/Sheriff result/)).toBeNull()
 
@@ -1055,7 +1127,7 @@ describe('Phase 7B App integration', () => {
     expect(firstRender.store.saveCount).toBe(1)
     expect(firstRender.container).not.toHaveTextContent('Host role: Mayor 1')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show host-only roles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
     expect(screen.getByText('Host role: Mayor 1')).toBeVisible()
     expect(screen.getByText('Host role: Citizen')).toBeVisible()
     expect(screen.getByText('Host role: Mayor 2')).toBeVisible()
@@ -1073,7 +1145,7 @@ describe('Phase 7B App integration', () => {
     const recovered = renderLoaded(restored.value.session, firstRender.store)
     expect(recovered.container).not.toHaveTextContent('Host role: Mayor 1')
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('button', { name: 'Show host-only roles' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Show roles' })).toBeVisible()
     expect(recovered.container).not.toHaveTextContent('Host role: Mayor 1')
     expect(firstRender.store.saveCount).toBe(1)
   })
@@ -1221,7 +1293,7 @@ describe('Phase 7C App integration', () => {
       beginNight.click()
     })
     expect(store.saveCount).toBe(3)
-    expect(screen.getByRole('heading', { name: 'Living Mafia overview' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Mafia' })).toHaveFocus()
     expect(screen.queryByRole('button', { name: 'Begin Night 2' })).toBeNull()
     expect(store.lastSuccessfulEnvelope?.session).toMatchObject({
       stage: 'sequential-night',
@@ -1481,7 +1553,10 @@ describe('corrected Phase 7D App integration and privacy', () => {
     expect(randomNext).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('heading', { name: 'Resolve Jester revenge' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Jester' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Jester' }).closest('section')).toHaveClass(
+      'turn-surface--neutral',
+    )
     expect(screen.getByText('Revenge victim')).toBeVisible()
     const applyRevenge = screen.getByRole('button', {
       name: 'Apply revenge death and continue',

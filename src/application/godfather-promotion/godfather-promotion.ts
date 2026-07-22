@@ -4,6 +4,9 @@ import type { CollectingNightActionsWorkflow } from '../night-actions/index.ts'
 
 export type GodfatherPromotionBriefingView = Readonly<{
   nightNumber: number
+  roleDisplayName: 'Godfather'
+  alignment: 'mafia'
+  alignmentDisplayName: 'Mafia'
   promotedPlayerDisplayLabel: string
 }>
 
@@ -48,6 +51,9 @@ export function selectGodfatherPromotionBriefingView(
     ok: true,
     value: Object.freeze({
       nightNumber: workflow.game.nightNumber,
+      roleDisplayName: 'Godfather',
+      alignment: 'mafia',
+      alignmentDisplayName: 'Mafia',
       promotedPlayerDisplayLabel: selectPlayerDisplayLabel(
         workflow.participants,
         participantIndex,

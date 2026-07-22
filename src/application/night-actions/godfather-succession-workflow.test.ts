@@ -37,6 +37,7 @@ describe('Godfather succession night workflow', () => {
       type: 'actor-action',
       roleDisplayName: 'Godfather',
       faction: 'mafia',
+      factionLabel: 'Mafia',
     })
     const target = advanced.value.game.players[2]
     if (target === undefined) throw new Error('Expected target.')

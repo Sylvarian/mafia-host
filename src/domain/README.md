@@ -15,8 +15,8 @@ roster order.
 Phase 4 adds immutable night-action kinds, submitted action identity, per-role-instance structural
 target validation, complete-batch validation, and frozen collected batches. The role registry now
 contains immutable collection metadata and explicit physical order, but no executable callbacks or
-effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Godfather and
-Serial Killer actors are excluded from collection requirements. Mutual Godfather/Serial targets and
+effect logic. Doctor self/repeat rules are validated centrally. Disabled first-night Doctor,
+Godfather, and Serial Killer actors are excluded from collection requirements. Mutual Godfather/Serial targets and
 Consort-on-Consort targets remain structurally valid on nights when those actors act.
 
 Phase 5 adds immutable, setup-independent investigation Groups A through D plus an explicit
@@ -24,7 +24,9 @@ canonical role-to-group mapping. It also adds pure stages for canonical action o
 block attempts and immunity, effective actions, visits, frames, Doctor protections, attacks,
 provisional deaths, Sheriff suspicion, shared Investigator/Consigliere results, and Detective
 tracking. The orchestration function revalidates Phase 4 input and returns a deeply frozen
-`NightResolution`. It never mutates `GameState`, applies a provisional death, advances the phase,
+`NightResolution`. Phase 7F.3 retains one explicitly named recovery-only validator/resolver for the
+retired V2 shape in which a disabled-first-night Doctor acted; current commands cannot call that
+historical rule. It never mutates `GameState`, applies a provisional death, advances the phase,
 uses randomness, generates Dawn output, converts a role, triggers a Jester effect, or evaluates a
 winner.
 
@@ -52,7 +54,7 @@ Canonical Consort actions determine blocked role-instance identities before late
 complete action batches accept no action for a blocked non-Consort while rejecting a fabricated
 one. Shared frame, Sheriff, investigation-group, visit, and Detective functions serve both
 immediate application outcomes and final resolution. Detective actions are deliberately excluded
-from the trackable visit ledger; blocked actors and first-night-skipped killers likewise have no
+from the trackable visit ledger; blocked actors and first-night-omitted roles likewise have no
 visit. Dawn history records an unblocked Doctor's confirmed target even if the Doctor or target
 dies, but records nothing for a blocked Doctor.
 
@@ -161,3 +163,10 @@ death-reveal and non-execution conversion rules, and never mutates the input. St
 states must prove the exact draw reason, setting branch, active-role pairing, survivor state, and
 linked evidence. No generic combat simulator, role scripting system, or additional playable night
 was introduced.
+
+Phase 7F.3 changes only disabled-first-night action eligibility: active Doctors, Godfathers, and
+Serial Killers are omitted before sequence construction and batch requirements, so they have no
+step, index, placeholder, action, visit, protection, or attack on Night 1. Active-role derivation,
+duplicate ordering, and stable role-instance identity remain canonical. Enabled Night 1 and every
+Night 2+ use the unchanged rules. Presentation colours, prompts, and list grouping remain outside
+domain state.

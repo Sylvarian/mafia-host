@@ -27,9 +27,6 @@ export type MafiaOverviewMember = Readonly<{
 export type NightTargetOption = Readonly<{
   playerId: PlayerId
   playerDisplayLabel: string
-  roleDisplayName: string
-  faction: Faction
-  factionLabel: 'Mafia' | 'Town' | 'Neutral'
   alive: boolean
   enabled: boolean
   disabledReason: NightActionCollectionError | null
@@ -142,22 +139,11 @@ export function selectCurrentNightStepView(
         : 'advance-directly',
     targetOptions: Object.freeze(
       workflow.game.players.map((target) => {
-        const targetActiveRoleId = selectRequiredActiveRoleId(workflow.game, target.playerId)
-        const targetRole = findRoleDefinition(targetActiveRoleId)
-        if (targetRole === undefined) {
-          throw new Error(`Target ${target.playerId} has an unknown role.`)
-        }
         const confirmationResult = validateCurrentNightActionTarget(workflow, target.playerId)
 
         return Object.freeze({
           playerId: target.playerId,
           playerDisplayLabel: selectPlayerDisplayLabel(workflow.participants, target.playerId),
-          roleDisplayName:
-            targetActiveRoleId === target.role.roleId
-              ? getRoleInstanceDisplayName(target.role, targetRole)
-              : targetRole.name,
-          faction: targetRole.faction,
-          factionLabel: formatFaction(targetRole.faction),
           alive: target.alive,
           enabled: confirmationResult.ok,
           disabledReason: confirmationResult.ok ? null : confirmationResult.error,

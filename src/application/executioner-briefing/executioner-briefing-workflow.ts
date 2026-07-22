@@ -27,7 +27,7 @@ type ExecutionerBriefingWorkflowFields = Readonly<{
 }>
 
 export type ExecutionerBriefingWorkflow = ExecutionerBriefingWorkflowFields &
-  Readonly<{ status: 'briefing' | 'ready' }>
+  Readonly<{ status: 'briefing' }>
 
 export type ActiveExecutionerBriefingWorkflow = ExecutionerBriefingWorkflow
 
@@ -162,7 +162,7 @@ export function validateExecutionerBriefingWorkflow(
   const candidate: unknown = workflow
   if (
     !isUnknownRecord(candidate) ||
-    (candidate.status !== 'briefing' && candidate.status !== 'ready') ||
+    candidate.status !== 'briefing' ||
     typeof candidate.gameId !== 'string' ||
     !isUnknownArray(candidate.briefings) ||
     !isUnknownArray(candidate.acknowledgedBriefingIds) ||
@@ -232,14 +232,6 @@ export function validateExecutionerBriefingWorkflow(
     return fail({ type: 'INVALID_EXECUTIONER_BRIEFING_WORKFLOW', operation })
   }
 
-  const allAcknowledged = acknowledgedIds.length === canonicalIds.length
-  if (
-    (candidate.status === 'briefing' && allAcknowledged) ||
-    (candidate.status === 'ready' && !allAcknowledged)
-  ) {
-    return fail({ type: 'INVALID_EXECUTIONER_BRIEFING_WORKFLOW', operation })
-  }
-
   return succeed(
     deepFreeze({
       status: candidate.status,
@@ -303,10 +295,7 @@ export function acknowledgeExecutionerBriefing(
   return succeed(
     deepFreeze({
       ...validationResult.value,
-      status:
-        acknowledgedBriefingIds.length === validationResult.value.briefings.length
-          ? 'ready'
-          : 'briefing',
+      status: 'briefing',
       acknowledgedBriefingIds,
     }),
   )
@@ -383,7 +372,10 @@ export function validateExecutionerBriefingsReadyForCompletion(
   if (!validationResult.ok) {
     return validationResult
   }
-  if (validationResult.value.status !== 'ready') {
+  if (
+    validationResult.value.acknowledgedBriefingIds.length !==
+    validationResult.value.briefings.length
+  ) {
     return fail({ type: 'INCOMPLETE_EXECUTIONER_BRIEFINGS' })
   }
 

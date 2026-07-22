@@ -41,9 +41,6 @@ export function GameOver({
         </ul>
       </section>
 
-      <p className="game-over__privacy">
-        Hidden roles and private neutral information remain hidden.
-      </p>
       <button
         type="button"
         className="button button--prepare game-over__next-game"

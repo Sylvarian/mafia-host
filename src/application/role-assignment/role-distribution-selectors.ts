@@ -10,7 +10,6 @@ export type RoleDistributionRow = Readonly<{
   playerName: string
   roleDisplayName: string
   faction: Faction
-  description: string
 }>
 
 export function selectRoleDistributionRows(
@@ -39,7 +38,6 @@ export function selectRoleDistributionRows(
       playerName: player.name,
       roleDisplayName: getRoleInstanceDisplayName(gamePlayer.role, role),
       faction: role.faction,
-      description: role.description,
     }
   })
 }
