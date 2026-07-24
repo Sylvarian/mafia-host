@@ -1,6 +1,6 @@
 # Mafia Host — Game Rules and Product Specification
 
-**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, and the Phase 7F.5 host-only authority correction; implementation complete through Phase 7F.5<br>
+**Status:** Authoritative rules finalized through R-012, Godfather succession, the opposing killing-role final-two draw, the Phase 7F.5 host-only authority correction, and the Phase 7F.6 revealed-Mayor Doctor restriction; implementation complete through Phase 7F.6<br>
 **Application type:** Host-operated local-first React web application  
 **Primary user:** The game host/moderator  
 **Players:** Physically present in the same room  
@@ -38,6 +38,8 @@ The implemented product currently includes:
 - Repeated host day discussion with exact current/original roles, alignment, status, and death causes.
 - Host strict-majority trial guidance with execution verdict guidance kept separate.
 - Deliberate host-confirmed voluntary Mayor reveal and three-vote reminders.
+- A default-enabled setting that prevents every Doctor from targeting or protecting a voluntarily
+  revealed Mayor on later nights.
 - Unified alignment-grouped host player cards and a full-width host execution flow, both using
   canonical active role/alignment without repeated per-card alignment text.
 - Three simultaneous Mafia/Town/Neutral target columns with active-role, changed-original-role,
@@ -53,6 +55,7 @@ The implemented product currently includes:
   Dawn resolution, later days, and game over.
 - A pending-revenge gate, next-Dawn random revenge death, post-revenge faction victory,
   post-day waiting, and exact host Game Over.
+- Day Discussion roles shown by default through a non-persistent host-only convenience toggle.
 
 The application does **not** initially provide:
 
@@ -186,6 +189,14 @@ duplicate, unknown, or incomplete sequences fail closed. Exact sequential saves 
 Consigliere-after-Investigator wake order are replayed into the current order only when every
 completed actor/result and the current position are unambiguous. Unsafe or ambiguous progress is
 rejected. These compatibility paths consume no randomness and do not replay private information.
+
+Phase 7F.6 retains schema V2 and neutral-state sub-version `4`. New saves contain the explicit
+`doctorCannotProtectRevealedMayor` setting. A valid active-session save that predates the field is
+canonicalized to `false` for the rest of that match, preserving the rules under which the active
+game began. A legacy next-game setup template missing the field is separately canonicalized to
+`true`, the new-game default. Both use existing one-time write-back coordination; malformed
+explicit values fail closed, and no migration reruns actions, resolution, or randomness. The Day
+Show/Hide Roles state remains absent from every persistence payload.
 
 The separate `mafia-host:next-game-setup-template:v1` payload contains exactly ordered setup-only
 `roster` entries with string `name` and boolean `playing`, canonical `roleCounts`, and exact
@@ -324,7 +335,26 @@ Example:
 - Doctor 2 protected Ben last night and cannot protect Ben tonight.
 - Doctor 1 may protect Ben even if Doctor 2 protected Ben previously.
 
-### 6.5 Reveal roles on death
+### 6.5 Revealed Mayor Doctor restriction
+
+`doctorCannotProtectRevealedMayor: boolean`
+
+Default: `true`.
+
+When enabled, a living Mayor remains a legal Doctor target until that Mayor voluntarily announces
+during Day Discussion. Starting on the following night, every Doctor copy treats that revealed
+Mayor as an illegal target and no Doctor protection can affect the Mayor. A malformed or forged
+action is rejected by canonical action validation, and resolution defensively ignores an invalid
+protection so it cannot create a Doctor-save event or Dawn claim.
+
+When disabled, a revealed living Mayor remains targetable and protectable. The rule uses only the
+existing voluntary `publiclyRevealedRoleId` Mayor authority used for the three-vote reminder. Host
+role visibility, `revealRoleOnDeath`, role cards, exact-role displays, alignment, and recovery
+metadata do not activate it. Night 1 is independently unchanged because a Mayor cannot announce
+before the first Day; the existing disabled-first-night wake rule still controls whether Doctors
+act on Night 1. Previous Doctor target history is retained unchanged.
+
+### 6.6 Reveal roles on death
 
 `revealRoleOnDeath: boolean`
 
@@ -332,7 +362,7 @@ When enabled, the morning or execution announcement publicly includes the dead p
 
 When disabled, the host still sees the actual role, but the public announcement contains only the player's name and death information.
 
-### 6.6 First-night killing
+### 6.7 First-night killing
 
 `allowFirstNightKills: boolean`
 
@@ -460,6 +490,8 @@ If any of those three roles is investigated, the same result card is shown.
 - Night ability: Protect one living player.
 - Protection can prevent Mafia and/or Serial Killer attacks according to the adopted rules.
 - Self-protection and repeat-target restrictions are configurable.
+- With `doctorCannotProtectRevealedMayor` enabled, a voluntarily revealed living Mayor is not a
+  legal target and receives no Doctor protection.
 - Multiple Doctors act independently.
 - One successful, unblocked protection protects the selected player from every ordinary Godfather and Serial Killer attack during that night.
 - Multiple Doctors may protect the same player, but additional protections are not required to stop multiple ordinary attacks.
@@ -481,6 +513,8 @@ Example: if the Godfather and Serial Killer both attack Alice and one unblocked 
 - The app does not calculate or record the Mayor's weighted votes. The host counts the Mayor as
   three.
 - The day UI visibly reminds the host that a revealed Mayor has three votes.
+- The same voluntary reveal activates `doctorCannotProtectRevealedMayor` for later nights when that
+  setting is enabled; no display-only reveal activates it.
 
 ### Citizen
 
@@ -756,6 +790,12 @@ Godfathers and converted Jesters are grouped by their active alignment. These ad
 host-only intelligence: the existing domain target validator still solely determines legality,
 and column grouping does not add or remove candidates.
 
+For a Doctor, canonical legality also applies the active match's
+`doctorCannotProtectRevealedMayor` setting. When enabled, a living Mayor whose existing voluntary
+announcement authority is Mayor remains visible in the same alignment/roster position but is
+disabled with a concise explanation. Every Doctor copy uses the same stable-player-ID rule. Show
+Roles state, death-reveal policy, and presentation metadata have no effect on eligibility.
+
 Target selection is temporary React state. It does not commit, resolve, autosave, consume
 randomness, or affect later actors. For Consort, Framer, Godfather, Serial Killer, and Doctor,
 **Confirm target and continue** atomically records and seals the action and makes the next actor
@@ -828,6 +868,11 @@ Recommended ordinary-action pipeline:
 10. Resolve Investigator and Consigliere groups.
 11. Resolve Detective tracking results from the visit map.
 12. Expire one-night effects.
+
+Protection resolution defensively excludes a voluntarily revealed Mayor when
+`doctorCannotProtectRevealedMayor` is enabled, even if invalid action authority bypasses ordinary
+collection. Attacks and deaths then resolve normally, and no successful Doctor-save event can be
+generated from that excluded protection.
 
 The pipeline should produce structured events and results, not directly mutate React UI state.
 
@@ -951,7 +996,7 @@ either cause. Persisted Dawn authority and important-event evidence are current-
 
 ## 14. Day discussion
 
-Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.5.
+Implemented for repeated daytime discussion and one final outcome per day through Phase 7F.6.
 
 During day discussion, one host display shows every player with:
 
@@ -976,8 +1021,9 @@ Opening the Mayor control lists only living, unrevealed Mayor players. Multiple 
 independently. The existing
 `publiclyRevealedRoleId` field is the only Mayor-reveal authority.
 
-The role control is hidden by default and is React-only: it never changes or autosaves the
-game/session and returns hidden on refresh, recovery, and new-day entry. It is a convenience
+The role control is shown by default and is React-only: it never changes or autosaves the
+game/session and returns shown on refresh, recovery, and new-day entry. The initial control says
+**Hide roles**. It is a convenience
 control, not a privacy boundary. One canonical host selector supplies one fixed three-column
 Mafia/Town/Neutral card area with duplicate-safe player labels, visibly distinct living/dead
 states, current active role/alignment, immutable original assignment where different, and
@@ -1304,6 +1350,7 @@ type GameSettings = {
   godfatherAppearsSuspiciousToSheriff: boolean;
   doctorCanSelfProtect: boolean;
   doctorCannotRepeatPreviousTarget: boolean;
+  doctorCannotProtectRevealedMayor: boolean;
   revealRoleOnDeath: boolean;
   allowFirstNightKills: boolean;
 };
@@ -1344,6 +1391,9 @@ Minimum scenarios:
 - Doctor cannot self-protect when disabled.
 - Doctor cannot repeat their own previous target when enabled.
 - Doctor 1 and Doctor 2 track previous targets independently.
+- An unrevealed Mayor remains protectable; a voluntarily revealed Mayor is unavailable to every
+  Doctor only while `doctorCannotProtectRevealedMayor` is enabled.
+- Invalid revealed-Mayor protection creates no protection, save event, or Dawn claim.
 - One bulk delivery action advances exactly once, with no individual delivery authority or second
   confirmation.
 - Consort targeting another Consort visits normally and leaves the targeted Consort unblocked.
@@ -1412,7 +1462,8 @@ resolution and repeated later-night/day gameplay. Phase 7F.2 implements the oppo
 final-two draw with precedence over ordinary faction predicates. Phase 7F.4 changes physical host
 ordering and target presentation. Phase 7F.5 establishes the single host-only display model,
 separate announcement models, exact Dawn evidence, and promotion-in-Mafia-overview flow without
-changing target legality or resolution mechanics.
+changing target legality or resolution mechanics. Phase 7F.6 adds only the configurable
+revealed-Mayor Doctor restriction and makes Day roles shown by default.
 
 ### R-001 — Mutual killing disabled
 
@@ -1575,6 +1626,11 @@ reminder are implemented in Phase 7B. Vote tracking is deliberately absent.**
 - The host is responsible for counting the Mayor as three.
 - Mayor weight does not alter the living-player strict-majority trial threshold.
 - The day UI visibly reminds the host that a revealed Mayor has three votes.
+- When `doctorCannotProtectRevealedMayor` is enabled, this same voluntary reveal makes the Mayor an
+  illegal Doctor target on every later night and prevents Doctor protection. When disabled, the
+  revealed Mayor remains protectable.
+- Host role visibility, `revealRoleOnDeath`, role-card delivery, alignment, and recovery metadata
+  do not activate the Doctor restriction.
 
 ### R-011 — Town victory
 

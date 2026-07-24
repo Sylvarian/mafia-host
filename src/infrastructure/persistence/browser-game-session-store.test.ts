@@ -22,6 +22,7 @@ const SETTINGS = Object.freeze({
   godfatherAppearsSuspiciousToSheriff: false,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: false,
+  doctorCannotProtectRevealedMayor: false,
   revealRoleOnDeath: false,
   allowFirstNightKills: false,
 })

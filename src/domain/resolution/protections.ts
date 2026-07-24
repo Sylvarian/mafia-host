@@ -1,5 +1,6 @@
 import type { GameState } from '../game/game-state.ts'
 import type { SubmittedNightAction } from '../night-actions/night-action.ts'
+import { isDoctorProtectionForbiddenForRevealedMayor } from '../night-actions/doctor-target-eligibility.ts'
 import { ROLE_IDS } from '../roles/role-registry.ts'
 import type { ProtectionRecord, ProtectionSource } from './night-resolution-models.ts'
 import { freezeResolutionSources } from './resolution-sources.ts'
@@ -13,7 +14,11 @@ export function resolveProtections(
   return Object.freeze(
     game.players.flatMap((player): readonly ProtectionRecord[] => {
       const sources: readonly ProtectionSource[] = doctorActions
-        .filter((action) => action.targetPlayerId === player.playerId)
+        .filter(
+          (action) =>
+            action.targetPlayerId === player.playerId &&
+            !isDoctorProtectionForbiddenForRevealedMayor(game, player.playerId),
+        )
         .map((action) =>
           Object.freeze({
             doctorPlayerId: action.actorPlayerId,

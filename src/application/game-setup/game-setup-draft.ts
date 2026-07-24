@@ -54,6 +54,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = Object.freeze({
   godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: false,
+  doctorCannotProtectRevealedMayor: true,
   revealRoleOnDeath: false,
   allowFirstNightKills: false,
 })

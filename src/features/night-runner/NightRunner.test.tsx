@@ -153,6 +153,62 @@ describe('sequential Night Runner UI', () => {
     expect(within(town).getByText('Selected')).toBeVisible()
   })
 
+  it('shows a voluntarily revealed Mayor as unavailable to a Doctor with a concise reason', () => {
+    const fixture = createNightFixture(
+      [
+        { roleId: ROLE_IDS.doctor, name: 'Doctor' },
+        { roleId: ROLE_IDS.mayor, name: 'Mayor player' },
+        { roleId: ROLE_IDS.citizen, name: 'Citizen' },
+      ],
+      {
+        phase: 'night-action-collection',
+        nightNumber: 2,
+        settings: {
+          allowFirstNightKills: true,
+          doctorCannotProtectRevealedMayor: true,
+        },
+      },
+    )
+    const mayor = fixture.game.players[1]
+    if (mayor === undefined) throw new Error('Expected Mayor target.')
+    const created = createNightActionCollectionForStartedNight(
+      {
+        ...fixture.game,
+        players: fixture.game.players.map((player) =>
+          player.playerId === mayor.playerId
+            ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+            : player,
+        ),
+      },
+      fixture.participants,
+    )
+    if (!created.ok) throw new Error(`Could not start Doctor turn: ${created.error.type}`)
+    const doctorTurn = continueNightActionCollection(created.value)
+    if (!doctorTurn.ok || doctorTurn.value.status !== 'collecting') {
+      throw new Error('Could not continue to Doctor turn.')
+    }
+    const onConfirmTarget = vi.fn()
+    render(
+      <NightRunner
+        workflow={doctorTurn.value}
+        error={null}
+        onConfirmTarget={onConfirmTarget}
+        onContinue={() => undefined}
+      />,
+    )
+
+    const target = screen.getByRole('button', {
+      name: 'Mayor player, Mayor, alive, unavailable',
+    })
+    expect(target).toBeDisabled()
+    expect(target.closest('.target-option')).toHaveTextContent(
+      'Revealed Mayor cannot be protected.',
+    )
+    fireEvent.click(target)
+    fireEvent.click(target)
+    expect(onConfirmTarget).not.toHaveBeenCalled()
+  })
+
   it('keeps target rows responsive at 320px and 390px with 44px-plus touch controls', () => {
     const css = readFileSync(resolve('src/features/night-runner/NightRunner.css'), 'utf8')
 

@@ -17,6 +17,7 @@ const settings: GameSettings = {
   godfatherAppearsSuspiciousToSheriff: false,
   doctorCanSelfProtect: true,
   doctorCannotRepeatPreviousTarget: false,
+  doctorCannotProtectRevealedMayor: false,
   revealRoleOnDeath: true,
   allowFirstNightKills: false,
 }

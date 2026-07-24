@@ -5,7 +5,7 @@ import {
 } from '@/domain/executioner/executioner-target.ts'
 import { fail, succeed, type DomainResult } from '@/domain/game/domain-result.ts'
 import { validateGameState } from '@/domain/game/game-invariants.ts'
-import { validateGameSettings } from '@/domain/game/game-settings.ts'
+import { validateGameSettings, type GameSettings } from '@/domain/game/game-settings.ts'
 import type { GameState, GameStateCandidate } from '@/domain/game/game-state.ts'
 import {
   gameId,
@@ -257,12 +257,39 @@ type RestoreOptions = Readonly<{
 }>
 
 const DEFAULT_OPTIONS: RestoreOptions = Object.freeze({ allowLegacyGameShape: false })
+const LEGACY_ACTIVE_SESSION_GAME_SETTING_KEYS = Object.freeze([
+  'godfatherAndSerialCanKillEachOther',
+  'godfatherAppearsSuspiciousToSheriff',
+  'doctorCanSelfProtect',
+  'doctorCannotRepeatPreviousTarget',
+  'revealRoleOnDeath',
+  'allowFirstNightKills',
+])
 const ALLOWED_EDITING_SETUP_ERRORS = new Set<GameSetupValidationError['type']>([
   'NO_PARTICIPATING_PLAYERS',
   'ROLE_COUNT_MISMATCH',
   'NO_MAFIA_ROLE',
   'EXECUTIONER_REQUIRES_TOWN_TARGET',
 ])
+
+function restoreActiveSessionSettings(candidate: unknown): GameSettings | null {
+  const currentResult = validateGameSettings(candidate)
+  if (currentResult.ok) {
+    return currentResult.value
+  }
+  if (
+    !isUnknownRecord(candidate) ||
+    Object.hasOwn(candidate, 'doctorCannotProtectRevealedMayor') ||
+    !hasExactKeys(candidate, LEGACY_ACTIVE_SESSION_GAME_SETTING_KEYS)
+  ) {
+    return null
+  }
+  const legacyResult = validateGameSettings({
+    ...candidate,
+    doctorCannotProtectRevealedMayor: false,
+  })
+  return legacyResult.ok ? legacyResult.value : null
+}
 
 export function restorePersistedSessionEnvelopeV2(
   candidate: unknown,
@@ -300,7 +327,8 @@ function restoreEnvelope(
     return fail({ type: 'INVALID_ENVELOPE', reason: 'invalid-timestamp' })
   }
 
-  const sessionResult = restoreAppSession(candidate.session, options)
+  const migratedSession = migrateMissingActiveSessionDoctorSetting(candidate.session)
+  const sessionResult = restoreAppSession(migratedSession, options)
   if (!sessionResult.ok) {
     return sessionResult
   }
@@ -319,6 +347,28 @@ function restoreEnvelope(
       savedAt: candidate.savedAt,
       session: sessionResult.value,
       ...(writeBackEnvelope === null ? {} : { writeBackEnvelope }),
+    }),
+  )
+}
+
+function migrateMissingActiveSessionDoctorSetting(candidate: unknown): unknown {
+  if (Array.isArray(candidate)) {
+    return candidate.map((value) => migrateMissingActiveSessionDoctorSetting(value))
+  }
+  if (!isUnknownRecord(candidate)) {
+    return candidate
+  }
+
+  return Object.fromEntries(
+    Object.entries(candidate).map(([key, value]) => {
+      if (
+        key === 'settings' &&
+        isUnknownRecord(value) &&
+        hasExactKeys(value, LEGACY_ACTIVE_SESSION_GAME_SETTING_KEYS)
+      ) {
+        return [key, { ...value, doctorCannotProtectRevealedMayor: false }]
+      }
+      return [key, migrateMissingActiveSessionDoctorSetting(value)]
     }),
   )
 }
@@ -436,15 +486,15 @@ function restoreSetupDraft(
   }
   const rosterResult = restoreRoster(candidate.roster, false)
   const roleCountsResult = restoreRoleCounts(candidate.roleCounts)
-  const settingsResult = validateGameSettings(candidate.settings)
-  if (!rosterResult.ok || !roleCountsResult.ok || !settingsResult.ok) {
+  const settings = restoreActiveSessionSettings(candidate.settings)
+  if (!rosterResult.ok || !roleCountsResult.ok || settings === null) {
     return invalidSetup('invalid-draft')
   }
 
   const draft = deepFreeze({
     roster: rosterResult.value,
     roleCounts: orderRoleCounts(roleCountsResult.value),
-    settings: settingsResult.value,
+    settings,
     nextPlayerNumber: candidate.nextPlayerNumber,
   })
   const structuralErrors = inspectGameSetupDraft(draft).errors.filter(
@@ -2449,14 +2499,14 @@ function restoreValidatedSetup(
   }
   const playersResult = restoreRoster(candidate.participatingPlayers, true)
   const roleCountsResult = restoreRoleCounts(candidate.roleCounts)
-  const settingsResult = validateGameSettings(candidate.settings)
-  if (!playersResult.ok || !roleCountsResult.ok || !settingsResult.ok) {
+  const settings = restoreActiveSessionSettings(candidate.settings)
+  if (!playersResult.ok || !roleCountsResult.ok || settings === null) {
     return invalidDistribution('invalid-setup')
   }
   const result = validateGameSetupDraft({
     roster: playersResult.value,
     roleCounts: orderRoleCounts(roleCountsResult.value),
-    settings: settingsResult.value,
+    settings,
     nextPlayerNumber: 1,
   })
   return result.ok ? succeed(result.value) : invalidDistribution('invalid-setup')
@@ -2667,8 +2717,8 @@ function restoreGame(
     })
   }
 
-  const settingsResult = validateGameSettings(candidate.settings)
-  if (!settingsResult.ok) {
+  const settings = restoreActiveSessionSettings(candidate.settings)
+  if (settings === null) {
     return invalidDistribution('invalid-game')
   }
   const roleDefinitions = ROLE_REGISTRY.filter((role) => selectedRoleIds.has(role.id)).map(
@@ -2705,7 +2755,7 @@ function restoreGame(
     phase: candidate.phase,
     players,
     roleDefinitions,
-    settings: settingsResult.value,
+    settings,
     nightNumber: candidate.nightNumber,
     dayNumber: candidate.dayNumber,
     doctorPreviousTargets: candidate.doctorPreviousTargets,

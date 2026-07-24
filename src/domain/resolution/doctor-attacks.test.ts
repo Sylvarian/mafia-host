@@ -1,12 +1,122 @@
 import { describe, expect, it } from 'vitest'
 
 import { ROLE_IDS } from '../roles/role-registry.ts'
+import { resolveAttacks, determineProvisionalDeaths } from './attacks.ts'
+import {
+  buildImportantNightEvents,
+  captureImportantNightEventCanonicalSource,
+} from './important-night-events.ts'
+import { resolveNight } from './night-resolution.ts'
+import { resolveProtections } from './protections.ts'
 import {
   createResolutionFixture,
   resolveFixture,
 } from '../../../tests/support/night-resolution-fixtures.ts'
 
 describe('Doctor protections', () => {
+  it('defensively removes revealed-Mayor protection and produces no Doctor-save event', () => {
+    const fixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.mayor }],
+      [2, 2, null],
+      { settings: { doctorCannotProtectRevealedMayor: false } },
+    )
+    const mayor = fixture.game.players[2]
+    if (mayor === undefined) throw new Error('Expected Mayor target.')
+    const restrictedGame = {
+      ...fixture.game,
+      settings: { ...fixture.game.settings, doctorCannotProtectRevealedMayor: true },
+      players: fixture.game.players.map((player) =>
+        player.playerId === mayor.playerId
+          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+          : player,
+      ),
+    }
+
+    const rejectedResolution = resolveNight({ ...fixture, game: restrictedGame })
+    expect(rejectedResolution).toMatchObject({
+      ok: false,
+      error: {
+        type: 'INVALID_COLLECTED_NIGHT_ACTIONS',
+        error: { type: 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR' },
+      },
+    })
+
+    const protections = resolveProtections(restrictedGame, fixture.collectedActions.actions)
+    const attacks = resolveAttacks(restrictedGame, fixture.collectedActions.actions, protections)
+    const provisionalDeaths = determineProvisionalDeaths(restrictedGame, attacks)
+    expect(protections).toEqual([])
+    expect(attacks).toEqual([
+      expect.objectContaining({ targetPlayerId: mayor.playerId, outcome: 'lethal' }),
+    ])
+    expect(provisionalDeaths).toEqual([
+      expect.objectContaining({ deadPlayerId: mayor.playerId, actualRoleId: ROLE_IDS.mayor }),
+    ])
+
+    const baseline = resolveFixture(fixture)
+    const evidence = buildImportantNightEvents(
+      { ...baseline, protections, attackAttempts: attacks, provisionalDeaths },
+      captureImportantNightEventCanonicalSource(restrictedGame, fixture.collectedActions),
+    )
+    expect(evidence.events).toEqual([
+      expect.objectContaining({
+        kind: 'attack',
+        targetPlayerId: mayor.playerId,
+        outcome: 'lethal',
+        doctors: [],
+      }),
+    ])
+  })
+
+  it('protects an unrevealed Mayor when enabled and a revealed Mayor when disabled', () => {
+    const enabledFixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.mayor }],
+      [2, 2, null],
+      { settings: { doctorCannotProtectRevealedMayor: true } },
+    )
+    expect(resolveFixture(enabledFixture).attackAttempts).toEqual([
+      expect.objectContaining({ outcome: 'protected' }),
+    ])
+
+    const unrestrictedFixture = createResolutionFixture(
+      [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.mayor }],
+      [2, 2, null],
+      { settings: { doctorCannotProtectRevealedMayor: false } },
+    )
+    const unrestrictedMayor = unrestrictedFixture.game.players[2]
+    if (unrestrictedMayor === undefined) throw new Error('Expected unrestricted Mayor target.')
+    const unrestrictedGame = {
+      ...unrestrictedFixture.game,
+      players: unrestrictedFixture.game.players.map((player) =>
+        player.playerId === unrestrictedMayor.playerId
+          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+          : player,
+      ),
+    }
+    const result = resolveFixture({
+      ...unrestrictedFixture,
+      game: unrestrictedGame,
+    })
+    expect(result.attackAttempts).toEqual([expect.objectContaining({ outcome: 'protected' })])
+    const evidence = buildImportantNightEvents(
+      result,
+      captureImportantNightEventCanonicalSource(
+        unrestrictedGame,
+        unrestrictedFixture.collectedActions,
+      ),
+    )
+    expect(evidence.events).toEqual([
+      expect.objectContaining({
+        kind: 'attack',
+        outcome: 'protected',
+        doctors: [
+          expect.objectContaining({
+            doctorPlayerId: unrestrictedFixture.game.players[1]?.playerId,
+          }),
+        ],
+      }),
+    ])
+  })
+
   it('records one protection with its Doctor source', () => {
     const result = resolveFixture(
       createResolutionFixture(

@@ -20,7 +20,7 @@ import {
 } from './game-setup-draft.ts'
 
 describe('game setup draft', () => {
-  it('creates an empty roster, zero role counts, and explicit disabled settings', () => {
+  it('creates an empty roster, zero role counts, and the canonical fresh-game settings', () => {
     const draft = createInitialGameSetupDraft()
 
     expect(draft.roster).toEqual([])
@@ -31,6 +31,7 @@ describe('game setup draft', () => {
       godfatherAppearsSuspiciousToSheriff: true,
       doctorCanSelfProtect: false,
       doctorCannotRepeatPreviousTarget: false,
+      doctorCannotProtectRevealedMayor: true,
       revealRoleOnDeath: false,
       allowFirstNightKills: false,
     })

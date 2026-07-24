@@ -11,6 +11,7 @@ const SETTINGS = {
   godfatherAppearsSuspiciousToSheriff: true,
   doctorCanSelfProtect: false,
   doctorCannotRepeatPreviousTarget: false,
+  doctorCannotProtectRevealedMayor: false,
   revealRoleOnDeath: false,
   allowFirstNightKills: false,
 } as const

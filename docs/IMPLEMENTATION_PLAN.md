@@ -2,9 +2,9 @@
 
 **Companion authority:** `GAME_RULES_AND_PRODUCT_SPEC.md`  
 **Target stack:** Vite, React, TypeScript, Vitest, Playwright, GitHub Actions, GitHub Pages  
-**Persistence:** One versioned local active-session save; Phase 7F.5 retains schema V2 with
-neutral-state sub-version 4, adds exact current-night important-event evidence, and retains the separate complete
-next-game setup template<br>
+**Persistence:** One versioned local active-session save; Phase 7F.6 retains schema V2 with
+neutral-state sub-version 4, adds the explicit revealed-Mayor Doctor setting with narrow active and
+template compatibility defaults, and retains the separate complete next-game setup template<br>
 **Backend:** None
 
 ---
@@ -540,7 +540,7 @@ Only current-night deaths are announced. No generic migration framework exists.
 
 ## Phase 7 — Daytime, neutral outcomes, victory, and multi-day loop
 
-**Status: Phase 7F.5 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
+**Status: Phase 7F.6 implemented; Phase 8 and later are planned. R-006 through R-012 and the Mayor
 rules are finalized.**
 
 ### Goal
@@ -752,7 +752,8 @@ recovery only.**
   workflow state, persistence fields, selectors, errors, and translations.
 - Replace the Dawn confirmation dialog with one direct **Finalize Dawn** operation and an inline
   eyes-closed reminder because private revenge resolution may precede the public announcement.
-- Add a React-only, hidden-by-default day convenience control backed by the canonical host-role selector.
+- Add a React-only day convenience control backed by the canonical host-role selector. Phase 7F.6
+  supersedes its original hidden default with roles shown on each Day entry.
   Converted Executioners show active Jester plus original Executioner, while targets, wins, and
   pending revenge remain excluded.
 - Keep all Phase 7C day outcomes and neutral effects unchanged. Do not resolve revenge, evaluate
@@ -1177,6 +1178,54 @@ evaluateGameOutcome(gameState): GameOutcome
 
 ---
 
+### Phase 7F.6 — Revealed Mayor Doctor restriction and Show Roles default
+
+**Status: Implemented.**
+
+#### Work
+
+- Add `doctorCannotProtectRevealedMayor`, enabled by default for new setup, to canonical game
+  settings, setup controls/summaries, assignment, the next-game template, and active match
+  authority.
+- Use the existing voluntary Mayor `publiclyRevealedRoleId` authority and canonical active roles to
+  reject every Doctor copy targeting a revealed living Mayor when enabled. Preserve ordinary
+  targeting/protection when disabled and all pre-reveal behavior.
+- Defensively exclude an invalid revealed-Mayor protection during resolution so attacks, deaths,
+  and important-night-event output remain correct without a false Doctor save.
+- Keep Doctor self-protection, previous-target history, roleblocks, target ordering, alignment
+  columns, duplicate labels, and first-night omissions unchanged.
+- Retain active-session schema V2 and neutral-state sub-version 4. Canonicalize a missing legacy
+  active-session field to `false` and a missing legacy next-game-template field to `true`, then use
+  existing write-back coordination. Reject malformed explicit values.
+- Initialize Day Discussion roles shown on every mount/entry, with **Hide roles** as the initial
+  control. Keep hiding local to the rendered Day screen and keep the Show/Hide state entirely out
+  of persistence.
+
+#### Tests
+
+- Fresh/default, enabled/disabled start, setup summary, template round-trip/migration, clear,
+  Strict Mode, rapid operation, and save/retry coverage.
+- Unrevealed/revealed Mayor eligibility under both settings, multiple Doctors, duplicate names,
+  previous-target/self/dead/block regressions, non-React validation, and disabled target copy.
+- Defensive protection, single/multiple attack outcomes, death causes, and exact important-event
+  behavior with no invalid Doctor-save event.
+- Active-session missing-field `false` migration, explicit current values, in-progress Doctor
+  action compatibility, malformed-value rejection, one-time write-back, and no replay/randomness.
+- First/later/recovered Day initial role display, in-place Hide/Show behavior, card identity/order,
+  focus, responsive CSS, Strict Mode, and persistence absence.
+
+#### Acceptance criteria
+
+- Only voluntary Mayor announcement activates the enabled restriction, starting on the following
+  night; disabling it preserves historical Doctor behavior.
+- Existing active games do not receive the restriction retroactively, while future templates and
+  fresh games default it on.
+- Day roles are immediately visible on every newly entered Day, and the convenience state is never
+  persisted.
+- No other target, resolution, Dawn, or host-only authority rule changes.
+
+---
+
 ## Phase 8 — Undo, correction safety, and game history
 
 ### Goal
@@ -1375,7 +1424,7 @@ For each phase, instruct Codex to:
 
 ## Immediate next actions
 
-Phases 0 through 7F.5 are implemented. R-001 through R-012, the permanent investigation groups, and
+Phases 0 through 7F.6 are implemented. R-001 through R-012, the permanent investigation groups, and
 the Mayor/daytime rules are authoritative and no longer block planning.
 
 Do not start Phase 8 automatically. App-managed voting, undo/history, backend/cloud sync, online

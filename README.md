@@ -6,6 +6,13 @@ physical role and result cards.
 
 ## Current status
 
+Phase 7F.6 adds the canonical `doctorCannotProtectRevealedMayor` setting, enabled by default for
+new games. When enabled, the existing voluntary Mayor announcement authority makes that living
+Mayor unavailable to every Doctor on later nights and prevents any protection or Doctor-save
+event. Disabling the setting preserves normal Doctor targeting and protection. Day Discussion now
+shows exact host roles immediately on every entry; its Show/Hide state remains React-only and is
+never persisted.
+
 Phase 7F.5 makes the product authority explicit: every application screen is operated by the host,
 and players never view or operate the screen. Host views may therefore show exact names, current
 and original roles, alignments, targets, causes, transformations, and neutral outcomes. Game-rule
@@ -40,8 +47,8 @@ abstentions, guilty/innocent votes, and trial history remain verbal and are not 
 
 Day discussion has one unified host card area in fixed Mafia, Town, and Neutral columns. Living
 and dead players are visibly distinct, and the temporary **Show roles** control changes role text
-in place without moving cards. Role visibility is React-only, hidden by default, never autosaved,
-and hidden again after refresh, recovery, or entry into a new day. The canonical host
+in place without moving cards. Role visibility is React-only, shown by default, never autosaved,
+and shown again after refresh, recovery, or entry into a new day. The canonical host
 view places cards by current active alignment. Every player card uses a full light red, light
 green, or light grey background; repeated `Alignment:` lines are intentionally omitted. A
 converted Executioner appears as Jester with
@@ -89,7 +96,10 @@ A host Mayor dialog lists only living, unrevealed Mayor players. A deliberate co
 sets the existing `publiclyRevealedRoleId` authority to Mayor; there is no second Mayor-reveal
 authority. Multiple Mayor copies reveal independently. Every living revealed Mayor has a persistent
 public reminder that the player counts as three votes, while the host remains responsible for all
-vote counting. Mayor weight never changes the displayed living-player trial threshold.
+vote counting. Mayor weight never changes the displayed living-player trial threshold. With the
+default `doctorCannotProtectRevealedMayor` setting enabled, that same voluntary reveal makes the
+Mayor unavailable to every Doctor starting on the following night. Death reveal, host role
+visibility, and any other role display do not activate the restriction.
 
 At the start of Night 2 or later, if no living active Godfather remains, the domain selects exactly
 one living participating active Mafia member through the injected random source. The promotion is
@@ -264,6 +274,14 @@ receive deterministic roster order and canonical write-back. Sequential-night re
 recognizes the former Consigliere-after-Investigator wake order only when the stored actor evidence
 can be replayed exactly into the new Mafia-first sequence. Ambiguous or unsafe progress fails
 closed, and compatibility restoration consumes no randomness or replays a private result.
+
+Phase 7F.6 retains the same active-session key, schema V2, and neutral-state sub-version `4`.
+Current saves write `doctorCannotProtectRevealedMayor` explicitly. A compatible active-session
+payload created before the setting existed receives `false` and is canonically written back, so an
+already-running game keeps its original protection rules. A legacy next-game setup template
+instead receives `true`, the new-game default, and is written back under the existing template
+key. Explicit malformed values fail closed. Neither migration reruns actions, resolution, or
+randomness, and Day role visibility remains absent from persistence.
 
 The setup template uses `mafia-host:next-game-setup-template:v1`, not the active-session key or
 schema. Its exact payload contains only setup-only `roster` entries (`name` and `playing`),

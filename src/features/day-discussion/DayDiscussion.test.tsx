@@ -129,7 +129,7 @@ describe('host day discussion UI', () => {
     expect(screen.getAllByRole('heading', { name: 'Living' })).toHaveLength(2)
     expect(screen.getAllByRole('heading', { name: 'Dead' })).toHaveLength(2)
     expect(screen.getByText('Alex (Player 1)').closest('li')).toHaveTextContent(
-      'Alex (Player 1)LivingRole hidden',
+      'Alex (Player 1)LivingMayor 1',
     )
     expect(screen.getByText('Alex (Player 2)').closest('li')).toHaveTextContent(
       'Mayor 2Mayor revealedThis player counts as 3 votes.',
@@ -206,16 +206,34 @@ describe('host day discussion UI', () => {
 
     expect(screen.getByText('Mayor 2')).toBeVisible()
     expect(screen.getByText('Jester')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
     expect(screen.getByText('Mayor 2')).toBeVisible()
     expect(screen.getByText('Jester')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
     expect(screen.getByText('Mayor 2')).toBeVisible()
     expect(screen.getByText('Jester')).toBeVisible()
   })
 })
 
 describe('host role convenience control', () => {
+  it('initializes roles shown when a later Day screen is newly mounted', () => {
+    render(
+      <DayDiscussion
+        view={hostView({ dayNumber: 4, dayLabel: 'Day 4' })}
+        mayorCandidates={candidates}
+        revealError={null}
+        onConfirmMayorReveal={() => true}
+        onClearRevealError={() => undefined}
+        onDialogPresentationChange={() => undefined}
+      />,
+    )
+
+    expect(screen.getByText('Day 4 · Host display')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    expect(screen.getByText('Mayor 1')).toBeVisible()
+  })
+
   it('changes role text in place without replacing or reordering alignment cards', () => {
     const roleView: DayDiscussionView = {
       ...hostView(),
@@ -287,36 +305,40 @@ describe('host role convenience control', () => {
     expect(screen.getByRole('heading', { name: 'Mafia' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Town' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Neutral' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    expect(screen.getByText('Godfather')).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
+    expect(screen.getByText('Originally: Framer')).toBeVisible()
+    expect(screen.getByText('Originally: Executioner')).toBeVisible()
+    expect(screen.getByText('Doctor')).toBeVisible()
+    const cardsBefore = [...container.querySelectorAll('.host-role-card')]
+
+    const hideButton = screen.getByRole('button', { name: 'Hide roles' })
+    hideButton.focus()
+    fireEvent.click(hideButton)
+
+    expect(screen.getByRole('button', { name: 'Show roles' })).toHaveFocus()
     expect(screen.getAllByText('Role hidden')).toHaveLength(2)
     expect(screen.getByText('Doctor')).toBeVisible()
     expect(container).not.toHaveTextContent('Jester')
     expect(container).not.toHaveTextContent('Executioner')
-    const cardsBefore = [...container.querySelectorAll('.host-role-card')]
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
-
-    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
-    expect(screen.getByText('Jester')).toBeVisible()
-    expect(screen.getByText('Originally: Executioner')).toBeVisible()
-    expect(screen.getByText('Doctor')).toBeVisible()
-    expect(screen.getByText('Godfather')).toBeVisible()
-    expect(screen.getByText('Originally: Framer')).toBeVisible()
-    expect(screen.getByText('Godfather').closest('li')).toHaveClass('host-role-card--mafia')
+    expect(screen.getByText('Morgan').closest('li')).toHaveClass('host-role-card--mafia')
     expect(screen.getByText('Doctor').closest('li')).toHaveClass('host-role-card--town')
-    expect(screen.getByText('Jester').closest('li')).toHaveClass('host-role-card--neutral')
+    expect(screen.getByText('Alex (Player 1)').closest('li')).toHaveClass('host-role-card--neutral')
     expect([...container.querySelectorAll('.host-role-card')]).toEqual(cardsBefore)
     expect(container).not.toHaveTextContent('Alignment:')
     expect(container.innerHTML).not.toMatch(
       /authority-player|role-instance|targetPlayerId|personalWin|pendingJester|revenge/,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
 
-    expect(screen.getByRole('button', { name: 'Show roles' })).toBeVisible()
-    expect(screen.getAllByText('Role hidden')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toHaveFocus()
+    expect(screen.getByText('Godfather')).toBeVisible()
+    expect(screen.getByText('Jester')).toBeVisible()
+    expect(screen.getByText('Originally: Framer')).toBeVisible()
+    expect(screen.getByText('Originally: Executioner')).toBeVisible()
     expect(screen.getByText('Doctor')).toBeVisible()
-    expect(container).not.toHaveTextContent('Jester')
-    expect(container).not.toHaveTextContent('Executioner')
     expect([...container.querySelectorAll('.host-role-card')]).toEqual(cardsBefore)
   })
 

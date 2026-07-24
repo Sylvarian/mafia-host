@@ -42,6 +42,7 @@ function createTemplate(playerNames: readonly string[]): NextGameSetupTemplate {
       godfatherAppearsSuspiciousToSheriff: false,
       doctorCanSelfProtect: false,
       doctorCannotRepeatPreviousTarget: false,
+      doctorCannotProtectRevealedMayor: false,
       revealRoleOnDeath: false,
       allowFirstNightKills: false,
     },

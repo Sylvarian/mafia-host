@@ -5,6 +5,7 @@ export type GameSettings = Readonly<{
   godfatherAppearsSuspiciousToSheriff: boolean
   doctorCanSelfProtect: boolean
   doctorCannotRepeatPreviousTarget: boolean
+  doctorCannotProtectRevealedMayor: boolean
   revealRoleOnDeath: boolean
   allowFirstNightKills: boolean
 }>
@@ -22,6 +23,7 @@ const GAME_SETTING_KEYS = Object.freeze([
   'godfatherAppearsSuspiciousToSheriff',
   'doctorCanSelfProtect',
   'doctorCannotRepeatPreviousTarget',
+  'doctorCannotProtectRevealedMayor',
   'revealRoleOnDeath',
   'allowFirstNightKills',
 ] as const satisfies readonly GameSettingKey[])
@@ -55,6 +57,7 @@ export function validateGameSettings(
       godfatherAppearsSuspiciousToSheriff: candidate.godfatherAppearsSuspiciousToSheriff,
       doctorCanSelfProtect: candidate.doctorCanSelfProtect,
       doctorCannotRepeatPreviousTarget: candidate.doctorCannotRepeatPreviousTarget,
+      doctorCannotProtectRevealedMayor: candidate.doctorCannotProtectRevealedMayor,
       revealRoleOnDeath: candidate.revealRoleOnDeath,
       allowFirstNightKills: candidate.allowFirstNightKills,
     }),
@@ -73,6 +76,8 @@ function isGameSettings(candidate: unknown): candidate is GameSettings {
     typeof candidate.doctorCanSelfProtect === 'boolean' &&
     'doctorCannotRepeatPreviousTarget' in candidate &&
     typeof candidate.doctorCannotRepeatPreviousTarget === 'boolean' &&
+    'doctorCannotProtectRevealedMayor' in candidate &&
+    typeof candidate.doctorCannotProtectRevealedMayor === 'boolean' &&
     'revealRoleOnDeath' in candidate &&
     typeof candidate.revealRoleOnDeath === 'boolean' &&
     'allowFirstNightKills' in candidate &&
@@ -90,6 +95,8 @@ function getSettingValue(candidate: object, setting: GameSettingKey): unknown {
       return setting in candidate ? candidate.doctorCanSelfProtect : undefined
     case 'doctorCannotRepeatPreviousTarget':
       return setting in candidate ? candidate.doctorCannotRepeatPreviousTarget : undefined
+    case 'doctorCannotProtectRevealedMayor':
+      return setting in candidate ? candidate.doctorCannotProtectRevealedMayor : undefined
     case 'revealRoleOnDeath':
       return setting in candidate ? candidate.revealRoleOnDeath : undefined
     case 'allowFirstNightKills':

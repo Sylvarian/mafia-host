@@ -55,7 +55,7 @@ export function DayDiscussion({
   const [dialog, setDialog] = useState<HostDialog>(null)
   const [selectedMayorPlayerId, setSelectedMayorPlayerId] = useState<PlayerId | null>(null)
   const [selectedExecutionPlayerId, setSelectedExecutionPlayerId] = useState<PlayerId | null>(null)
-  const [showHostRoles, setShowHostRoles] = useState(false)
+  const [showHostRoles, setShowHostRoles] = useState(true)
 
   useEffect(() => {
     headingRef.current?.focus()

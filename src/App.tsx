@@ -1162,6 +1162,7 @@ function getFirstNightTransitionErrorMessage(error: FirstNightTransitionError): 
     case 'DEAD_TARGET':
     case 'INVALID_SELF_TARGET':
     case 'DOCTOR_REPEATED_PREVIOUS_TARGET':
+    case 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR':
     case 'DUPLICATE_ACTOR_ACTION':
     case 'BLOCKED_ACTOR_SUBMITTED_ACTION':
     case 'UNEXPECTED_ACTION':

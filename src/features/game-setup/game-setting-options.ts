@@ -30,6 +30,11 @@ export const GAME_SETTING_OPTIONS: readonly GameSettingOption[] = [
     description: 'Prevent each Doctor from protecting the same player on two consecutive nights.',
   },
   {
+    key: 'doctorCannotProtectRevealedMayor',
+    label: 'Revealed Mayor cannot be protected by a Doctor',
+    description: 'After the Mayor announces, Doctors cannot select them on later nights.',
+  },
+  {
     key: 'revealRoleOnDeath',
     label: 'Reveal role on death',
     description: 'Include a dead player’s role in the later public announcement.',

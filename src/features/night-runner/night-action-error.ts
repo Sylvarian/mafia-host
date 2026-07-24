@@ -38,6 +38,8 @@ export function getNightActionCollectionErrorMessage(error: NightActionCollectio
       return 'This role cannot target themselves under the current settings.'
     case 'DOCTOR_REPEATED_PREVIOUS_TARGET':
       return 'This Doctor cannot select the same target they personally selected on the previous night.'
+    case 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR':
+      return 'Revealed Mayor cannot be protected.'
     case 'DUPLICATE_ACTOR_ACTION':
     case 'ACTOR_ALREADY_COMPLETED':
       return 'This role instance has already completed its action for the night.'

@@ -215,3 +215,12 @@ pre-night mutable-state snapshot and confirmed action batch needed to recompute 
 evidence against the one restored game during strict restoration. Recovery summaries show
 duplicate-safe player names and the next host action, while persistence still excludes display
 prose, CSS, focus, dialogs, and unconfirmed input.
+
+Phase 7F.6 carries `doctorCannotProtectRevealedMayor` through validated setup, assignment, target
+view models, active-session saves, and next-game templates. The target selector exposes the domain's
+structured ineligibility without changing alignment groups or order. Active-session restoration
+narrowly adds a missing field as `false` before exact stage validation and uses the existing
+canonical write-back; complete legacy setup templates add it as `true` and are also written back.
+Malformed explicit values fail closed. Schema V2 and neutral-state sub-version `4` remain unchanged,
+and neither compatibility path reruns actions, resolution, or randomness. Day Show/Hide Roles state
+remains outside `ActiveAppSession` and every persisted shape.

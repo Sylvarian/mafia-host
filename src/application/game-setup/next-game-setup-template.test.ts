@@ -18,6 +18,23 @@ import {
 } from './next-game-setup-template.ts'
 
 describe('next-game setup template', () => {
+  it('round-trips both revealed-Mayor Doctor setting values', () => {
+    const enabled = validTemplate()
+    const disabled = {
+      ...enabled,
+      settings: { ...enabled.settings, doctorCannotProtectRevealedMayor: false },
+    }
+
+    expect(validateNextGameSetupTemplate(enabled)).toEqual({ ok: true, value: enabled })
+    expect(validateNextGameSetupTemplate(disabled)).toEqual({ ok: true, value: disabled })
+    expect(
+      createGameSetupDraftFromTemplate(enabled).settings.doctorCannotProtectRevealedMayor,
+    ).toBe(true)
+    expect(
+      createGameSetupDraftFromTemplate(disabled).settings.doctorCannotProtectRevealedMayor,
+    ).toBe(false)
+  })
+
   it('round-trips ordered names, exact role quantities, and every setting into an editable draft', () => {
     const template = validTemplate(['Alex', 'Alex'])
     const validated = validateNextGameSetupTemplate(template)
@@ -157,6 +174,58 @@ describe('next-game setup template', () => {
     expect(result.template?.roleCounts.every((entry) => entry.count === 0)).toBe(true)
     expect(result.migratedLegacyPlayerNames).toBe(true)
     expect(save).toHaveBeenCalledOnce()
+  })
+
+  it('migrates a legacy complete template missing the setting to true without changing setup data', () => {
+    const current = validTemplate(['Alex', 'Taylor'])
+    const legacy = JSON.parse(JSON.stringify(current)) as {
+      roster: unknown
+      roleCounts: unknown
+      settings: Record<string, unknown>
+    }
+    delete legacy.settings.doctorCannotProtectRevealedMayor
+    const save = vi.fn(() => ({ ok: true as const }))
+    const repository: NextGameSetupTemplateRepository = {
+      load: () => ({ ok: true, value: { source: 'template', payload: legacy } }),
+      save,
+      clear: () => ({ ok: true }),
+    }
+
+    const result = loadNextGameSetupTemplate(repository)
+    expect(result.template?.settings.doctorCannotProtectRevealedMayor).toBe(true)
+    expect(result.template?.roster).toEqual(current.roster)
+    expect(result.template?.roleCounts).toEqual(current.roleCounts)
+    expect(result.template?.settings).toEqual(current.settings)
+    expect(save).toHaveBeenCalledExactlyOnceWith(result.template)
+  })
+
+  it('retains a safely migrated legacy complete template when write-back fails', () => {
+    const current = validTemplate(['Alex', 'Taylor'])
+    const legacy = JSON.parse(JSON.stringify(current)) as {
+      settings: Record<string, unknown>
+    }
+    delete legacy.settings.doctorCannotProtectRevealedMayor
+    const repository: NextGameSetupTemplateRepository = {
+      load: () => ({ ok: true, value: { source: 'template', payload: legacy } }),
+      save: () => ({
+        ok: false,
+        error: {
+          type: 'NEXT_GAME_SETUP_TEMPLATE_SAVE_FAILURE',
+          errorName: 'SecurityError',
+        },
+      }),
+      clear: () => ({ ok: true }),
+    }
+
+    const result = loadNextGameSetupTemplate(repository)
+    expect(result.template).toEqual(current)
+    expect(result).toMatchObject({
+      error: {
+        type: 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE',
+        errorName: 'SecurityError',
+      },
+      migratedLegacyPlayerNames: false,
+    })
   })
 
   it('rejects malformed legacy names without writing a template', () => {

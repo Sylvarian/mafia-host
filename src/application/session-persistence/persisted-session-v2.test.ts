@@ -249,6 +249,102 @@ function toPhase7DNeutralGame(game: PersistedGameV2): Readonly<Record<string, un
   }
 }
 
+describe('Phase 7F.6 active-session setting compatibility', () => {
+  it('migrates a missing active-game setting to false and writes it back explicitly', () => {
+    const envelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: { game: { settings: Record<string, unknown> } }
+    }
+    delete envelope.session.game.settings.doctorCannotProtectRevealedMayor
+
+    const restored = restorePersistedSessionEnvelopeV2(envelope)
+    if (!restored.ok || restored.value.session.stage !== 'day-discussion') {
+      throw new Error('Expected compatible Day restoration.')
+    }
+    expect(restored.value.session.game.settings.doctorCannotProtectRevealedMayor).toBe(false)
+    const writeBack = restored.value.writeBackEnvelope
+    if (writeBack?.session.stage !== 'day-discussion') {
+      throw new Error('Expected canonical Day write-back.')
+    }
+    expect(writeBack.session.game.settings.doctorCannotProtectRevealedMayor).toBe(false)
+  })
+
+  it('keeps a legacy in-progress Doctor action against a revealed Mayor under migrated false', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.mayor }],
+      {
+        phase: 'night-action-collection',
+        nightNumber: 2,
+        settings: {
+          allowFirstNightKills: true,
+          doctorCannotProtectRevealedMayor: false,
+        },
+      },
+    )
+    const mayor = fixture.game.players[2]
+    if (mayor === undefined) throw new Error('Expected Mayor target.')
+    const created = createNightActionCollectionForStartedNight(
+      {
+        ...fixture.game,
+        players: fixture.game.players.map((player) =>
+          player.playerId === mayor.playerId
+            ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+            : player,
+        ),
+      },
+      fixture.participants,
+    )
+    if (!created.ok) throw new Error('Expected legacy-compatible Doctor workflow.')
+    const doctorTurn = continueNightActionCollection(created.value)
+    if (!doctorTurn.ok || doctorTurn.value.status !== 'collecting') {
+      throw new Error('Expected first Doctor turn.')
+    }
+    const confirmed = confirmNightActionTarget(doctorTurn.value, mayor.playerId)
+    if (!confirmed.ok || confirmed.value.status !== 'collecting') {
+      throw new Error('Expected first Doctor action to remain in progress.')
+    }
+    const envelope = JSON.parse(
+      JSON.stringify(
+        createPersistedSessionEnvelopeV2(
+          { stage: 'sequential-night', workflow: confirmed.value },
+          SAVED_AT,
+        ),
+      ),
+    ) as {
+      session: { game: { settings: Record<string, unknown> } }
+    }
+    delete envelope.session.game.settings.doctorCannotProtectRevealedMayor
+
+    const restored = restorePersistedSessionEnvelopeV2(envelope)
+    if (!restored.ok || restored.value.session.stage !== 'sequential-night') {
+      throw new Error('Expected legacy Doctor action restoration.')
+    }
+    expect(restored.value.session.workflow.game.settings.doctorCannotProtectRevealedMayor).toBe(
+      false,
+    )
+    const restoredAction = restored.value.session.workflow.completedSteps[0]
+    expect(restoredAction?.status).toBe('action-confirmed')
+    expect(
+      restoredAction?.status === 'action-confirmed' ? restoredAction.action.targetPlayerId : null,
+    ).toBe(mayor.playerId)
+  })
+
+  it('fails closed for a malformed explicit active-session setting', () => {
+    const envelope = JSON.parse(
+      JSON.stringify(createPersistedSessionEnvelopeV2(createDaySession(), SAVED_AT)),
+    ) as {
+      session: { game: { settings: Record<string, unknown> } }
+    }
+    envelope.session.game.settings.doctorCannotProtectRevealedMayor = 'yes'
+
+    expect(restorePersistedSessionEnvelopeV2(envelope)).toMatchObject({
+      ok: false,
+      error: { type: 'INVALID_DAY_DISCUSSION_SESSION', reason: 'invalid-game' },
+    })
+  })
+})
+
 describe('persisted sequential session V2', () => {
   it.each([false, true])(
     'migrates a pre-7F.3 first-night Doctor %s action without retaining the omitted actor',

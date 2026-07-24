@@ -4,6 +4,7 @@ import type { GameId, PlayerId, RoleId, RoleInstanceId } from '../identifiers.ts
 import { ROLE_IDS, findRoleDefinition } from '../roles/role-registry.ts'
 import { selectActiveRoleId } from '../neutral/executioner-conversion.ts'
 import { selectBlockedRoleInstanceIds } from '../resolution/role-block-status.ts'
+import { isDoctorProtectionForbiddenForRevealedMayor } from './doctor-target-eligibility.ts'
 import type { NightActionKind } from './night-action-kind.ts'
 
 export type SubmittedNightAction = Readonly<{
@@ -57,6 +58,10 @@ export type NightActionValidationError =
   | Readonly<{
       type: 'DOCTOR_REPEATED_PREVIOUS_TARGET'
       actorRoleInstanceId: RoleInstanceId
+      targetPlayerId: PlayerId
+    }>
+  | Readonly<{
+      type: 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR'
       targetPlayerId: PlayerId
     }>
 
@@ -190,6 +195,16 @@ export function createSubmittedNightAction(
         actorRoleId: action.actorRoleId,
       })
     }
+  }
+
+  if (
+    action.actorRoleId === ROLE_IDS.doctor &&
+    isDoctorProtectionForbiddenForRevealedMayor(game, target.playerId)
+  ) {
+    return fail({
+      type: 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR',
+      targetPlayerId: target.playerId,
+    })
   }
 
   if (

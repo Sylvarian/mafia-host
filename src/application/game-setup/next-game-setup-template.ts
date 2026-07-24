@@ -133,15 +133,30 @@ export function loadNextGameSetupTemplate(
 
   if (loadResult.value.source === 'template') {
     const validation = validateNextGameSetupTemplate(loadResult.value.payload)
-    return validation.ok
+    if (!validation.ok) {
+      return deepFreeze({
+        template: null,
+        error: validation.error,
+        migratedLegacyPlayerNames: false,
+      })
+    }
+    if (!isLegacyTemplateMissingRevealedMayorSetting(loadResult.value.payload)) {
+      return deepFreeze({
+        template: validation.value,
+        error: null,
+        migratedLegacyPlayerNames: false,
+      })
+    }
+    const saveResult = repository.save(validation.value)
+    return saveResult.ok
       ? deepFreeze({
           template: validation.value,
           error: null,
           migratedLegacyPlayerNames: false,
         })
       : deepFreeze({
-          template: null,
-          error: validation.error,
+          template: validation.value,
+          error: toTemplateMigrationFailure(saveResult.error),
           migratedLegacyPlayerNames: false,
         })
   }
@@ -164,13 +179,7 @@ export function loadNextGameSetupTemplate(
       })
     : deepFreeze({
         template,
-        error:
-          saveResult.error.type === 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE'
-            ? saveResult.error
-            : {
-                type: 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE',
-                errorName: saveResult.error.errorName,
-              },
+        error: toTemplateMigrationFailure(saveResult.error),
         migratedLegacyPlayerNames: false,
       })
 }
@@ -213,20 +222,11 @@ export function validateNextGameSetupTemplate(
     return { ok: false, error: { type: 'INVALID_SAVED_ROLE_DISTRIBUTION' } }
   }
 
-  if (
-    !isUnknownRecord(candidate.settings) ||
-    !hasExactKeys(candidate.settings, [
-      'godfatherAndSerialCanKillEachOther',
-      'godfatherAppearsSuspiciousToSheriff',
-      'doctorCanSelfProtect',
-      'doctorCannotRepeatPreviousTarget',
-      'revealRoleOnDeath',
-      'allowFirstNightKills',
-    ])
-  ) {
+  const settings = canonicalizeTemplateSettings(candidate.settings)
+  if (settings === null) {
     return { ok: false, error: { type: 'INVALID_SAVED_SETTINGS' } }
   }
-  const settingsResult = validateGameSettings(candidate.settings)
+  const settingsResult = validateGameSettings(settings)
   if (!settingsResult.ok) {
     return { ok: false, error: { type: 'INVALID_SAVED_SETTINGS' } }
   }
@@ -253,6 +253,51 @@ export function validateNextGameSetupTemplate(
   return setupResult.ok
     ? { ok: true, value: template }
     : { ok: false, error: { type: 'INVALID_SAVED_ROLE_DISTRIBUTION' } }
+}
+
+const LEGACY_GAME_SETTING_KEYS = Object.freeze([
+  'godfatherAndSerialCanKillEachOther',
+  'godfatherAppearsSuspiciousToSheriff',
+  'doctorCanSelfProtect',
+  'doctorCannotRepeatPreviousTarget',
+  'revealRoleOnDeath',
+  'allowFirstNightKills',
+])
+
+const CURRENT_GAME_SETTING_KEYS = Object.freeze([
+  ...LEGACY_GAME_SETTING_KEYS,
+  'doctorCannotProtectRevealedMayor',
+])
+
+function canonicalizeTemplateSettings(candidate: unknown): unknown {
+  if (!isUnknownRecord(candidate)) {
+    return null
+  }
+  if (hasExactKeys(candidate, CURRENT_GAME_SETTING_KEYS)) {
+    return candidate
+  }
+  return hasExactKeys(candidate, LEGACY_GAME_SETTING_KEYS)
+    ? { ...candidate, doctorCannotProtectRevealedMayor: true }
+    : null
+}
+
+function isLegacyTemplateMissingRevealedMayorSetting(candidate: unknown): boolean {
+  return (
+    isUnknownRecord(candidate) &&
+    isUnknownRecord(candidate.settings) &&
+    hasExactKeys(candidate.settings, LEGACY_GAME_SETTING_KEYS)
+  )
+}
+
+function toTemplateMigrationFailure(
+  error: NextGameSetupTemplateRepositoryError,
+): NextGameSetupTemplateRepositoryError {
+  return error.type === 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE'
+    ? error
+    : {
+        type: 'NEXT_GAME_SETUP_TEMPLATE_MIGRATION_FAILURE',
+        errorName: error.errorName,
+      }
 }
 
 function canonicalizeRoster(candidate: unknown): readonly NextGameSetupRosterEntry[] | null {

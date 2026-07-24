@@ -177,6 +177,53 @@ describe('night-action structural validation', () => {
     ).toBe(true)
   })
 
+  it('uses voluntary Mayor reveal authority for every Doctor copy', () => {
+    const fixture = createNightFixture(
+      [{ roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.doctor }, { roleId: ROLE_IDS.mayor }],
+      {
+        phase: 'night-action-collection',
+        nightNumber: 2,
+        settings: {
+          allowFirstNightKills: true,
+          doctorCannotProtectRevealedMayor: true,
+          revealRoleOnDeath: true,
+        },
+      },
+    )
+    const doctorOneAction = actionFor(fixture, 0, 2, 'protect')
+    const doctorTwoAction = actionFor(fixture, 1, 2, 'protect')
+
+    expect(createSubmittedNightAction(fixture.game, doctorOneAction, null).ok).toBe(true)
+    expect(createSubmittedNightAction(fixture.game, doctorTwoAction, null).ok).toBe(true)
+
+    const revealedGame = {
+      ...fixture.game,
+      players: fixture.game.players.map((player) =>
+        player.playerId === doctorOneAction.targetPlayerId
+          ? { ...player, publiclyRevealedRoleId: ROLE_IDS.mayor }
+          : player,
+      ),
+    }
+    expect(createSubmittedNightAction(revealedGame, doctorOneAction, null)).toEqual({
+      ok: false,
+      error: {
+        type: 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR',
+        targetPlayerId: doctorOneAction.targetPlayerId,
+      },
+    })
+    expect(createSubmittedNightAction(revealedGame, doctorTwoAction, null)).toMatchObject({
+      ok: false,
+      error: { type: 'DOCTOR_CANNOT_PROTECT_REVEALED_MAYOR' },
+    })
+
+    const unrestrictedGame = {
+      ...revealedGame,
+      settings: { ...revealedGame.settings, doctorCannotProtectRevealedMayor: false },
+    }
+    expect(createSubmittedNightAction(unrestrictedGame, doctorOneAction, null).ok).toBe(true)
+    expect(createSubmittedNightAction(unrestrictedGame, doctorTwoAction, null).ok).toBe(true)
+  })
+
   it('collects mutual attack intent without resolving the configured lethal effect', () => {
     const fixture = createNightFixture(
       [{ roleId: ROLE_IDS.godfather }, { roleId: ROLE_IDS.serialKiller }],

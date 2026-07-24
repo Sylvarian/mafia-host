@@ -188,3 +188,12 @@ one current game, and rejects omitted events, substituted Doctors, or fabricated
 targets. Derived display events are not duplicated in persistence. It is not a generic history or prose model.
 The domain still does not format UI sentences. Host and announcement display models remain in the
 application layer.
+
+Phase 7F.6 adds the canonical `doctorCannotProtectRevealedMayor` setting. Its focused Doctor-target
+predicate uses stable player identity, current active Mayor role, and the existing living player's
+`publiclyRevealedRoleId === Mayor` voluntary-announcement authority. When enabled, submitted Doctor
+actions against that Mayor fail before collection; the protection stage independently filters the
+same invalid effect so attacks remain lethal where otherwise applicable and no Doctor-save evidence
+is produced. Every Doctor copy follows the rule. When disabled, or before voluntary reveal,
+existing Doctor targeting, roleblocks, previous-target history, self-protection, attacks, and Dawn
+behavior are unchanged. Display state and death-reveal policy are not inputs to the predicate.

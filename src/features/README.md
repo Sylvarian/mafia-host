@@ -29,7 +29,9 @@ red Mafia, light green Town, or light grey Neutral surface derived from the acti
 Phase 7F.4 target screens use fixed simultaneous Mafia, Town, and Neutral columns. Cards show the
 stable duplicate-safe player label, canonical active role, changed original assignment, alive/dead
 state, and availability. Raw technical IDs remain absent, and the application-provided legality
-result still solely determines whether a target can be chosen.
+result still solely determines whether a target can be chosen. Phase 7F.6 therefore renders a
+voluntarily revealed Mayor in the existing alignment position as disabled for a Doctor, with the
+concise reason **Revealed Mayor cannot be protected**, while React adds no game-rule inference.
 When first-night kills are disabled, Doctor, Godfather, and Serial Killer are absent from the
 application workflow, so the feature renders no skipped/disabled card or placeholder for them.
 
@@ -50,8 +52,10 @@ does not reconstruct resolution. **Continue to Day N** enters the current number
 `day-discussion` renders a numbered host display with one full-width three-column player-card area,
 exact current/original roles and announcement-role status, living/dead state and cause, the
 strict-majority trial threshold, separate execution guidance, and three-vote Mayor reminders.
-**Show roles** / **Hide roles** is a convenience control whose React state never autosaves. Cards
-remain in stable Mafia/Town/Neutral positions. Converted Executioners appear as active
+**Show roles** / **Hide roles** is a convenience control whose React state never autosaves. Phase
+7F.6 initializes roles shown on every new Day mount, so the initial control says **Hide roles**;
+hiding lasts only for the current rendered Day and refresh/recovery/new-Day entry shows roles again.
+Cards remain in stable Mafia/Town/Neutral positions. Converted Executioners appear as active
 Jester/original Executioner and promoted Mafia as active Godfather/original assignment. Raw
 persistence IDs never enter the DOM, and the grid avoids horizontal overflow at 320px and 390px.
 
@@ -85,7 +89,9 @@ and every living Mafia member. Its existing Continue action advances directly to
 actionable Mafia role.
 
 Fresh setup may prefill the full ordered roster, Playing/Not playing choices, role quantities, and
-settings from the saved next-game template. **Clear saved setup** affects future prefill, keeps the
+settings from the saved next-game template. Phase 7F.6 adds the default-enabled **Revealed Mayor
+cannot be protected by a Doctor** control to this existing area and prepared summary. **Clear saved
+setup** affects future prefill, keeps the
 current fields intact, and never
 deletes an active save. Game over provides **Start next game** through the existing explicit
 active-save clearing boundary; confirmed abandon uses the same fresh editable prefill. The feature

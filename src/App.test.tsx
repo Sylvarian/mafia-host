@@ -383,6 +383,60 @@ describe('Phase 7F.2 game-setting guidance', () => {
   })
 })
 
+describe('Phase 7F.6 revealed-Mayor Doctor setting', () => {
+  it('starts a fresh game with the default enabled', () => {
+    const { store, repository } = renderFreshSavedSetup(
+      createDefaultNextGameSetupTemplate(['Alex', 'Taylor']),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+
+    expect(repository.savedTemplate?.settings.doctorCannotProtectRevealedMayor).toBe(true)
+    const persisted = store.lastSuccessfulEnvelope?.session
+    if (persisted?.stage !== 'role-distribution') {
+      throw new Error('Expected persisted role distribution.')
+    }
+    expect(persisted.game.settings.doctorCannotProtectRevealedMayor).toBe(true)
+  })
+
+  it('defaults on, can be disabled, appears in the summary, and starts the game with false', () => {
+    const repository = new MemoryNextGameSetupTemplateRepository()
+    const { store } = renderFreshSavedSetup(
+      createDefaultNextGameSetupTemplate(['Alex', 'Taylor']),
+      repository,
+    )
+    const setting = screen.getByRole('checkbox', {
+      name: 'Revealed Mayor cannot be protected by a Doctor',
+    })
+    expect(setting).toBeChecked()
+    expect(
+      screen.getByText('After the Mayor announces, Doctors cannot select them on later nights.'),
+    ).toBeVisible()
+
+    fireEvent.click(setting)
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
+
+    const summaryRow = screen
+      .getByText('Revealed Mayor cannot be protected by a Doctor')
+      .closest('div')
+    if (summaryRow === null) throw new Error('Expected setting summary row.')
+    expect(summaryRow).toHaveTextContent('Disabled')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
+    expect(repository.savedTemplate?.settings.doctorCannotProtectRevealedMayor).toBe(false)
+    const persisted = store.lastSuccessfulEnvelope?.session
+    if (persisted?.stage !== 'role-distribution') {
+      throw new Error('Expected persisted role distribution.')
+    }
+    expect(persisted.game.settings.doctorCannotProtectRevealedMayor).toBe(false)
+    expect(persisted.setup.settings.doctorCannotProtectRevealedMayor).toBe(false)
+  })
+})
+
 describe('Phase 7F.1 next-game saved setup', () => {
   it('prefills names, roles, and settings and clears only future setup without wiping visible fields', () => {
     const template = replayTemplate()
@@ -417,6 +471,11 @@ describe('Phase 7F.1 next-game saved setup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Increase Godfather count' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Citizen count' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Reveal role on death' }))
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Revealed Mayor cannot be protected by a Doctor',
+      }),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Prepare Game' }))
     fireEvent.click(screen.getByRole('button', { name: 'Assign Roles' }))
 
@@ -437,6 +496,7 @@ describe('Phase 7F.1 next-game saved setup', () => {
       { roleId: ROLE_IDS.citizen, count: 1 },
     ])
     expect(repository.savedTemplate?.settings.revealRoleOnDeath).toBe(true)
+    expect(repository.savedTemplate?.settings.doctorCannotProtectRevealedMayor).toBe(false)
   })
 
   it('preserves sitting-out roster members and their participation choices for the next game', () => {
@@ -1077,19 +1137,22 @@ describe('Phase 7B App integration', () => {
     expect(store.saveCount).toBe(1)
     expect(screen.getByRole('heading', { name: 'Day discussion' })).toHaveFocus()
     expect(screen.getByText('Day 1 · Host display')).toBeVisible()
-    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Role hidden')
-    expect(screen.getByText('Casey').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Mayor 1')
+    expect(screen.getByText('Casey').closest('li')).toHaveTextContent('Citizen')
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Execute a player' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'End day without execution' })).toBeEnabled()
   })
 
-  it('keeps host roles transient, hidden by default, and absent after recovery', () => {
+  it('keeps host roles transient, shown by default, and absent from persistence', () => {
     const firstRender = renderLoaded(dawnSession())
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     fireEvent.click(screen.getByRole('button', { name: 'Continue to Day 1' }))
     expect(firstRender.store.saveCount).toBe(1)
-    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Mayor 1')
 
+    fireEvent.click(screen.getByRole('button', { name: 'Hide roles' }))
+    expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Role hidden')
     fireEvent.click(screen.getByRole('button', { name: 'Show roles' }))
     expect(screen.getByText('Mayor 1')).toBeVisible()
     expect(screen.getByText('Citizen')).toBeVisible()
@@ -1108,8 +1171,8 @@ describe('Phase 7B App integration', () => {
     const recovered = renderLoaded(restored.value.session, firstRender.store)
     expect(recovered.container).not.toHaveTextContent('Mayor 1')
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
-    expect(screen.getByRole('button', { name: 'Show roles' })).toBeVisible()
-    expect(recovered.container).not.toHaveTextContent('Mayor 1')
+    expect(screen.getByRole('button', { name: 'Hide roles' })).toBeVisible()
+    expect(recovered.container).toHaveTextContent('Mayor 1')
     expect(firstRender.store.saveCount).toBe(1)
   })
 
@@ -1141,7 +1204,7 @@ describe('Phase 7B App integration', () => {
     expect(screen.getByText('Morgan').closest('li')).toHaveTextContent(
       'This player counts as 3 votes',
     )
-    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Mayor 2')
     expect(screen.getByLabelText('Local save status').parentElement).not.toHaveAttribute('inert')
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mayor reveal' }))
@@ -1185,7 +1248,7 @@ describe('Phase 7B App integration', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue saved game' }))
     expect(screen.getByText('Morgan').closest('li')).toHaveTextContent('Mayor revealed')
-    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Role hidden')
+    expect(screen.getByText('Riley').closest('li')).toHaveTextContent('Mayor 2')
   })
 
   it('keeps an in-memory reveal after save failure and retries the identical authority', () => {
